@@ -12,10 +12,10 @@ sh_binary(
     srcs = ["build_pip_package.sh"],
     data = select({
         ":windows": [
-            "//tfx_common/cc:tfx_common_extension.pyd",
+            "//tfx_bsl/cc:tfx_bsl_extension.pyd",
         ],
         "//conditions:default": [
-            "//tfx_common/cc:tfx_common_extension.so",
+            "//tfx_bsl/cc:tfx_bsl_extension.so",
         ],
     }),
 )

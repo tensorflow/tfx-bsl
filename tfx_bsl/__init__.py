@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Arrow Array utilities."""
-# pytype: disable=import-error
-# pylint: disable=wildcard-import
-from tfx_common.cc.tfx_common_extension.arrow.array_util import *
-# pytype: enable=import-error
-# pylint: enable=wildcard-import
+"""Init module for tfx_bsl."""
+
+# tfx_bsl's extension module depends on pyarrow's and tensorflow's shared
+# libraries. Importing the corresponding python packages will cause those
+# libraries to be loaded. This way the dynamic linker wouldn't need to search
+# for those libraries in the filesystem (which is bound to fail).
+from tfx_bsl import pyarrow_tf as _

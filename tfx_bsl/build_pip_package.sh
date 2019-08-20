@@ -43,14 +43,14 @@ function is_windows() {
 set -u -x
 
 if is_windows; then
-  TFX_COMMON_EXTENSION="tfx_common/cc/tfx_common_extension.pyd"
-  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-out/x64_windows-opt/genfiles/${TFX_COMMON_EXTENSION}" \
-    "${BUILD_WORKSPACE_DIRECTORY}/${TFX_COMMON_EXTENSION}"
+  TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.pyd"
+  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-out/x64_windows-opt/genfiles/${TFX_BSL_EXTENSION}" \
+    "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 else
-  TFX_COMMON_EXTENSION="tfx_common/cc/tfx_common_extension.so"
-  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-bin/${TFX_COMMON_EXTENSION}" \
-    "${BUILD_WORKSPACE_DIRECTORY}/${TFX_COMMON_EXTENSION}"
-  chmod +w  "${BUILD_WORKSPACE_DIRECTORY}/${TFX_COMMON_EXTENSION}"
+  TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.so"
+  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-bin/${TFX_BSL_EXTENSION}" \
+    "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
+  chmod +w  "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 fi
 
 # Create the wheel

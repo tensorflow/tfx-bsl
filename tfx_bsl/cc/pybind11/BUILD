@@ -1,7 +1,7 @@
 # Description:
 #   Contains our custom extensions to pybind11.
 
-package(default_visibility = ["//tfx_common/cc:__subpackages__"])
+package(default_visibility = ["//tfx_bsl/cc:__subpackages__"])
 
 licenses(["notice"])
 

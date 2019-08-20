@@ -25,11 +25,11 @@ cc_library(
     ],
     features = ["-use_header_modules"],
     visibility = [
-        "//tfx_common/cc:__pkg__",
+        "//tfx_bsl/cc:__pkg__",
     ],
     deps = [
         ":array_util",
-        "//tfx_common/cc/pybind11:arrow_casters",
+        "//tfx_bsl/cc/pybind11:arrow_casters",
         "@arrow",
         "@local_config_tf//:tf_header_lib",
         "@pybind11",

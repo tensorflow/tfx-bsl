@@ -31,7 +31,7 @@ function ensure_pyarrow() {
   if has_pyarrow; then
     echo "Using installed pyarrow..."
   else
-    echo "Building tfx_common requires pyarrow. Please install ${PYARROW_REQUIREMENT}"
+    echo "Building tfx_bsl requires pyarrow. Please install ${PYARROW_REQUIREMENT}"
     exit 1
   fi
 }
@@ -44,7 +44,7 @@ function ensure_tensorflow() {
   if has_tf; then
     echo "Using installed tensorflow..."
   else
-    echo "Building tfx_common requires tensorflow."
+    echo "Building tfx_bsl requires tensorflow."
     exit 1
   fi
 }

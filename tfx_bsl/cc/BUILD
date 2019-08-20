@@ -1,24 +1,24 @@
 # Description:
-#   C++ libraries in tfx_common.
+#   C++ libraries in tfx_bsl.
 
-package(default_visibility = ["//tfx_common:__subpackages__"])
+package(default_visibility = ["//tfx_bsl:__subpackages__"])
 
 licenses(["notice"])
 
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_pybind_extension")
 
 tf_pybind_extension(
-    name = "tfx_common_extension",
+    name = "tfx_bsl_extension",
     srcs = [
-        "tfx_common_extension.cc",
+        "tfx_bsl_extension.cc",
     ],
     copts = [
         "-fexceptions",
     ],
     features = ["-use_header_modules"],
-    module_name = "tfx_common_extension",
+    module_name = "tfx_bsl_extension",
     deps = [
-        "//tfx_common/cc/arrow:arrow_submodule",
+        "//tfx_bsl/cc/arrow:arrow_submodule",
         "@local_config_tf//:libtensorflow_framework",
         "@pybind11",
     ],

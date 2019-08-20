@@ -11,13 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "tfx_common/cc/arrow/array_util.h"
+#include "tfx_bsl/cc/arrow/array_util.h"
 
 #include "absl/strings/str_cat.h"
 #include "tensorflow/core/lib/core/errors.h"
 
 namespace tensorflow {
-namespace tfx_common {
+namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
 using ::arrow::ListArray;
@@ -56,5 +56,5 @@ Status ListLengthsFromListArray(
   return FromArrowStatus(lengths_builder.Finish(list_lengths_array));
 }
 
-}  // namespace tfx_common
+}  // namespace tfx_bsl
 }  // namespace tensorflow

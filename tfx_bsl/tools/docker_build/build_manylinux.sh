@@ -74,7 +74,7 @@ function bazel_build() {
   rm -rf dist
   ./configure.sh
   bazel run -c opt \
-    tfx_common:build_pip_package \
+    tfx_bsl:build_pip_package \
     --\
     --python_bin_path "${PYTHON_BIN_PATH}"
 }
@@ -92,7 +92,7 @@ function stamp_wheel() {
   TMP_DIR="$(mktemp -d)"
   pushd "${TMP_DIR}"
   unzip "${WHEEL_PATH}"
-  SO_FILE_PATH=tfx_common/cc/tfx_common_extension.so
+  SO_FILE_PATH=tfx_bsl/cc/tfx_bsl_extension.so
   LIBARROW="$(patchelf --print-needed "${SO_FILE_PATH}" | fgrep libarrow.so)"
   LIBARROW_PYTHON="$(patchelf --print-needed "${SO_FILE_PATH}" | fgrep libarrow_python.so)"
   LIBTENSORFLOW_FRAMEWORK="$(patchelf --print-needed "${SO_FILE_PATH}" | fgrep libtensorflow_framework.so)"

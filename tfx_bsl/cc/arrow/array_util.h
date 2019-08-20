@@ -11,8 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef TFX_COMMON_CC_ARROW_ARRAY_UTIL_H_
-#define TFX_COMMON_CC_ARROW_ARRAY_UTIL_H_
+#ifndef TFX_BSL_CC_ARROW_ARRAY_UTIL_H_
+#define TFX_BSL_CC_ARROW_ARRAY_UTIL_H_
 
 #include <memory>
 
@@ -20,7 +20,7 @@
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
-namespace tfx_common {
+namespace tfx_bsl {
 
 // Get lengths of lists in `list_array` in an int32 array.
 // Note that null and empty list both are of length 0 and the returned array
@@ -30,6 +30,6 @@ Status ListLengthsFromListArray(
     const arrow::Array& array,
     std::shared_ptr<arrow::Array>* list_lengths_array);
 
-}  // namespace tfx_common
+}  // namespace tfx_bsl
 }  // namespace tensorflow
-#endif  // TFX_COMMON_CC_ARROW_ARRAY_UTIL_H_
+#endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

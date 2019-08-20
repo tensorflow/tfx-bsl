@@ -11,16 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "tfx_common/cc/arrow/arrow_submodule.h"
+#include "tfx_bsl/cc/arrow/arrow_submodule.h"
 
 #include "arrow/python/pyarrow.h"
 #include "arrow/api.h"
-#include "tfx_common/cc/arrow/array_util.h"
-#include "tfx_common/cc/pybind11/arrow_casters.h"
+#include "tfx_bsl/cc/arrow/array_util.h"
+#include "tfx_bsl/cc/pybind11/arrow_casters.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
-namespace tfx_common {
+namespace tfx_bsl {
 namespace {
 void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
   auto m = arrow_module.def_submodule("array_util");
@@ -51,5 +51,5 @@ void DefineArrowSubmodule(pybind11::module main_module) {
   DefineArrayUtilSubmodule(m);
 }
 
-}  // namespace tfx_common
+}  // namespace tfx_bsl
 }  // namespace tensorflow

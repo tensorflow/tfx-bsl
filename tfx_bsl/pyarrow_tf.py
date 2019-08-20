@@ -14,7 +14,7 @@
 
 """Import module for Pyarrow and Tensorflow."""
 
-# We use this module to import Pyarrow or Tensorflow in tfx_common. This is
+# We use this module to import Pyarrow or Tensorflow in tfx_bsl. This is
 # needed to ensure we import tensorflow and pyarrow in correct order. Importing
 # pyarrow first and then tensorflow can result in segmentation fault.
 # TODO(b/137200365): Avoid doing this special handling once this is no longer

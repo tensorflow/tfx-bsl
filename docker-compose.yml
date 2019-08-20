@@ -14,13 +14,13 @@
 
 version: '3.1'
 
-# We mount the TFX Common project root at /build (which is the WORKDIR of the
+# We mount the TFX BSL project root at /build (which is the WORKDIR of the
 # image) in the container.
 services:
   manylinux2010:
-    image: tfx-common-build:manylinux2010
+    image: tfx-bsl-build:manylinux2010
     build:
       context: .
-      dockerfile: tfx_common/tools/docker_build/Dockerfile.manylinux2010
+      dockerfile: tfx_bsl/tools/docker_build/Dockerfile.manylinux2010
     volumes:
       - .:/build:delegated

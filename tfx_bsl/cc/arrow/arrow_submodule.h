@@ -11,16 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef THIRD_PARTY_PY_TFX_COMMON_CC_ARROW_ARROW_SUBMODULE_H_
-#define THIRD_PARTY_PY_TFX_COMMON_CC_ARROW_ARROW_SUBMODULE_H_
+#ifndef THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
+#define THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
 
 #include "include/pybind11/pybind11.h"
 
 namespace tensorflow {
-namespace tfx_common {
+namespace tfx_bsl {
 
 void DefineArrowSubmodule(pybind11::module main_module);
 
-}  // namespace tfx_common
+}  // namespace tfx_bsl
 }  // namespace tensorflow
-#endif  // THIRD_PARTY_PY_TFX_COMMON_CC_ARROW_ARROW_SUBMODULE_H_
+#endif  // THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_

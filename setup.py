@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Package Setup script for TFX Common."""
+"""Package Setup script for TFX BSL."""
 
 from setuptools import find_packages
 from setuptools import setup
@@ -19,7 +19,7 @@ from setuptools.command.install import install
 from setuptools.dist import Distribution
 
 
-# TFX Common is not a purelib. However because of the extension module is not
+# TFX BSL is not a purelib. However because of the extension module is not
 # built by setuptools, it will be incorrectly treated as a purelib. The
 # following works around that bug.
 class _InstallPlatlib(install):
@@ -40,7 +40,7 @@ class _BinaryDistribution(Distribution):
 
 
 # Get version from version module.
-with open('tfx_common/version.py') as fp:
+with open('tfx_bsl/version.py') as fp:
   globals_dict = {}
   exec (fp.read(), globals_dict)  # pylint: disable=exec-used
 __version__ = globals_dict['__version__']
@@ -57,7 +57,7 @@ with open('third_party/pyarrow_version.bzl') as fp:
 
 
 setup(
-    name='tfx-common',
+    name='tfx-bsl',
     version=__version__,
     author='Google LLC',
     author_email='tensorflow-extended-dev@googlegroups.com',
@@ -69,8 +69,8 @@ setup(
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: MacOS :: MacOS X',
-        'Operating System :: POSIX :: Linux',
         'Operating System :: Microsoft :: Windows',
+        'Operating System :: POSIX :: Linux',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2',
         'Programming Language :: Python :: 2.7',
@@ -101,12 +101,13 @@ setup(
     package_data={'': ['*.lib', '*.pyd', '*.so']},
     zip_safe=False,
     distclass=_BinaryDistribution,
-    description=('tfx_common contains common libraries shared by all TFX '
-                 '(TensorFlow eXtended) components.'),
+    description=('tfx_bsl (TFX Basic Shared Libraries) contains libraries '
+                 'shared by many TFX (TensorFlow eXtended) libraries and '
+                 'components.'),
     long_description=_LONG_DESCRIPTION,
     long_description_content_type='text/markdown',
-    keywords='tfx common',
+    keywords='tfx bsl',
     url='https://www.tensorflow.org/tfx',
-    download_url='https://github.com/tensorflow/tfx-common/tags',
+    download_url='https://github.com/tensorflow/tfx-bsl/tags',
     requires=[],
     cmdclass={'install': _InstallPlatlib})

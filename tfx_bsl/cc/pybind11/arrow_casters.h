@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // pybind11 custom casters that bridges pyarrow and C++ Arrow.
-#ifndef TFX_COMMON_PYBIND11_ARROW_CASTERS_H_
-#define TFX_COMMON_PYBIND11_ARROW_CASTERS_H_
+#ifndef TFX_BSL_PYBIND11_ARROW_CASTERS_H_
+#define TFX_BSL_PYBIND11_ARROW_CASTERS_H_
 
 #include <memory>
 
@@ -44,4 +44,4 @@ struct type_caster<std::shared_ptr<arrow::Array>> {
 
 }  // namespace detail
 }  // namespace pybind11
-#endif  // TFX_COMMON_PYBIND11_ARROW_CASTERS_H_
+#endif  // TFX_BSL_PYBIND11_ARROW_CASTERS_H_

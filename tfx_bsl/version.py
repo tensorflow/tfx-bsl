@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Contains the version string of tfx_common."""
+"""Contains the version string of tfx_bsl."""
 
 # Note that setup.py uses this version.
 __version__ = '0.15.0dev'

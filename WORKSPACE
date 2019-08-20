@@ -1,4 +1,4 @@
-workspace(name = "tfx_common")
+workspace(name = "tfx_bsl")
 
 # To update TensorFlow to a new revision.
 # 1. Update the '_TENSORFLOW_GIT_COMMIT' var below to include the new git hash.

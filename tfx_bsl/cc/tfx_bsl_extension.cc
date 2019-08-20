@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Defines the tfx_common extension module. We aim at having only one
-// extension module (i.e. dynamic shared library), therefore all the TFX Common
+// Defines the tfx_bsl extension module. We aim at having only one
+// extension module (i.e. dynamic shared library), therefore all the TFX BSL
 // C++ APIs must be added here.
 // This C++ object has exception (-fexception) enabled (to work with
 // pybind11). -fexception may harm performance and increase the binary size,
@@ -21,19 +21,19 @@
 #include <memory>
 #include <stdexcept>
 
-#include "tfx_common/cc/arrow/arrow_submodule.h"
+#include "tfx_bsl/cc/arrow/arrow_submodule.h"
 #include "include/pybind11/pybind11.h"
 
 namespace tensorflow {
-namespace tfx_common {
+namespace tfx_bsl {
 
 PYBIND11_MODULE(
-    tfx_common_extension,  // this must be kept the same as the "extension_name"
+    tfx_bsl_extension,  // this must be kept the same as the "extension_name"
                            // param in the build rule
     m) {
-  m.doc() = "TFX Common extension module";
+  m.doc() = "TFX Basic Shared Libraries extension module";
   DefineArrowSubmodule(m);
 }
 
-}  // namespace tfx_common
+}  // namespace tfx_bsl
 }  // namespace tensorflow
