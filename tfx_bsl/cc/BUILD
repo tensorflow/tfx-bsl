@@ -12,10 +12,6 @@ tf_pybind_extension(
     srcs = [
         "tfx_bsl_extension.cc",
     ],
-    copts = [
-        "-fexceptions",
-    ],
-    features = ["-use_header_modules"],
     module_name = "tfx_bsl_extension",
     deps = [
         "//tfx_bsl/cc/arrow:arrow_submodule",
