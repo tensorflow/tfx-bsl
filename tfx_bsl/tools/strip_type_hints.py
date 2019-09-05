@@ -39,7 +39,7 @@ def strip_all_type_hints(root_dir):
           only_test_for_changes=False)
       code_string = code_string.replace(
           'from typing import',
-          'from tensorflow_data_validation.types_compat import')
+          'from tfx_bsl.types_compat import')
       with open(filepath, 'w') as f:
         f.write(code_string)
 
