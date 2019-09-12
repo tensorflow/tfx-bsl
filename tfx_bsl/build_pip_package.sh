@@ -53,6 +53,9 @@ else
   chmod +w  "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 fi
 
+cp -f "${BUILD_WORKSPACE_DIRECTORY}"/bazel-bin/tfx_bsl/proto/*.py \
+  "${BUILD_WORKSPACE_DIRECTORY}/tfx_bsl/proto/"
+
 # Create the wheel
 cd ${BUILD_WORKSPACE_DIRECTORY}
 
