@@ -17,9 +17,8 @@
 #include <memory>
 
 #include "arrow/api.h"
-#include "tensorflow/core/lib/core/status.h"
+#include "tfx_bsl/cc/util/status.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
 
 // Get lengths of lists in `list_array` in an int32 array.
@@ -29,7 +28,5 @@ namespace tfx_bsl {
 Status ListLengthsFromListArray(
     const arrow::Array& array,
     std::shared_ptr<arrow::Array>* list_lengths_array);
-
 }  // namespace tfx_bsl
-}  // namespace tensorflow
 #endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

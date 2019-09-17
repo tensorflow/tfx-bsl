@@ -11,14 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
-#define THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
 
-#include "include/pybind11/pybind11.h"
+#ifndef TFX_BSL_CC_UTIL_STATUS_UTIL_H_
+#define TFX_BSL_CC_UTIL_STATUS_UTIL_H_
+
+#include "arrow/api.h"
+#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
-
-void DefineArrowSubmodule(pybind11::module main_module);
-
+Status FromArrowStatus(::arrow::Status arrow_status);
 }  // namespace tfx_bsl
-#endif  // THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
+
+#endif   // TFX_BSL_CC_UTIL_STATUS_UTIL_H_

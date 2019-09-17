@@ -10,9 +10,10 @@ cc_library(
     srcs = ["array_util.cc"],
     hdrs = ["array_util.h"],
     deps = [
+        "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
         "@arrow",
         "@com_google_absl//absl/strings",
-        "@local_config_tf//:tf_header_lib",
     ],
 )
 
@@ -31,7 +32,6 @@ cc_library(
         ":array_util",
         "//tfx_bsl/cc/pybind11:arrow_casters",
         "@arrow",
-        "@local_config_tf//:tf_header_lib",
         "@pybind11",
     ],
 )

@@ -1,3 +1,4 @@
+#include "tfx_bsl/cc/util/status.h"
 // Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +19,8 @@
 
 #include "arrow/record_batch.h"
 #include "tensorflow/core/example/example.proto.h"
-#include "tensorflow/core/lib/core/errors.h"
 #include "third_party/tensorflow_metadata/proto/v0/schema.proto.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
 
 // Converts a vector of Example protos to an Arrow RecordBatch.
@@ -49,8 +48,5 @@ Status RecordBatchToExamples(
     std::vector<::tensorflow::Example>* examples);
 
 }  // namespace tfx_bsl
-}  // namespace tensorflow
-
-
 
 #endif  // TFX_BSL_CC_CODERS_EXAMPLE_CODER_H_

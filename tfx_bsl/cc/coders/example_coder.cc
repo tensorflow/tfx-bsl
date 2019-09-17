@@ -18,22 +18,12 @@
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
 #include "arrow/api.h"
+#include "tfx_bsl/cc/util/status_util.h"
 #include "tensorflow/core/example/example.proto.h"
 #include "tensorflow/core/example/feature.proto.h"
-#include "tensorflow/core/lib/core/errors.h"
 #include "third_party/tensorflow_metadata/proto/v0/schema.proto.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
-
-
-Status FromArrowStatus(const arrow::Status& arrow_status) {
-  return arrow_status.ok() ? Status::OK()
-                           : errors::Internal(absl::StrCat(
-                                 "Arrow error ", arrow_status.CodeAsString(),
-                                 " : ", arrow_status.message()));
-}
-
 
 class FeatureDecoder {
  public:
@@ -46,10 +36,10 @@ class FeatureDecoder {
   Status DecodeFeature(
       const ::tensorflow::Feature& feature) {
     if (feature.kind_case() == ::tensorflow::Feature::KIND_NOT_SET) {
-      TF_RETURN_IF_ERROR(FromArrowStatus(list_builder_.AppendNull()));
+      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(list_builder_.AppendNull()));
     } else {
-      TF_RETURN_IF_ERROR(FromArrowStatus(list_builder_.Append()));
-      TF_RETURN_IF_ERROR(DecodeFeatureValues(feature));
+      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(list_builder_.Append()));
+      TFX_BSL_RETURN_IF_ERROR(DecodeFeatureValues(feature));
     }
     assert (!feature_was_added_);
     feature_was_added_ = true;
@@ -64,7 +54,7 @@ class FeatureDecoder {
   // called this will do nothing.  Otherwise it will add to the null count.
   Status FinishFeature() {
     if (!feature_was_added_) {
-      TF_RETURN_IF_ERROR(FromArrowStatus(list_builder_.AppendNull()));
+      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(list_builder_.AppendNull()));
     }
     feature_was_added_ = false;
     return Status::OK();
@@ -105,10 +95,10 @@ class FloatDecoder : public FeatureDecoder {
   Status DecodeFeatureValues(
       const ::tensorflow::Feature& feature) override {
     if (feature.kind_case() != ::tensorflow::Feature::kFloatList) {
-      return ::tensorflow::errors::InvalidArgument("Feature had wrong type");
+      return errors::InvalidArgument("Feature had wrong type");
     }
     for (float value : feature.float_list().value()) {
-      TF_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
+      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
     }
     return Status::OK();
   }
@@ -137,10 +127,10 @@ class IntDecoder : public FeatureDecoder {
   Status DecodeFeatureValues(
       const ::tensorflow::Feature& feature) override {
     if (feature.kind_case() != ::tensorflow::Feature::kInt64List) {
-      return ::tensorflow::errors::InvalidArgument("Feature had wrong type");
+      return errors::InvalidArgument("Feature had wrong type");
     }
     for (int64 value : feature.int64_list().value()) {
-      TF_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
+      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
     }
     return Status::OK();
   }
@@ -168,10 +158,10 @@ class BytesDecoder : public FeatureDecoder {
   Status DecodeFeatureValues(
       const ::tensorflow::Feature& feature) override {
     if (feature.kind_case() != ::tensorflow::Feature::kBytesList) {
-      return ::tensorflow::errors::InvalidArgument("Feature had wrong type");
+      return errors::InvalidArgument("Feature had wrong type");
     }
     for (const string& value : feature.bytes_list().value()) {
-      TF_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
+      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
     }
     return Status::OK();
   }
@@ -195,7 +185,7 @@ Status MakeFeatureDecoder(
       out->reset(BytesDecoder::Make());
       break;
     default:
-      return ::tensorflow::errors::InvalidArgument("Bad field type");
+      return errors::InvalidArgument("Bad field type");
   }
   return Status::OK();
 }
@@ -215,7 +205,7 @@ Status ExamplesToRecordBatch(
   if (schema != nullptr) {
     for (
       const ::tensorflow::metadata::v0::Feature& feature : schema->feature()) {
-      TF_RETURN_IF_ERROR(
+      TFX_BSL_RETURN_IF_ERROR(
           MakeFeatureDecoder(feature, &feature_decoders[feature.name()]));
     }
   }
@@ -224,7 +214,7 @@ Status ExamplesToRecordBatch(
     const ::tensorflow::Example& example = examples[i];
     for (const auto& p : example.features().feature()) {
       const string& feature_name = p.first;
-      const Feature& feature = p.second;
+      const ::tensorflow::Feature& feature = p.second;
       const auto& it = feature_decoders.find(feature_name);
       FeatureDecoder *feature_decoder = nullptr;
       if (it != feature_decoders.end()) {
@@ -253,18 +243,18 @@ Status ExamplesToRecordBatch(
         // nulls being appended equal to the number of examples processsed
         // excluding the current example.
         for (int j = 0; j < i; ++j) {
-          TF_RETURN_IF_ERROR(feature_decoder->AppendNull());
+          TFX_BSL_RETURN_IF_ERROR(feature_decoder->AppendNull());
         }
         feature_decoders[feature_name] = std::unique_ptr<FeatureDecoder>(
             feature_decoder);
       }
       if (feature_decoder != nullptr) {
-        TF_RETURN_IF_ERROR(feature_decoder->DecodeFeature(feature));
+        TFX_BSL_RETURN_IF_ERROR(feature_decoder->DecodeFeature(feature));
       }
     }
 
     for (const auto& p : feature_decoders) {
-      TF_RETURN_IF_ERROR(p.second->FinishFeature());
+      TFX_BSL_RETURN_IF_ERROR(p.second->FinishFeature());
     }
   }
 
@@ -275,7 +265,7 @@ Status ExamplesToRecordBatch(
       const ::tensorflow::metadata::v0::Feature& feature : schema->feature()) {
       FeatureDecoder& decoder = *feature_decoders[feature.name()];
       arrays.emplace_back();
-      TF_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
+      TFX_BSL_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
       fields.push_back(
           ::arrow::field(feature.name(), arrays.back()->type()));
     }
@@ -285,7 +275,7 @@ Status ExamplesToRecordBatch(
       if (it != feature_decoders.end()) {
         FeatureDecoder& decoder = *it->second;
         arrays.emplace_back();
-        TF_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
+        TFX_BSL_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
         fields.push_back(::arrow::field(feature_name, arrays.back()->type()));
       } else {
         arrays.emplace_back(new ::arrow::NullArray(examples.size()));
@@ -388,7 +378,7 @@ Status MakeFeatureEncoder(
       const std::shared_ptr<::arrow::Array>& array,
       std::unique_ptr<FeatureEncoder>* out) {
   if (array->type()->id() != ::arrow::Type::LIST) {
-    return ::tensorflow::errors::InvalidArgument("Expected ListArray");
+    return errors::InvalidArgument("Expected ListArray");
   }
   std::shared_ptr<::arrow::ListArray> list_array =
       std::static_pointer_cast<::arrow::ListArray>(array);
@@ -409,7 +399,7 @@ Status MakeFeatureEncoder(
             list_array,
             std::static_pointer_cast<::arrow::BinaryArray>(values_array)));
   } else {
-    return ::tensorflow::errors::InvalidArgument("Bad field type");
+    return errors::InvalidArgument("Bad field type");
   }
   return Status::OK();
 }
@@ -430,7 +420,7 @@ Status RecordBatchToExamples(
     feature_encoders.emplace_back(
         std::make_pair(record_batch.schema()->field(column_index)->name(),
                        nullptr));
-    TF_RETURN_IF_ERROR(
+    TFX_BSL_RETURN_IF_ERROR(
         MakeFeatureEncoder(array, &feature_encoders.back().second));
   }
   for (
@@ -449,4 +439,3 @@ Status RecordBatchToExamples(
 }
 
 }  // namespace tfx_bsl
-}  // namespace tensorflow

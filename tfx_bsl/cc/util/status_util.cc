@@ -11,14 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
-#define THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
+#include "tfx_bsl/cc/util/status_util.h"
 
-#include "include/pybind11/pybind11.h"
+#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
-
-void DefineArrowSubmodule(pybind11::module main_module);
+// For now, all arrow errors are converted to InternalError.
+Status FromArrowStatus(::arrow::Status arrow_status) {
+  return arrow_status.ok() ? Status::OK()
+                           : errors::Internal(absl::StrCat(
+                                 "Arrow error ", arrow_status.CodeAsString(),
+                                 " : ", arrow_status.message()));
+}
 
 }  // namespace tfx_bsl
-#endif  // THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_

@@ -15,14 +15,14 @@ cc_library(
     srcs = ["example_coder.cc"],
     hdrs = ["example_coder.h"],
     deps = [
+        "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
         "//third_party/arrow:thirdparty_hdrs_lib",
         "//third_party/tensorflow/core:protos_all",
         "//third_party/tensorflow_metadata/proto/v0:metadata_v0_cc_proto",
         "@arrow",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@local_config_tf//:tf_header_lib",
     ],
 )
 
@@ -35,6 +35,5 @@ cc_test(
         "//third_party/arrow:thirdparty_hdrs_lib",
         "//third_party/tensorflow_metadata/proto/v0:metadata_v0_cc_proto",
         "@arrow",
-        "@local_config_tf//:tf_header_lib",
     ],
 )

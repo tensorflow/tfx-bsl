@@ -23,14 +23,13 @@
 #include "arrow/type_fwd.h"
 #include "third_party/tensorflow_metadata/proto/v0/schema.proto.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
 namespace {
 
 using ::testing::Test;
 
-std::vector<Example> CreateTestExamples() {
-  std::vector<Example> result(4);
+std::vector<tensorflow::Example> CreateTestExamples() {
+  std::vector<tensorflow::Example> result(4);
   proto2::TextFormat::ParseFromString(
       R"(features {
         feature {
@@ -169,4 +168,3 @@ TEST(ExampleProtoCoderTest, ArrowTableToExampleWorks) {
 
 }  // namespace
 }  // namespace tfx_bsl
-}  // namespace tensorflow

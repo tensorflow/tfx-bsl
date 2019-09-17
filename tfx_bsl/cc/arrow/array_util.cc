@@ -14,21 +14,13 @@
 #include "tfx_bsl/cc/arrow/array_util.h"
 
 #include "absl/strings/str_cat.h"
-#include "tensorflow/core/lib/core/errors.h"
+#include "tfx_bsl/cc/util/status_util.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
 using ::arrow::ListArray;
 using ::arrow::Int32Builder;
-
-Status FromArrowStatus(const arrow::Status& arrow_status) {
-  return arrow_status.ok() ? Status::OK()
-                           : errors::Internal(absl::StrCat(
-                                 "Arrow error ", arrow_status.CodeAsString(),
-                                 " : ", arrow_status.message()));
-}
 
 Status GetListArray(const Array& array, const ListArray** list_array) {
   if (array.type()->id() != arrow::Type::LIST) {
@@ -45,10 +37,10 @@ Status ListLengthsFromListArray(
     const Array& array,
     std::shared_ptr<Array>* list_lengths_array) {
   const ListArray* list_array;
-  TF_RETURN_IF_ERROR(GetListArray(array, &list_array));
+  TFX_BSL_RETURN_IF_ERROR(GetListArray(array, &list_array));
 
   Int32Builder lengths_builder;
-  TF_RETURN_IF_ERROR(
+  TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(lengths_builder.Reserve(list_array->length())));
   for (int i = 0; i < list_array->length(); ++i) {
     lengths_builder.UnsafeAppend(list_array->value_length(i));
@@ -57,4 +49,3 @@ Status ListLengthsFromListArray(
 }
 
 }  // namespace tfx_bsl
-}  // namespace tensorflow

@@ -17,9 +17,7 @@
 #include "arrow/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
-#include "tensorflow/core/lib/core/status.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
 namespace {
 void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
@@ -52,4 +50,3 @@ void DefineArrowSubmodule(pybind11::module main_module) {
 }
 
 }  // namespace tfx_bsl
-}  // namespace tensorflow

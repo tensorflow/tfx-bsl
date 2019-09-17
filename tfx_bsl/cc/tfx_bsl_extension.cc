@@ -24,7 +24,6 @@
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 #include "include/pybind11/pybind11.h"
 
-namespace tensorflow {
 namespace tfx_bsl {
 
 PYBIND11_MODULE(
@@ -36,4 +35,3 @@ PYBIND11_MODULE(
 }
 
 }  // namespace tfx_bsl
-}  // namespace tensorflow
