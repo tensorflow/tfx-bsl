@@ -57,18 +57,6 @@ function install_pyarrow() {
   ${PIP_BIN} install "${PYARROW_REQUIREMENT}"
 }
 
-function install_tensorflow() {
-  if [[ "${TENSORFLOW_VERSION}" == latest ]]; then
-    ${PIP_BIN} install tensorflow || exit 1;
-  elif [[ "${TENSORFLOW_VERSION}" == nightly ]]; then
-    ${PIP_BIN} install tf-nightly || exit 1;
-  elif [[ -z "${TENSORFLOW_VERSION}" ]]; then
-    echo "Must set TENSORFLOW_VERSION env to latest|nightly|<pip version requirement string>"; exit 1;
-  else
-    ${PIP_BIN} install tensorflow "${TENSORFLOW_VERSION}" || exit 1;
-  fi
-}
-
 function bazel_build() {
   rm -f .bazelrc
   rm -rf dist
@@ -95,10 +83,8 @@ function stamp_wheel() {
   SO_FILE_PATH=tfx_bsl/cc/tfx_bsl_extension.so
   LIBARROW="$(patchelf --print-needed "${SO_FILE_PATH}" | fgrep libarrow.so)"
   LIBARROW_PYTHON="$(patchelf --print-needed "${SO_FILE_PATH}" | fgrep libarrow_python.so)"
-  LIBTENSORFLOW_FRAMEWORK="$(patchelf --print-needed "${SO_FILE_PATH}" | fgrep libtensorflow_framework.so)"
   patchelf --remove-needed "${LIBARROW}" "${SO_FILE_PATH}"
   patchelf --remove-needed "${LIBARROW_PYTHON}" "${SO_FILE_PATH}"
-  patchelf --remove-needed "${LIBTENSORFLOW_FRAMEWORK}" "${SO_FILE_PATH}"
   # update the .so file in the original wheel.
   zip "${WHEEL_PATH}" "${SO_FILE_PATH}"
   popd
@@ -119,7 +105,6 @@ setup_environment
 set -e
 set -x
 install_pyarrow "third_party/pyarrow_version.bzl"
-install_tensorflow
 bazel_build
 stamp_wheel
 

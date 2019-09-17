@@ -15,7 +15,6 @@ tf_pybind_extension(
     module_name = "tfx_bsl_extension",
     deps = [
         "//tfx_bsl/cc/arrow:arrow_submodule",
-        "@local_config_tf//:libtensorflow_framework",
         "@pybind11",
     ],
 )

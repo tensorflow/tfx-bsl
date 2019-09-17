@@ -44,16 +44,6 @@ http_archive(
     urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.8.0/bazel-skylib.0.8.0.tar.gz"],
 )
 
-http_archive(
-    name = "tf_custom_op",
-    strip_prefix = "custom-op-b74be358b804ee563a011cb255642ec17c6bbc1a",
-    sha256 = "048e74e977ab3c2bd3f43e460f9c4285c4fecf4154f75953ca4db0807ec593cf",
-    urls = ["https://github.com/tensorflow/custom-op/archive/b74be358b804ee563a011cb255642ec17c6bbc1a.zip"],
-)
-
-load("@tf_custom_op//tf:tf_configure.bzl", "tf_configure")
-tf_configure(name = "local_config_tf")
-
 load("@org_tensorflow//tensorflow:workspace.bzl", "tf_workspace")
 tf_workspace(
     path_prefix = "",
