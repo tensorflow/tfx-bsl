@@ -44,7 +44,7 @@ set -u -x
 
 if is_windows; then
   TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.pyd"
-  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-out/x64_windows-opt/genfiles/${TFX_BSL_EXTENSION}" \
+  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-out/x64_windows-opt/bin/${TFX_BSL_EXTENSION}" \
     "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 else
   TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.so"
