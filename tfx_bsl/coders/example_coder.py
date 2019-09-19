@@ -21,5 +21,6 @@ from __future__ import print_function
 # pylint: disable=unused-import
 # pytype: disable=import-error
 from tfx_bsl.cc.tfx_bsl_extension.coders import ExamplesToRecordBatch
+from tfx_bsl.cc.tfx_bsl_extension.coders import ExampleToNumpyDict
 # pytype: enable=import-error
 # pylint: enable=unused-import

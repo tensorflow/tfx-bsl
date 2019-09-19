@@ -16,9 +16,11 @@
 #include "arrow/python/pyarrow.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/coders/example_coder.h"
+#include "tfx_bsl/cc/coders/example_numpy_decoder.h"
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
 #include "tfx_bsl/cc/util/status.h"
+#include "include/pybind11/pytypes.h"
 #include "include/pybind11/stl.h"
 
 namespace tfx_bsl {
@@ -36,6 +38,18 @@ void DefineCodersSubmodule(pybind11::module main_module) {
             throw std::runtime_error(s.ToString());
           }
           return result;
+        });
+
+  m.def("ExampleToNumpyDict",
+        [](absl::string_view serialized_example) -> pybind11::object {
+          PyObject* numpy_dict = nullptr;
+          Status s = ExampleToNumpyDict(serialized_example, &numpy_dict);
+          if (!s.ok()) {
+            throw std::runtime_error(s.ToString());
+          }
+          // "steal" does notincrement the refcount of numpy_dict. (which is
+          // already 1 after creation.
+          return pybind11::reinterpret_steal<pybind11::object>(numpy_dict);
         });
 }
 

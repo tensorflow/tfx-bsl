@@ -36,6 +36,19 @@ cc_test(
 )
 
 cc_library(
+    name = "example_numpy_decoder",
+    srcs = ["example_numpy_decoder.cc"],
+    hdrs = ["example_numpy_decoder.h"],
+    deps = [
+        "//tfx_bsl/cc/util:status",
+        "@com_google_absl//absl/strings",
+        "@local_config_python//:numpy_headers",
+        "@local_config_python//:python_headers",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+    ],
+)
+
+cc_library(
     name = "coders_submodule",
     srcs = ["coders_submodule.cc"],
     hdrs = ["coders_submodule.h"],
@@ -48,6 +61,7 @@ cc_library(
     ],
     deps = [
         ":example_coder",
+        ":example_numpy_decoder",
         "//tfx_bsl/cc/pybind11:absl_casters",
         "//tfx_bsl/cc/pybind11:arrow_casters",
         "//tfx_bsl/cc/util:status",
