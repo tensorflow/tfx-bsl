@@ -9,6 +9,7 @@ workspace(name = "tfx_bsl")
 #    reliable downloads.
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 # TF 1.14
 _TENSORFLOW_GIT_COMMIT = "87989f69597d6b2d60de8f112e1e3cea23be7298"
@@ -55,5 +56,11 @@ arrow_configure(name = "arrow")
 
 # Specify the minimum required bazel version.
 load("@org_tensorflow//tensorflow:version_check.bzl", "check_bazel_version_at_least")
+
+git_repository(
+      name = "com_github_tensorflow_metadata",
+      commit = "992edd17e0f020458084c031c42f85d520e6f6af",
+      remote = "https://github.com/tensorflow/metadata.git",
+  )
 
 check_bazel_version_at_least("0.24.1")

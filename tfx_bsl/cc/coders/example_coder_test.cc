@@ -11,17 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <memory>
-
 #include "tfx_bsl/cc/coders/example_coder.h"
 
-#include "testing/base/public/gmock.h"
-#include "testing/base/public/gunit.h"
-#include "arrow/builder.h"
-#include "arrow/record_batch.h"
-#include "arrow/type.h"
-#include "arrow/type_fwd.h"
-#include "third_party/tensorflow_metadata/proto/v0/schema.proto.h"
+#include <memory>
+
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include "arrow/api.h"
+#include "tfx_bsl/cc/util/status.h"
+#include "tensorflow/core/example/example.pb.h"
+#include "tensorflow/core/example/feature.pb.h"
+#include "tensorflow_metadata/proto/v0/schema.pb.h"
 
 namespace tfx_bsl {
 namespace {
@@ -60,8 +60,8 @@ std::vector<tensorflow::Example> CreateTestExamples() {
   return result;
 }
 
-::tensorflow::metadata::v0::Schema CreateTestSchema() {
-  ::tensorflow::metadata::v0::Schema result;
+tensorflow::metadata::v0::Schema CreateTestSchema() {
+  tensorflow::metadata::v0::Schema result;
   proto2::TextFormat::ParseFromString(
       R"(feature {
         name: "x"
@@ -127,39 +127,59 @@ std::shared_ptr<::arrow::RecordBatch> CreateTestRecordBatch() {
   return ::arrow::RecordBatch::Make(schema, 4, {x, y, z});
 }
 
+Status ExampleProtosToRecordBatch(
+    const std::vector<tensorflow::Example>& examples,
+    const tensorflow::metadata::v0::Schema* schema,
+    std::shared_ptr<arrow::RecordBatch>* result) {
+  std::vector<std::string> serialized_examples;
+  std::vector<absl::string_view> serialized_examples_str_views;
+  serialized_examples.reserve(examples.size());
+  serialized_examples_str_views.reserve(examples.size());
+  for (const auto& e : examples) {
+    serialized_examples.push_back(e.SerializeAsString());
+    serialized_examples_str_views.push_back(serialized_examples.back());
+  }
+  return ExamplesToRecordBatch(serialized_examples_str_views, schema, result);
+}
+
 TEST(ExampleProtoCoderTest, ExamplesToArrowTableWorks) {
-  std::vector<::tensorflow::Example> examples = CreateTestExamples();
-  ::tensorflow::metadata::v0::Schema schema = CreateTestSchema();
+  std::vector<tensorflow::Example> examples = CreateTestExamples();
+  tensorflow::metadata::v0::Schema schema = CreateTestSchema();
   std::shared_ptr<::arrow::RecordBatch> record_batch;
   std::shared_ptr<::arrow::RecordBatch> expected_record_batch =
       CreateTestRecordBatch();
 
-  Status status = ExamplesToRecordBatch(examples, &schema, &record_batch);
+  Status status = ExampleProtosToRecordBatch(examples, &schema, &record_batch);
   ASSERT_TRUE(status.ok());
   EXPECT_TRUE(record_batch->Equals(*expected_record_batch));
 }
 
 TEST(ExampleProtoCoderTest, ExamplesToArrowTableWithNoSchemaWorks) {
-  std::vector<::tensorflow::Example> examples = CreateTestExamples();
+  std::vector<tensorflow::Example> examples = CreateTestExamples();
   std::shared_ptr<::arrow::RecordBatch> record_batch;
   std::shared_ptr<::arrow::RecordBatch> expected_record_batch =
       CreateTestRecordBatch();
 
-  Status status = ExamplesToRecordBatch(examples, nullptr, &record_batch);
+  Status status = ExampleProtosToRecordBatch(examples, nullptr, &record_batch);
   ASSERT_TRUE(status.ok());
   EXPECT_TRUE(record_batch->Equals(*expected_record_batch));
 }
 
 TEST(ExampleProtoCoderTest, ArrowTableToExampleWorks) {
-  std::vector<::tensorflow::Example> examples;
-  std::vector<::tensorflow::Example> expected_examples = CreateTestExamples();
+  std::vector<std::string> serialized_examples;
+  std::vector<tensorflow::Example> expected_examples = CreateTestExamples();
   std::shared_ptr<::arrow::RecordBatch> record_batch =
       CreateTestRecordBatch();
 
-  Status status = RecordBatchToExamples(*record_batch, &examples);
+  Status status = RecordBatchToExamples(*record_batch, &serialized_examples);
   LOG(INFO) << status;
   ASSERT_TRUE(status.ok());
-  EXPECT_THAT(examples, testing::ElementsAre(
+  std::vector<tensorflow::Example> actual_examples;
+  actual_examples.reserve(serialized_examples.size());
+  for (const std::string& s : serialized_examples) {
+    actual_examples.emplace_back().ParseFromStringPiece(s);
+  }
+  EXPECT_THAT(actual_examples, testing::ElementsAre(
       testing::EquivToProto(expected_examples[0]),
       testing::EquivToProto(expected_examples[1]),
       testing::EquivToProto(expected_examples[2]),

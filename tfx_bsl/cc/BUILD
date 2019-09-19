@@ -15,6 +15,7 @@ tf_pybind_extension(
     module_name = "tfx_bsl_extension",
     deps = [
         "//tfx_bsl/cc/arrow:arrow_submodule",
+        "//tfx_bsl/cc/coders:coders_submodule",
         "@pybind11",
     ],
 )

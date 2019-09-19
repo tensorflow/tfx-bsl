@@ -24,3 +24,14 @@ cc_library(
         "@pybind11",
     ],
 )
+
+cc_library(
+    name = "absl_casters",
+    hdrs = ["absl_casters.h"],
+    copts = PYBIND_COPTS,
+    features = PYBIND_FEATURES,
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@pybind11",
+    ],
+)

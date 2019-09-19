@@ -1,4 +1,3 @@
-#include "tfx_bsl/cc/util/status.h"
 // Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,9 +16,13 @@
 
 #include <memory>
 
-#include "arrow/record_batch.h"
-#include "tensorflow/core/example/example.proto.h"
-#include "third_party/tensorflow_metadata/proto/v0/schema.proto.h"
+#include "absl/strings/string_view.h"
+#include "tfx_bsl/cc/util/status.h"
+#include "tensorflow_metadata/proto/v0/schema.pb.h"
+
+namespace arrow {
+class RecordBatch;
+}  // namespace arrow
 
 namespace tfx_bsl {
 
@@ -35,7 +38,7 @@ namespace tfx_bsl {
 // from  list[int64], list[binary] and list[float32].  In the case where no data
 // type can be inferred the arrow null type will be inferred.
 Status ExamplesToRecordBatch(
-    const std::vector<::tensorflow::Example>& examples,
+    const std::vector<absl::string_view>& serialized_examples,
     const ::tensorflow::metadata::v0::Schema* schema,
     std::shared_ptr<::arrow::RecordBatch> *record_batch);
 
@@ -45,7 +48,7 @@ Status ExamplesToRecordBatch(
 // list[float32].
 Status RecordBatchToExamples(
     const ::arrow::RecordBatch& record_batch,
-    std::vector<::tensorflow::Example>* examples);
+    std::vector<std::string>* serialized_examples);
 
 }  // namespace tfx_bsl
 

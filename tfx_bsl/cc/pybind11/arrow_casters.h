@@ -42,6 +42,23 @@ struct type_caster<std::shared_ptr<arrow::Array>> {
   }
 };
 
+template <>
+struct type_caster<std::shared_ptr<arrow::RecordBatch>> {
+ public:
+  PYBIND11_TYPE_CASTER(std::shared_ptr<arrow::RecordBatch>,
+                       _<std::shared_ptr<arrow::RecordBatch>>());
+
+  bool load(handle src, bool unused_implicit_conversion) {
+    return arrow::py::unwrap_record_batch(src.ptr(), &value).ok();
+  }
+
+  static handle cast(const std::shared_ptr<arrow::RecordBatch>& src,
+                     return_value_policy unused_return_value_policy,
+                     handle unused_handle) {
+    return arrow::py::wrap_record_batch(src);
+  }
+};
+
 }  // namespace detail
 }  // namespace pybind11
 #endif  // TFX_BSL_PYBIND11_ARROW_CASTERS_H_

@@ -20,6 +20,7 @@
 #include <string>
 #include <type_traits>
 
+#include "absl/base/attributes.h"
 #include "absl/base/optimization.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -151,7 +152,7 @@ enum Code {
 
 // Denotes success or failure of a call in tfx_bsl.
 // To be replaced by absl::Status once it's ready.
-class Status {
+class ABSL_MUST_USE_RESULT Status {
  public:
   // Create a success status.
   Status() {}

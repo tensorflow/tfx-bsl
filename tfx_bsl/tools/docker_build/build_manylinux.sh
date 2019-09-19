@@ -101,12 +101,9 @@ function stamp_wheel() {
   ${WHEEL_BIN} pack "${TMP_DIR}" --dest-dir "${WHEEL_DIR}"
 }
 
-setup_environment
-set -e
 set -x
-install_pyarrow "third_party/pyarrow_version.bzl"
-bazel_build
+setup_environment && \
+install_pyarrow "third_party/pyarrow_version.bzl" && \
+bazel_build && \
 stamp_wheel
-
-set +e
 set +x
