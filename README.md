@@ -1,5 +1,8 @@
 # TFX Basic Shared Libraries
 
+[![Python](https://img.shields.io/pypi/pyversions/tfx-bsl.svg?style=plastic)](https://github.com/tensorflow/tfx-bsl)
+[![PyPI](https://badge.fury.io/py/tfx-bsl.svg)](https://badge.fury.io/py/tfx-bsl)
+
 TFX Basic Shared Libraries (`tfx_bsl`) contains libraries shared by many
 [TensorFlow eXtended (TFX)](https://www.tensorflow.org/tfx) components.
 
