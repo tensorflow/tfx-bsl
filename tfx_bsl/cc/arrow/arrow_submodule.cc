@@ -20,24 +20,97 @@
 
 namespace tfx_bsl {
 namespace {
+
+std::function<
+    std::shared_ptr<arrow::Array>(const std::shared_ptr<arrow::Array>&)>
+WrapUnaryArrayFunction(Status (*func)(const arrow::Array&,
+                                      std::shared_ptr<arrow::Array>*)) {
+  return [func](const std::shared_ptr<arrow::Array>& array) {
+    std::shared_ptr<arrow::Array> result;
+    Status s = func(*array, &result);
+    if (!s.ok()) {
+      throw std::runtime_error(s.ToString());
+    }
+    return result;
+  };
+}
+
 void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
   auto m = arrow_module.def_submodule("array_util");
   m.doc() = "Arrow Array utilities.";
   m.def(
       "ListLengthsFromListArray",
-      [](const std::shared_ptr<arrow::Array>& array)
-          -> std::shared_ptr<arrow::Array> {
-        std::shared_ptr<arrow::Array> result;
-        Status s = ListLengthsFromListArray(*array, &result);
+      WrapUnaryArrayFunction(&ListLengthsFromListArray),
+      "Get lengths of lists in `list_array` in an int32 array. "
+      "Note that null and empty list both are of length 0 and the returned "
+      "array does not have any null element.\n"
+      "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2].");
+
+  m.def("GetFlattenedArrayParentIndices",
+        WrapUnaryArrayFunction(&GetFlattenedArrayParentIndices),
+        "Makes a int32 array of the same length as flattened `list_array`. "
+        "returned_array[i] == j means i-th element in flattened `list_array`"
+        "came from j-th list in `list_array`.\n"
+        "For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3].");
+
+  m.def("GetArrayNullBitmapAsByteArray",
+        WrapUnaryArrayFunction(&GetArrayNullBitmapAsByteArray),
+        "Makes a uint8 array of the same length as `array`. "
+        "returned_array[i] == True iff array[i] is null.\n"
+        "Note that this returned array can be converted to a numpy bool array"
+        "copy-free.");
+
+  m.def(
+      "GetBinaryArrayTotalByteSize",
+      [](const std::shared_ptr<arrow::Array>& array) {
+        size_t result;
+        Status s = GetBinaryArrayTotalByteSize(*array, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
         return result;
       },
-      "(Get lengths of lists in `list_array` in an int32 array. "
-      "Note that null and empty list both are of length 0 and the returned "
-      "array does not have any null element. \n"
-      "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2].");
+      "Returns the total byte size of a BinaryArray (note that StringArray is a"
+      "subclass of that so is also accepted here) i.e. the length of the"
+      "concatenation of all the binary strings in the list), in a Python Long."
+      "It might be a good idea to make this a pyarrow API.");
+
+  m.def(
+      "ValueCounts",
+      [](const std::shared_ptr<arrow::Array>& array) {
+        std::shared_ptr<arrow::Array> result;
+        Status s = ValueCounts(array, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      "Get counts of values in the array. Returns a struct array <values, "
+      "counts>.");
+
+  m.def(
+      "MakeListArrayFromParentIndicesAndValues",
+      [](size_t num_parents,
+         const std::shared_ptr<arrow::Array>& parent_indices,
+         const std::shared_ptr<arrow::Array>& values_array) {
+        std::shared_ptr<arrow::Array> result;
+        Status s = MakeListArrayFromParentIndicesAndValues(
+            num_parents, parent_indices, values_array, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      "Makes an Arrow ListArray from parent indices and values."
+      "For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] and"
+      "values_array_py is (an arrow Array of) [0, 1, 2, 3, 4], then the result "
+      "will be a ListArray of integers: [[0], [1, 2], None, [3, 4], None]."
+      "`num_parents` must be a Python integer (int or long) and it must be "
+      "greater than or equal to max(parent_indices) + 1."
+      "`parent_indices` must be a int64 1-D numpy array and the indices must be"
+      "sorted in increasing order."
+      "`values_array` must be an arrow Array and its length must equal to the"
+      " length of `parent_indices`.");
 }
 
 }  // namespace
