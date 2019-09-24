@@ -60,24 +60,6 @@ std::vector<tensorflow::Example> CreateTestExamples() {
   return result;
 }
 
-tensorflow::metadata::v0::Schema CreateTestSchema() {
-  tensorflow::metadata::v0::Schema result;
-  proto2::TextFormat::ParseFromString(
-      R"(feature {
-        name: "x"
-        type: BYTES
-      }
-      feature {
-        name: "y"
-        type: FLOAT
-      }
-      feature {
-        name: "z"
-        type: INT
-      })", &result);
-  return result;
-}
-
 std::shared_ptr<::arrow::RecordBatch> CreateTestRecordBatch() {
   std::shared_ptr<::arrow::BinaryBuilder> x_values_builder =
       std::make_shared<::arrow::BinaryBuilder>();
@@ -125,44 +107,6 @@ std::shared_ptr<::arrow::RecordBatch> CreateTestRecordBatch() {
   });
 
   return ::arrow::RecordBatch::Make(schema, 4, {x, y, z});
-}
-
-Status ExampleProtosToRecordBatch(
-    const std::vector<tensorflow::Example>& examples,
-    const tensorflow::metadata::v0::Schema* schema,
-    std::shared_ptr<arrow::RecordBatch>* result) {
-  std::vector<std::string> serialized_examples;
-  std::vector<absl::string_view> serialized_examples_str_views;
-  serialized_examples.reserve(examples.size());
-  serialized_examples_str_views.reserve(examples.size());
-  for (const auto& e : examples) {
-    serialized_examples.push_back(e.SerializeAsString());
-    serialized_examples_str_views.push_back(serialized_examples.back());
-  }
-  return ExamplesToRecordBatch(serialized_examples_str_views, schema, result);
-}
-
-TEST(ExampleProtoCoderTest, ExamplesToArrowTableWorks) {
-  std::vector<tensorflow::Example> examples = CreateTestExamples();
-  tensorflow::metadata::v0::Schema schema = CreateTestSchema();
-  std::shared_ptr<::arrow::RecordBatch> record_batch;
-  std::shared_ptr<::arrow::RecordBatch> expected_record_batch =
-      CreateTestRecordBatch();
-
-  Status status = ExampleProtosToRecordBatch(examples, &schema, &record_batch);
-  ASSERT_TRUE(status.ok());
-  EXPECT_TRUE(record_batch->Equals(*expected_record_batch));
-}
-
-TEST(ExampleProtoCoderTest, ExamplesToArrowTableWithNoSchemaWorks) {
-  std::vector<tensorflow::Example> examples = CreateTestExamples();
-  std::shared_ptr<::arrow::RecordBatch> record_batch;
-  std::shared_ptr<::arrow::RecordBatch> expected_record_batch =
-      CreateTestRecordBatch();
-
-  Status status = ExampleProtosToRecordBatch(examples, nullptr, &record_batch);
-  ASSERT_TRUE(status.ok());
-  EXPECT_TRUE(record_batch->Equals(*expected_record_batch));
 }
 
 TEST(ExampleProtoCoderTest, ArrowTableToExampleWorks) {

@@ -16,7 +16,9 @@
 
 #include <memory>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tensorflow_metadata/proto/v0/schema.pb.h"
 
@@ -25,8 +27,8 @@ class RecordBatch;
 }  // namespace arrow
 
 namespace tfx_bsl {
-
-// Converts a vector of Example protos to an Arrow RecordBatch.
+// ExamplesToRecordBatchDecoder converts a vector of Example protos to an Arrow
+// RecordBatch.
 //
 // If a schema is provided then the record batch will contain only the fields
 // from the schema, in the same order as the Schema.  The data type of the
@@ -37,10 +39,41 @@ namespace tfx_bsl {
 // If a schema is not provided then the data type will be inferred, and chosen
 // from  list[int64], list[binary] and list[float32].  In the case where no data
 // type can be inferred the arrow null type will be inferred.
-Status ExamplesToRecordBatch(
-    const std::vector<absl::string_view>& serialized_examples,
-    const ::tensorflow::metadata::v0::Schema* schema,
-    std::shared_ptr<::arrow::RecordBatch> *record_batch);
+
+class FeatureDecoder;
+class ExamplesToRecordBatchDecoder {
+ public:
+  static Status Make(
+      absl::optional<absl::string_view> serialized_schema,
+      std::unique_ptr<ExamplesToRecordBatchDecoder>* result);
+  ~ExamplesToRecordBatchDecoder();
+
+  ExamplesToRecordBatchDecoder(const ExamplesToRecordBatchDecoder&) = delete;
+  ExamplesToRecordBatchDecoder& operator=(const ExamplesToRecordBatchDecoder&) =
+      delete;
+
+  Status DecodeBatch(const std::vector<absl::string_view>& serialized_examples,
+                     std::shared_ptr<::arrow::RecordBatch>* record_batch) const;
+
+ private:
+  ExamplesToRecordBatchDecoder(
+      std::unique_ptr<const ::tensorflow::metadata::v0::Schema> schema,
+      std::unique_ptr<
+          absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
+          feature_decoders);
+  Status DecodeFeatureDecodersAvailable(
+      const std::vector<absl::string_view>& serialized_examples,
+      std::shared_ptr<::arrow::RecordBatch>* record_batch) const;
+  static Status DecodeFeatureDecodersUnavailable(
+      const std::vector<absl::string_view>& serialized_examples,
+      std::shared_ptr<::arrow::RecordBatch>* record_batch);
+
+ private:
+  const std::unique_ptr<const ::tensorflow::metadata::v0::Schema> schema_;
+  const std::unique_ptr<
+      absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
+      feature_decoders_;
+};
 
 // Converts a RecordBatch to a list of examples.
 //

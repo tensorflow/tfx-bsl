@@ -21,31 +21,87 @@ from tfx_bsl.coders import example_coder
 from tfx_bsl.pyarrow_tf import pyarrow as pa
 from tfx_bsl.pyarrow_tf import tensorflow as tf
 
+from google.protobuf import text_format
 from absl.testing import absltest
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-# TODO(zhuo): add more test cases.
-class ExampleCoderTest(absltest.TestCase):
+class ExamplesToRecordBatchDecoderTest(absltest.TestCase):
+  _EXAMPLES = [
+      text_format.Merge(
+          """
+     features {
+        feature {
+          key: "x"
+          value { bytes_list { value: [ "a", "b" ] } }
+        }
+        feature { key: "y" value { float_list { value: [ 1.0, 2.0 ] } } }
+        feature { key: "z" value { int64_list { value: [ 4, 5 ] } } }
+      }
+      """, tf.train.Example()),
+      text_format.Merge(
+          """
+      features {
+        feature { key: "x" value { } }
+        feature { key: "y" value { } }
+        feature { key: "z" value { } }
+      }
+      """, tf.train.Example()),
+      text_format.Merge(
+          """
+      features {
+        feature { key: "x" value { } }
+        feature { key: "y" value { } }
+        feature { key: "z" value { } }
+      }
+          """, tf.train.Example()),
+      text_format.Merge(
+          """
+      features {
+        feature { key: "x" value { bytes_list { value: [] } } }
+        feature { key: "y" value { float_list { value: [] } } }
+        feature { key: "z" value { int64_list { value: [] } } }
+      }
+          """, tf.train.Example()),
+  ]
 
-  def test_simple(self):
+  _SERIALIZED_EXAMPLES = [
+      e.SerializeToString() for e in _EXAMPLES]
 
-    example = tf.train.Example(
-        features=tf.train.Features(
-            feature={
-                'int_feature':
-                    tf.train.Feature(
-                        int64_list=tf.train.Int64List(value=[1, 2, 3])),
-                'float_feature':
-                    tf.train.Feature(
-                        float_list=tf.train.FloatList(value=[1.0])),
-                'bytes_feature':
-                    tf.train.Feature(
-                        bytes_list=tf.train.BytesList(
-                            value=[b'hello', b'world'])),
-            }))
-    result = example_coder.ExamplesToRecordBatch([example.SerializeToString()])
+  _SCHEMA = text_format.Merge(
+      """feature {
+        name: "x"
+        type: BYTES
+      }
+      feature {
+        name: "y"
+        type: FLOAT
+      }
+      feature {
+        name: "z"
+        type: INT
+      }""", schema_pb2.Schema())
+
+  _EXPECTED_RECORD_BATCH = pa.RecordBatch.from_arrays([
+      pa.array([[b"a", b"b"], None, None, []], type=pa.list_(pa.binary())),
+      pa.array([[1.0, 2.0], None, None, []], type=pa.list_(pa.float32())),
+      pa.array([[4, 5], None, None, []], type=pa.list_(pa.int64()))
+  ], ["x", "y", "z"])
+
+  def test_with_schema(self):
+    coder = example_coder.ExamplesToRecordBatchDecoder(
+        self._SCHEMA.SerializeToString())
+    result = coder.DecodeBatch(self._SERIALIZED_EXAMPLES)
     self.assertIsInstance(result, pa.RecordBatch)
+    self.assertTrue(result.equals(self._EXPECTED_RECORD_BATCH))
+
+  def test_without_schema(self):
+    coder = example_coder.ExamplesToRecordBatchDecoder()
+    result = coder.DecodeBatch(self._SERIALIZED_EXAMPLES)
+    self.assertIsInstance(result, pa.RecordBatch)
+    self.assertTrue(result.equals(self._EXPECTED_RECORD_BATCH))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+  help(example_coder.ExamplesToRecordBatchDecoder)
   absltest.main()

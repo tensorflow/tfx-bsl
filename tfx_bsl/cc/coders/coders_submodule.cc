@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "tfx_bsl/cc/coders/coders_submodule.h"
 
+#include <memory>
+
 #include "arrow/python/pyarrow.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/coders/example_coder.h"
@@ -24,24 +26,44 @@
 #include "include/pybind11/stl.h"
 
 namespace tfx_bsl {
-void DefineCodersSubmodule(pybind11::module main_module) {
+namespace py = pybind11;
+
+void DefineCodersSubmodule(py::module main_module) {
   arrow::py::import_pyarrow();
   auto m = main_module.def_submodule("coders");
   m.doc() = "Coders.";
-  m.def("ExamplesToRecordBatch",
-        [](const std::vector<absl::string_view>& serialized_examples)
-            -> std::shared_ptr<arrow::RecordBatch> {
-          std::shared_ptr<arrow::RecordBatch> result;
-          Status s = ExamplesToRecordBatch(serialized_examples,
-                                           /*schema=*/nullptr, &result);
-          if (!s.ok()) {
-            throw std::runtime_error(s.ToString());
-          }
-          return result;
-        });
+
+  py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
+      .def(py::init([](absl::string_view serialized_schema) {
+        std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+        Status s =
+            ExamplesToRecordBatchDecoder::Make(serialized_schema, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      }))
+      .def(py::init([] {
+        std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+        Status s = ExamplesToRecordBatchDecoder::Make(absl::nullopt, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      }))
+      .def("DecodeBatch",
+           [](ExamplesToRecordBatchDecoder* decoder,
+              const std::vector<absl::string_view>& serialized_examples) {
+             std::shared_ptr<arrow::RecordBatch> result;
+             Status s = decoder->DecodeBatch(serialized_examples, &result);
+             if (!s.ok()) {
+               throw std::runtime_error(s.ToString());
+             }
+             return result;
+           });
 
   m.def("ExampleToNumpyDict",
-        [](absl::string_view serialized_example) -> pybind11::object {
+        [](absl::string_view serialized_example) -> py::object {
           PyObject* numpy_dict = nullptr;
           Status s = ExampleToNumpyDict(serialized_example, &numpy_dict);
           if (!s.ok()) {
@@ -49,7 +71,7 @@ void DefineCodersSubmodule(pybind11::module main_module) {
           }
           // "steal" does notincrement the refcount of numpy_dict. (which is
           // already 1 after creation.
-          return pybind11::reinterpret_steal<pybind11::object>(numpy_dict);
+          return py::reinterpret_steal<py::object>(numpy_dict);
         });
 }
 
