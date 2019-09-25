@@ -18,6 +18,20 @@ cc_library(
 )
 
 cc_library(
+    name = "table_util",
+    srcs = ["table_util.cc"],
+    hdrs = ["table_util.h"],
+    deps = [
+        "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
+        "@arrow",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:variant",
+    ],
+)
+
+cc_library(
     name = "arrow_submodule",
     srcs = ["arrow_submodule.cc"],
     hdrs = ["arrow_submodule.h"],
@@ -30,6 +44,7 @@ cc_library(
     ],
     deps = [
         ":array_util",
+        ":table_util",
         "//tfx_bsl/cc/pybind11:arrow_casters",
         "@arrow",
         "@pybind11",
