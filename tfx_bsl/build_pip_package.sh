@@ -50,8 +50,8 @@ else
   TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.so"
   cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-bin/${TFX_BSL_EXTENSION}" \
     "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
-  chmod +w  "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 fi
+chmod +w "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 
 cp -f "${BUILD_WORKSPACE_DIRECTORY}"/bazel-bin/tfx_bsl/proto/*.py \
   "${BUILD_WORKSPACE_DIRECTORY}/tfx_bsl/proto/"
