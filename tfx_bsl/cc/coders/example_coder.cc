@@ -31,24 +31,26 @@ namespace tfx_bsl {
 // Decoder
 
 namespace {
-Status ParseExamples(const std::vector<absl::string_view>& serialized_examples,
-                     std::vector<tensorflow::Example>* examples) {
-  for (const auto serialized_example : serialized_examples) {
-    examples->emplace_back();
-    if (!examples->back().ParseFromArray(serialized_example.data(),
-                                         serialized_example.size())) {
-      return errors::DataLoss("Unable to parse example.");
-    }
+// Implementation notes:
+// a ~5x improvement in parsing performance (which is ~70% of
+// parsing+arrow_building) is possible if we directly use
+// proto2::io::CodedInputSteam and bypass the creation of the Example objects.
+Status ParseExample(const absl::string_view serialized_example,
+                    tensorflow::Example* example) {
+  if (!example->ParseFromArray(serialized_example.data(),
+                               serialized_example.size())) {
+    return errors::DataLoss("Unable to parse example.");
   }
   return Status::OK();
 }
 
 }  // namespace
+
 class FeatureDecoder {
  public:
-  FeatureDecoder(const std::shared_ptr<::arrow::ArrayBuilder>& values_builder) :
-      list_builder_(::arrow::default_memory_pool(), values_builder) {
-  }
+  FeatureDecoder(const std::shared_ptr<::arrow::ArrayBuilder>& values_builder)
+      : list_builder_(::arrow::default_memory_pool(), values_builder),
+        feature_was_added_(false) {}
   virtual ~FeatureDecoder() {}
 
   // Called if the feature is present in the Example.
@@ -60,7 +62,11 @@ class FeatureDecoder {
       TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(list_builder_.Append()));
       TFX_BSL_RETURN_IF_ERROR(DecodeFeatureValues(feature));
     }
-    assert (!feature_was_added_);
+    if (feature_was_added_) {
+      return errors::Internal(
+          "Internal error: FinishFeature() must be called before "
+          "DecodeFeature() can be called again.");
+    }
     feature_was_added_ = true;
     return Status::OK();
   }
@@ -91,7 +97,7 @@ class FeatureDecoder {
 
  private:
   ::arrow::ListBuilder list_builder_;
-  bool feature_was_added_ = false;
+  bool feature_was_added_;
 };
 
 
@@ -256,14 +262,17 @@ Status ExamplesToRecordBatchDecoder::DecodeBatch(
 Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<::arrow::RecordBatch>* record_batch) const {
-  std::vector<tensorflow::Example> examples;
-  TFX_BSL_RETURN_IF_ERROR(ParseExamples(serialized_examples, &examples));
-  for (int i = 0; i < examples.size(); ++i) {
-    const tensorflow::Example& example = examples[i];
+  tensorflow::Example example;
+  for (int i = 0; i < serialized_examples.size(); ++i) {
+    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], &example));
     for (const auto& p : example.features().feature()) {
       const std::string& feature_name = p.first;
       const tensorflow::Feature& feature = p.second;
-      const auto& it = feature_decoders_->find(feature_name);
+      if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
+        // treat features with no kind oneof populated as missing (null).
+        continue;
+      }
+      const auto it = feature_decoders_->find(feature_name);
       if (it != feature_decoders_->end()) {
         TFX_BSL_RETURN_IF_ERROR(it->second->DecodeFeature(feature));
       }
@@ -281,8 +290,8 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
     TFX_BSL_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
     fields.push_back(::arrow::field(feature.name(), arrays.back()->type()));
   }
-  *record_batch = ::arrow::RecordBatch::Make(arrow::schema(fields),
-                                             examples.size(), arrays);
+  *record_batch = ::arrow::RecordBatch::Make(
+      arrow::schema(fields), serialized_examples.size(), arrays);
   return Status::OK();
 }
 
@@ -290,8 +299,6 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
 Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<::arrow::RecordBatch>* record_batch) {
-  std::vector<tensorflow::Example> examples;
-  TFX_BSL_RETURN_IF_ERROR(ParseExamples(serialized_examples, &examples));
   absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>
       feature_decoders;
   // all features which have been observed.  `feature_decoders` will only
@@ -300,8 +307,9 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
   // created.
   absl::flat_hash_set<std::string> all_features;
 
-  for (int i = 0; i < examples.size(); ++i) {
-    const tensorflow::Example& example = examples[i];
+  tensorflow::Example example;
+  for (int i = 0; i < serialized_examples.size(); ++i) {
+    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], &example));
     for (const auto& p : example.features().feature()) {
       const std::string& feature_name = p.first;
       const tensorflow::Feature& feature = p.second;
@@ -309,8 +317,6 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
       FeatureDecoder* feature_decoder = nullptr;
       if (it != feature_decoders.end()) {
         feature_decoder = it->second.get();
-      } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
-        all_features.insert(feature_name);
       } else {
         all_features.insert(feature_name);
         switch (feature.kind_case()) {
@@ -324,19 +330,21 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
             feature_decoder = BytesDecoder::Make();
             break;
           case tensorflow::Feature::KIND_NOT_SET:
-            assert(false);  // already handled above
+            // Leave feature_decoder as nullptr.
             break;
         }
-        // Append i nulls.  Note that this will result in 0 nulls being
-        // appended when i = 0, and generally will result in the number of
-        // nulls being appended equal to the number of examples processsed
-        // excluding the current example.
-        for (int j = 0; j < i; ++j) {
-          TFX_BSL_RETURN_IF_ERROR(feature_decoder->AppendNull());
+        if (feature_decoder) {
+          // Append i nulls.  Note that this will result in 0 nulls being
+          // appended when i = 0, and generally will result in the number of
+          // nulls being appended equal to the number of examples processsed
+          // excluding the current example.
+          for (int j = 0; j < i; ++j) {
+            TFX_BSL_RETURN_IF_ERROR(feature_decoder->AppendNull());
+          }
+          feature_decoders[feature_name] = absl::WrapUnique(feature_decoder);
         }
-        feature_decoders[feature_name] = absl::WrapUnique(feature_decoder);
       }
-      if (feature_decoder != nullptr) {
+      if (feature_decoder) {
         TFX_BSL_RETURN_IF_ERROR(feature_decoder->DecodeFeature(feature));
       }
     }
@@ -359,13 +367,13 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
       TFX_BSL_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
       fields.push_back(::arrow::field(feature_name, arrays.back()->type()));
     } else {
-      arrays.emplace_back(new ::arrow::NullArray(examples.size()));
+      arrays.emplace_back(new ::arrow::NullArray(serialized_examples.size()));
       fields.push_back(::arrow::field(feature_name, ::arrow::null()));
     }
   }
 
-  *record_batch = ::arrow::RecordBatch::Make(arrow::schema(fields),
-                                             examples.size(), arrays);
+  *record_batch = ::arrow::RecordBatch::Make(
+      arrow::schema(fields), serialized_examples.size(), arrays);
   return Status::OK();
 }
 
@@ -378,13 +386,18 @@ class FeatureEncoder {
     list_array_(list_array) {
   }
   virtual ~FeatureEncoder() {}
-  void EncodeFeature(const int32_t index, tensorflow::Feature* feature) {
-    assert (index < list_array_->length());
+  Status EncodeFeature(const int32_t index, tensorflow::Feature* feature) {
+    if (index >= list_array_->length()) {
+      return errors::InvalidArgument(
+          absl::StrCat("out-of-bound example index: ", index, " vs ",
+                       list_array_->length()));
+    }
     const int32_t start_offset = list_array_->raw_value_offsets()[index];
     const int32_t end_offset = list_array_->raw_value_offsets()[index + 1];
     if (list_array_->IsValid(index)) {
       EncodeFeatureValues(start_offset, end_offset, feature);
     }
+    return Status::OK();
   }
 
  protected:
@@ -515,8 +528,8 @@ Status RecordBatchToExamples(
     examples.emplace_back();
     auto* feature_map = examples.back().mutable_features()->mutable_feature();
     for (const auto& p : feature_encoders) {
-      tensorflow::Feature *feature = &(*feature_map)[p.first];
-      p.second->EncodeFeature(example_index, feature);
+      tensorflow::Feature* feature = &(*feature_map)[p.first];
+      TFX_BSL_RETURN_IF_ERROR(p.second->EncodeFeature(example_index, feature));
     }
   }
   serialized_examples->clear();
