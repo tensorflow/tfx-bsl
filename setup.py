@@ -90,11 +90,11 @@ setup(
     # six, and protobuf) with TF.
     install_requires=[
         'absl-py>=0.7,<1',
-        'apache-beam[gcp]>=2.14,<3',
+        'apache-beam[gcp]>=2.16,<3',
         'numpy>=1.16,<2',
         'protobuf>=3.7,<4',
-        'six>=1.10,<2',
-        'tensorflow-metadata>=0.14,<0.15',
+        'six>=1.12,<2',
+        'tensorflow-metadata>=0.15,<0.16',
     ] + [_PYARROW_VERSION_REQUIREMENT],
     python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,<4',
     packages=find_packages(),

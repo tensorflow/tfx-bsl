@@ -1,7 +1,8 @@
-<!-- mdlint off(HEADERS_TOO_MANY_H1) -->
-# Current version (not yet released; still in development)
+# `tfx_bsl` release notes
 
-## Major Features and Improvements
+## Release 0.15.0
+
+### Major Features and Improvements
 
 * Added a tf.Example <-> Arrow coder.
 * Added a tf.Example -> `Dict[str, np.ndarray]` coder (this is a legacy
@@ -10,8 +11,8 @@
 * Added a python class, `tfx_bsl.beam.Shared` that helps sharing a single
   instance of object across multiple threads.
 
-## Bug Fixes and Other Changes
+### Bug Fixes and Other Changes
 
-## Breaking Changes
+### Breaking Changes
 
-## Deprecations
+### Deprecations
