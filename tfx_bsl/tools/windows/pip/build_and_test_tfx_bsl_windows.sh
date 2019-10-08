@@ -86,6 +86,10 @@ run_py_tests() {
 
     rm -f "${TEST_LOG_PATH}"
   done
+  if [ ! -z "${FAILED_TESTS}" ]; then
+    echo "Some tests failed. Check the logs for details."
+    exit 1
+  fi
 }
 
 set -x
@@ -107,6 +111,7 @@ source "tfx_bsl/tools/windows/pip/build_tfx_bsl_windows.sh" \
 
 # Uninstall Cython (if installed) as Beam has issues with Cython installed.
 # TODO(b/130120997): Avoid installing Beam without Cython.
+pip install ${TENSORFLOW} && \
 pip install ${wheel} && \
 pip uninstall -y Cython && \
 run_py_tests "tfx_bsl" $@ \
