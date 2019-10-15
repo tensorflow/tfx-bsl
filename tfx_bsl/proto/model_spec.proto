@@ -1,0 +1,43 @@
+// Copyright 2019 Google LLC. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+syntax = "proto3";
+
+package tfx_bsl.model_spec;
+
+// Specifies the model by which inference is performed.
+message InferenceEndpoint {
+  oneof type {
+    SavedModelSpec saved_model_spec = 1;
+    // TODO(b/131873699): Add support for model_endpoint and model_handle for
+    // remote inference.
+  }
+}
+
+message SavedModelSpec {
+  // Path to the model.
+  string model_path = 1;
+
+  // Specifies the signature name to run the inference with. If multiple
+  // signature names are specified, inference is done as a multi head model.
+  // If nothing is specified, default serving signature is used as a single
+  // head model.
+  repeated string signature_name = 2;
+
+  // Tags to select a specific inference graph from the model.
+  // If no tags are given, the "serve" metagraph is used for cpu deployment.
+  // See
+  // [tag_constants](https://www.tensorflow.org/api_docs/python/tf/saved_model/tag_constants)
+  // for valid tags.
+  repeated string tag = 3;
+}

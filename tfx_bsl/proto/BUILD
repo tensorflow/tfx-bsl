@@ -1,11 +1,26 @@
-package(default_visibility = ["//tfx_bsl:__subpackages__"])
+# Developers: use these two macros to define c++ or python proto targets.
+load("//tfx_bsl:build_macros.bzl", "tfx_bsl_proto_library", "tfx_bsl_py_proto_library")
+
+package(default_visibility = [
+    "//learning/tfx/pipeline:__subpackages__",
+    "//tfx_bsl:__subpackages__",
+    "//third_party/tfx/components:__subpackages__",
+])
 
 licenses(["notice"])  # Apache 2.0
 
-# Developers: use these two macros to define c++ or python proto targets.
-# load("//tfx_bsl:build_macros.bzl", "tfx_bsl_proto_library", "tfx_bsl_py_proto_library")
-
 filegroup(
     name = "public_protos",
-    srcs = [],
+    srcs = ["model_spec_pb2.py"],
+)
+
+tfx_bsl_proto_library(
+    name = "model_spec_proto",
+    srcs = ["model_spec.proto"],
+)
+
+tfx_bsl_py_proto_library(
+    name = "model_spec_proto_py_pb2",
+    srcs = ["model_spec.proto"],
+    proto_library = "model_spec_proto",
 )

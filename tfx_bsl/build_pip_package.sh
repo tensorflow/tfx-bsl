@@ -46,15 +46,20 @@ if is_windows; then
   TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.pyd"
   cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-out/x64_windows-opt/bin/${TFX_BSL_EXTENSION}" \
     "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
+  cp -f "${BUILD_WORKSPACE_DIRECTORY}"/bazel-genfiles/tfx_bsl/proto/*.py \
+    "${BUILD_WORKSPACE_DIRECTORY}"/tfx_bsl/proto
 else
+  # If run by "bazel run", $(pwd) is the .runfiles dir that contains all the
+  # data dependencies.
+  RUNFILES_DIR=$(pwd)
   TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.so"
-  cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-bin/${TFX_BSL_EXTENSION}" \
+  cp -f "${RUNFILES_DIR}/${TFX_BSL_EXTENSION}" \
     "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
+  cp -f "${RUNFILES_DIR}"/tfx_bsl/proto/*.py \
+    "${BUILD_WORKSPACE_DIRECTORY}/tfx_bsl/proto/"
 fi
 chmod +w "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
 
-cp -f "${BUILD_WORKSPACE_DIRECTORY}"/bazel-bin/tfx_bsl/proto/*.py \
-  "${BUILD_WORKSPACE_DIRECTORY}/tfx_bsl/proto/"
 
 # Create the wheel
 cd ${BUILD_WORKSPACE_DIRECTORY}
