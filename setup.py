@@ -96,8 +96,8 @@ setup(
         'psutil>=5.6,<6',
         'six>=1.12,<2',
         'tensorflow-metadata>=0.15,<0.16',
-        'tensorflow-serving-api>=1.14,<2',
-        # TODO(b/142345077): Add tensorflow dependnecy.
+        # TODO(b/142345077): Add tensorflow dependency.
+        # TODO(b/123240958): Add tensorflow-serving-api dependency.
     ] + [_PYARROW_VERSION_REQUIREMENT],
     python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,<4',
     packages=find_packages(),
