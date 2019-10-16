@@ -188,11 +188,11 @@ class _BaseBatchDoFn(beam.DoFn):
           _METRICS_NAMESPACE, 'load_model_latency_milli_secs')
 
     def update_metrics_with_cache(self):
-      if self.load_model_latency_milli_secs_cache:
+      if self.load_model_latency_milli_secs_cache is not None:
         self._load_model_latency_milli_secs.update(
             self.load_model_latency_milli_secs_cache)
         self.load_model_latency_milli_secs_cache = None
-      if self.model_byte_size_cache:
+      if self.model_byte_size_cache is not None:
         self._model_byte_size.update(self.model_byte_size_cache)
         self.model_byte_size_cache = None
 

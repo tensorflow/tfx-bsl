@@ -92,95 +92,105 @@ class RunInferenceTest(tf.test.TestCase):
     path = os.path.join(
         os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR', self.get_temp_dir()),
         test_dir)
-    if not tf.gfile.Exists(path):
-      tf.gfile.MakeDirs(path)
+    if not tf.io.gfile.exists(path):
+      tf.io.gfile.makedirs(path)
     if sub_dir is not None:
       path = os.path.join(path, sub_dir)
     return path
 
   def _build_predict_model(self, model_path):
     """Exports the dummy sum predict model."""
-    sess = tf.compat.v1.Session()
-    sess.run(tf.initialize_all_variables())
 
-    input_tensors = {
-        'x': tf.FixedLenFeature([1], dtype=tf.float32, default_value=0)
-    }
-    serving_receiver = (
-        tf.estimator.export.build_parsing_serving_input_receiver_fn(
-            input_tensors)())
-    output_tensors = {'y': serving_receiver.features['x'] * 2}
-    signature_def = tf.estimator.export.PredictOutput(
-        output_tensors).as_signature_def(serving_receiver.receiver_tensors)
-    builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(model_path)
-    builder.add_meta_graph_and_variables(
-        sess, [tf.saved_model.tag_constants.SERVING],
-        signature_def_map={
-            tf.saved_model.signature_constants
-            .DEFAULT_SERVING_SIGNATURE_DEF_KEY:
-                signature_def,
-        })
-    builder.save()
+    with tf.compat.v1.Graph().as_default():
+      input_tensors = {
+          'x': tf.compat.v1.io.FixedLenFeature(
+              [1], dtype=tf.float32, default_value=0)
+      }
+      serving_receiver = (
+          tf.compat.v1.estimator.export.build_parsing_serving_input_receiver_fn(
+              input_tensors)())
+      output_tensors = {'y': serving_receiver.features['x'] * 2}
+      sess = tf.compat.v1.Session()
+      sess.run(tf.compat.v1.initializers.global_variables())
+      signature_def = tf.compat.v1.estimator.export.PredictOutput(
+          output_tensors).as_signature_def(serving_receiver.receiver_tensors)
+      builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(model_path)
+      builder.add_meta_graph_and_variables(
+          sess, [tf.compat.v1.saved_model.tag_constants.SERVING],
+          signature_def_map={
+              tf.compat.v1.saved_model.signature_constants
+              .DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                  signature_def,
+          })
+      builder.save()
 
   def _build_regression_signature(self, input_tensor, output_tensor):
     """Helper function for building a regression SignatureDef."""
     input_tensor_info = tf.compat.v1.saved_model.utils.build_tensor_info(
         input_tensor)
     signature_inputs = {
-        tf.saved_model.signature_constants.REGRESS_INPUTS: input_tensor_info
+        tf.compat.v1.saved_model.signature_constants.REGRESS_INPUTS:
+            input_tensor_info
     }
     output_tensor_info = tf.compat.v1.saved_model.utils.build_tensor_info(
         output_tensor)
     signature_outputs = {
-        tf.saved_model.signature_constants.REGRESS_OUTPUTS: output_tensor_info
+        tf.compat.v1.saved_model.signature_constants.REGRESS_OUTPUTS:
+            output_tensor_info
     }
-    return tf.saved_model.signature_def_utils.build_signature_def(
+    return tf.compat.v1.saved_model.signature_def_utils.build_signature_def(
         signature_inputs, signature_outputs,
-        tf.saved_model.signature_constants.REGRESS_METHOD_NAME)
+        tf.compat.v1.saved_model.signature_constants.REGRESS_METHOD_NAME)
 
   def _build_classification_signature(self, input_tensor, scores_tensor):
     """Helper function for building a classification SignatureDef."""
     input_tensor_info = tf.compat.v1.saved_model.utils.build_tensor_info(
         input_tensor)
     signature_inputs = {
-        tf.saved_model.signature_constants.CLASSIFY_INPUTS: input_tensor_info
+        tf.compat.v1.saved_model.signature_constants.CLASSIFY_INPUTS:
+            input_tensor_info
     }
     output_tensor_info = tf.compat.v1.saved_model.utils.build_tensor_info(
         scores_tensor)
     signature_outputs = {
-        tf.saved_model.signature_constants.CLASSIFY_OUTPUT_SCORES:
+        tf.compat.v1.saved_model.signature_constants.CLASSIFY_OUTPUT_SCORES:
             output_tensor_info
     }
-    return tf.saved_model.signature_def_utils.build_signature_def(
+    return tf.compat.v1.saved_model.signature_def_utils.build_signature_def(
         signature_inputs, signature_outputs,
-        tf.saved_model.signature_constants.CLASSIFY_METHOD_NAME)
+        tf.compat.v1.saved_model.signature_constants.CLASSIFY_METHOD_NAME)
 
   def _build_multihead_model(self, model_path):
-    sess = tf.compat.v1.Session()
-    sess.run(tf.initialize_all_variables())
-    input_example = tf.placeholder(tf.string, name='input_examples_tensor')
-    config = {
-        'x': tf.FixedLenFeature([1], dtype=tf.float32, default_value=0),
-        'y': tf.FixedLenFeature([1], dtype=tf.float32, default_value=0),
-    }
-    features = tf.parse_example(input_example, config)
-    x = features['x']
-    y = features['y']
-    sum_pred = x + y
-    diff_pred = tf.abs(x - y)
-    signature_def_map = {
-        'regress_diff':
-            self._build_regression_signature(input_example, diff_pred),
-        'classify_sum':
-            self._build_classification_signature(input_example, sum_pred),
-        tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
-            self._build_regression_signature(input_example, sum_pred)
-    }
-    builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(model_path)
-    builder.add_meta_graph_and_variables(
-        sess, [tf.saved_model.tag_constants.SERVING],
-        signature_def_map=signature_def_map)
-    builder.save()
+    with tf.compat.v1.Graph().as_default():
+      input_example = tf.compat.v1.placeholder(
+          tf.string, name='input_examples_tensor')
+      config = {
+          'x': tf.compat.v1.io.FixedLenFeature(
+              [1], dtype=tf.float32, default_value=0),
+          'y': tf.compat.v1.io.FixedLenFeature(
+              [1], dtype=tf.float32, default_value=0),
+      }
+      features = tf.compat.v1.parse_example(input_example, config)
+      x = features['x']
+      y = features['y']
+      sum_pred = x + y
+      diff_pred = tf.abs(x - y)
+      sess = tf.compat.v1.Session()
+      sess.run(tf.compat.v1.initializers.global_variables())
+      signature_def_map = {
+          'regress_diff':
+              self._build_regression_signature(input_example, diff_pred),
+          'classify_sum':
+              self._build_classification_signature(input_example, sum_pred),
+          tf.compat.v1.saved_model.signature_constants
+          .DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+              self._build_regression_signature(input_example, sum_pred)
+      }
+      builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(model_path)
+      builder.add_meta_graph_and_variables(
+          sess, [tf.compat.v1.saved_model.tag_constants.SERVING],
+          signature_def_map=signature_def_map)
+      builder.save()
 
   def _run_inference_with_beam(self, example_path, inference_endpoint,
                                prediction_log_path):
@@ -196,8 +206,8 @@ class RunInferenceTest(tf.test.TestCase):
 
   def _get_results(self, prediction_log_path):
     results = []
-    for f in tf.gfile.Glob(prediction_log_path + '-?????-of-?????'):
-      record_iterator = tf.python_io.tf_record_iterator(path=f)
+    for f in tf.io.gfile.glob(prediction_log_path + '-?????-of-?????'):
+      record_iterator = tf.compat.v1.io.tf_record_iterator(path=f)
       for record_string in record_iterator:
         prediction_log = prediction_log_pb2.PredictionLog()
         prediction_log.MergeFromString(record_string)
@@ -348,7 +358,10 @@ class RunInferenceTest(tf.test.TestCase):
       ])
       def call(self, serialized_example):
         features = {
-            'input1': tf.FixedLenFeature([1], dtype=tf.float32, default_value=0)
+            'input1':
+                tf.compat.v1.io.FixedLenFeature([1],
+                                                dtype=tf.float32,
+                                                default_value=0)
         }
         input_tensor_dict = tf.io.parse_example(serialized_example, features)
         return inference_model(input_tensor_dict['input1'])
@@ -360,7 +373,7 @@ class RunInferenceTest(tf.test.TestCase):
         metrics=['accuracy'])
 
     model_path = self._get_output_data_dir('model')
-    tf.keras.experimental.export_saved_model(
+    tf.compat.v1.keras.experimental.export_saved_model(
         model, model_path, serving_only=True)
 
     example_path = self._get_output_data_dir('examples')
