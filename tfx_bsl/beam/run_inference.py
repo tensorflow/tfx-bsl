@@ -32,6 +32,14 @@ from tfx_bsl.proto import model_spec_pb2
 from tfx_bsl.pyarrow_tf import tensorflow as tf
 from typing import Any, Iterable, List, Mapping, Sequence, Text, Tuple, Union
 
+# TODO(b/131873699): Remove once 1.x support is dropped.
+# pylint: disable=g-import-not-at-top
+try:
+  # We need to import this in order to register all quantiles ops, even though
+  # it's not directly used.
+  from tensorflow.contrib.boosted_trees.python.ops import quantile_ops as _  # pylint: disable=unused-import
+except ImportError:
+  pass
 from tensorflow.python.saved_model import loader_impl  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
