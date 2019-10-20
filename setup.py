@@ -89,15 +89,15 @@ setup(
     # Make sure to sync the versions of common dependencies (absl-py, numpy,
     # six, and protobuf) with TF.
     install_requires=[
-        'absl-py>=0.7,<1',
+        'absl-py>=0.7,<0.9',
         'apache-beam[gcp]>=2.16,<3',
         'numpy>=1.16,<2',
         'protobuf>=3.7,<4',
         'psutil>=5.6,<6',
         'six>=1.12,<2',
         'tensorflow-metadata>=0.15,<0.16',
-        # TODO(b/142345077): Add tensorflow dependency.
-        # TODO(b/123240958): Add tensorflow-serving-api dependency.
+        'tensorflow>=1.15,<2.2',
+        'tensorflow-serving-api>=1.15,<3',
     ] + [_PYARROW_VERSION_REQUIREMENT],
     python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,<4',
     packages=find_packages(),

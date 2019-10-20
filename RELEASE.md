@@ -2,6 +2,17 @@
 
 ## Current version (not yet released; still in development)
 
+*   Added dependency on `tensorflow>=1.15,<2.2`. Starting from 1.15, package
+    `tensorflow` comes with GPU support. Users won't need to choose between
+    `tensorflow` and `tensorflow-gpu`.
+    *   Caveat: `tensorflow` 2.0.0 is an exception and does not have GPU
+        support. If `tensorflow-gpu` 2.0.0 is installed before installing
+        `tfx-bsl`, it will be replaced with `tensorflow` 2.0.0. Re-install
+        `tensorflow-gpu` 2.0.0 if needed.
+*   Added dependency on `tensorflow-serving-api>=1.15,<3`.
+*   Added a python PTransform, `tfx_bsl.beam.RunInference` that enables batch
+    inference.
+
 ### Major Features and Improvements
 
 ### Bug Fixes and Other Changes
@@ -20,8 +31,8 @@
 *   Added some common Arrow utilities (`tfx_bsl.arrow.array_util`).
 *   Added a python class, `tfx_bsl.beam.Shared` that helps sharing a single
     instance of object across multiple threads.
-*   Added a python PTransform, `tfx_bsl.beam.RunInference` that enables batch
-    inference.
+*   Added dependency on `apache-beam[gcp]>=2.16,<3`.
+*   Added dependency on `tensorflow-metadata>=0.15,<0.16`.
 
 ### Bug Fixes and Other Changes
 

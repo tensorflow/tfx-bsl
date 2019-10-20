@@ -40,6 +40,7 @@ try:
   from tensorflow.contrib.boosted_trees.python.ops import quantile_ops as _  # pylint: disable=unused-import
 except ImportError:
   pass
+# TODO(b/140306674): stop using the internal TF API.
 from tensorflow.python.saved_model import loader_impl  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
