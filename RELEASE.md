@@ -1,6 +1,6 @@
 # `tfx_bsl` release notes
 
-## Current version (not yet released; still in development)
+## Release 0.15.1
 
 *   Added dependency on `tensorflow>=1.15,<2.2`. Starting from 1.15, package
     `tensorflow` comes with GPU support. Users won't need to choose between
