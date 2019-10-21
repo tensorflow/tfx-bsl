@@ -111,9 +111,8 @@ source "tfx_bsl/tools/windows/pip/build_tfx_bsl_windows.sh" \
 
 # Uninstall Cython (if installed) as Beam has issues with Cython installed.
 # TODO(b/130120997): Avoid installing Beam without Cython.
-pip install ${TENSORFLOW} && \
-pip install tensorflow-serving-api && \
 pip install ${wheel} && \
+pip install ${TENSORFLOW} && \
 pip uninstall -y Cython && \
 run_py_tests "tfx_bsl" $@ \
   || { echo "Failed to build and run unit tests." exit 1; }
