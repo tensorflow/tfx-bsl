@@ -1,6 +1,18 @@
 # `tfx_bsl` release notes
 
+## Current version (not yet released; still in development)
+
+### Major Features and Improvements
+
+### Bug Fixes and Other Changes
+
+### Breaking Changes
+
+### Deprecations
+
 ## Release 0.15.1
+
+### Major Features and Improvements
 
 *   Added dependency on `tensorflow>=1.15,<2.2`. Starting from 1.15, package
     `tensorflow` comes with GPU support. Users won't need to choose between
@@ -12,8 +24,6 @@
 *   Added dependency on `tensorflow-serving-api>=1.15,<3`.
 *   Added a python PTransform, `tfx_bsl.beam.RunInference` that enables batch
     inference.
-
-### Major Features and Improvements
 
 ### Bug Fixes and Other Changes
 
