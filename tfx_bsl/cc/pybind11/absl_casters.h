@@ -23,10 +23,26 @@
 namespace pybind11 {
 namespace detail {
 // absl::string_view caster.
-#ifndef ABSL_HAVE_STD_STRING_VIEW
+
+#ifdef PYBIND11_HAS_STRING_VIEW
+
+// If pybind11 registered a std::string_view caster, only add an
+// absl::string_view caster if that's a different type.
+template <typename T>
+struct type_caster<
+    T, std::enable_if_t<
+           !std::is_same<absl::string_view, std::string_view>::value &&
+           std::is_same<T, absl::string_view>::value>>
+    : string_caster<absl::string_view, true> {};
+
+#else
+
+// If pybind11 didn't register a std::string_view caster, register an
+// absl::string_view caster unconditionally.
 template <>
 struct type_caster<absl::string_view> : string_caster<absl::string_view, true> {
 };
+
 #endif
 
 }  // namespace detail
