@@ -1,8 +1,11 @@
 # `tfx_bsl` release notes
 
-## Current version (not yet released; still in development)
+## Release 0.15.2
 
 ### Major Features and Improvements
+
+*   Added a (beam) utility to infer column types from a `PCollection[CSVLine]`.
+*   Added a utility to parse a CSVLine into cells (conforming to RFC4180)
 
 ### Bug Fixes and Other Changes
 
