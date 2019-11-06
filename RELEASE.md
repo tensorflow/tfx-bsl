@@ -1,8 +1,11 @@
 # `tfx_bsl` release notes
 
-## Current version (not yet released; still in development)
+## Release 0.15.3
 
 ### Major Features and Improvements
+
+*  Requires `apache-beam>=2.16,<2.17` as 2.17 requires a pyarrow version
+   that we don't support yet.
 
 ### Bug Fixes and Other Changes
 

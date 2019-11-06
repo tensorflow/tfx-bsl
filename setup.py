@@ -90,7 +90,7 @@ setup(
     # six, and protobuf) with TF.
     install_requires=[
         'absl-py>=0.7,<0.9',
-        'apache-beam[gcp]>=2.16,<3',
+        'apache-beam[gcp]>=2.16,<2.17',
         'numpy>=1.16,<2',
         'protobuf>=3.7,<4',
         'psutil>=5.6,<6',
