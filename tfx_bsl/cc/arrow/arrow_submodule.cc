@@ -22,6 +22,7 @@
 
 namespace tfx_bsl {
 namespace {
+namespace py = ::pybind11;
 
 std::function<
     std::shared_ptr<arrow::Array>(const std::shared_ptr<arrow::Array>&)>
@@ -37,30 +38,38 @@ WrapUnaryArrayFunction(Status (*func)(const arrow::Array&,
   };
 }
 
-void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
+void DefineArrayUtilSubmodule(py::module arrow_module) {
   auto m = arrow_module.def_submodule("array_util");
   m.doc() = "Arrow Array utilities.";
   m.def(
       "ListLengthsFromListArray",
       WrapUnaryArrayFunction(&ListLengthsFromListArray),
-      "Get lengths of lists in `list_array` in an int32 array. "
-      "Note that null and empty list both are of length 0 and the returned "
-      "array does not have any null element.\n"
-      "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2].");
+      py::doc(
+          "Get lengths of lists in `list_array` in an int32 array. "
+          "Note that null and empty list both are of length 0 and the returned "
+          "array does not have any null element.\n"
+          "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]."),
+      py::call_guard<py::gil_scoped_release>());
 
-  m.def("GetFlattenedArrayParentIndices",
-        WrapUnaryArrayFunction(&GetFlattenedArrayParentIndices),
-        "Makes a int32 array of the same length as flattened `list_array`. "
-        "returned_array[i] == j means i-th element in flattened `list_array`"
-        "came from j-th list in `list_array`.\n"
-        "For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3].");
+  m.def(
+      "GetFlattenedArrayParentIndices",
+      WrapUnaryArrayFunction(&GetFlattenedArrayParentIndices),
+      py::doc(
+          "Makes a int32 array of the same length as flattened `list_array`. "
+          "returned_array[i] == j means i-th element in flattened `list_array`"
+          "came from j-th list in `list_array`.\n"
+          "For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3]."),
+      py::call_guard<py::gil_scoped_release>());
 
-  m.def("GetArrayNullBitmapAsByteArray",
-        WrapUnaryArrayFunction(&GetArrayNullBitmapAsByteArray),
-        "Makes a uint8 array of the same length as `array`. "
-        "returned_array[i] == True iff array[i] is null.\n"
-        "Note that this returned array can be converted to a numpy bool array"
-        "copy-free.");
+  m.def(
+      "GetArrayNullBitmapAsByteArray",
+      WrapUnaryArrayFunction(&GetArrayNullBitmapAsByteArray),
+      py::doc(
+          "Makes a uint8 array of the same length as `array`. "
+          "returned_array[i] == True iff array[i] is null.\n"
+          "Note that this returned array can be converted to a numpy bool array"
+          "copy-free."),
+      py::call_guard<py::gil_scoped_release>());
 
   m.def(
       "GetBinaryArrayTotalByteSize",
@@ -72,10 +81,12 @@ void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
         }
         return result;
       },
-      "Returns the total byte size of a BinaryArray (note that StringArray is a"
-      "subclass of that so is also accepted here) i.e. the length of the"
-      "concatenation of all the binary strings in the list), in a Python Long."
-      "It might be a good idea to make this a pyarrow API.");
+      py::doc(
+          "Returns the total byte size of a BinaryArray (note that StringArray "
+          "is a subclass of that so is also accepted here) i.e. the length of "
+          "the concatenation of all the binary strings in the list), in a"
+          "Python Long."),
+      py::call_guard<py::gil_scoped_release>());
 
   m.def(
       "ValueCounts",
@@ -87,8 +98,9 @@ void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
         }
         return result;
       },
-      "Get counts of values in the array. Returns a struct array <values, "
-      "counts>.");
+      py::doc("Get counts of values in the array. Returns a struct array "
+              "<values, counts>."),
+      py::call_guard<py::gil_scoped_release>());
 
   m.def(
       "MakeListArrayFromParentIndicesAndValues",
@@ -103,16 +115,18 @@ void DefineArrayUtilSubmodule(pybind11::module arrow_module) {
         }
         return result;
       },
-      "Makes an Arrow ListArray from parent indices and values."
-      "For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] and"
-      "values_array_py is (an arrow Array of) [0, 1, 2, 3, 4], then the result "
-      "will be a ListArray of integers: [[0], [1, 2], None, [3, 4], None]."
-      "`num_parents` must be a Python integer (int or long) and it must be "
-      "greater than or equal to max(parent_indices) + 1."
-      "`parent_indices` must be a int64 1-D numpy array and the indices must be"
-      "sorted in increasing order."
-      "`values_array` must be an arrow Array and its length must equal to the"
-      " length of `parent_indices`.");
+      py::doc(
+          "Makes an Arrow ListArray from parent indices and values."
+          "For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] "
+          "and values_array_py is (an arrow Array of) [0, 1, 2, 3, 4], then "
+          "the result will be a ListArray of integers: [[0], [1, 2], None, [3, "
+          "4], None]. `num_parents` must be a Python integer (int or long) and "
+          "it must be greater than or equal to max(parent_indices) + 1. "
+          "`parent_indices` must be a int64 1-D numpy array and the indices "
+          "must be sorted in increasing order."
+          "`values_array` must be an arrow Array and its length must equal to "
+          "the length of `parent_indices`."),
+      py::call_guard<py::gil_scoped_release>());
 }
 
 void DefineTableUtilSubmodule(pybind11::module arrow_module) {
@@ -128,15 +142,17 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
         }
         return result;
       },
-      "Merges a list of arrow tables into one. \n"
-      "The columns are concatenated (there will be only one chunk per column)."
-      "Columns of the same name must be of the same type, or be a column of"
-      "NullArrays. If a column in some tables are of type T, in some other "
-      "tables are of NullArrays, the concatenated column is of type T, with "
-      "nulls representing the rows from the table with NullArrays."
-      "If a column appears in some tables but not in some other tables, the"
-      "concatenated column will contain nulls representing the rows from the "
-      "table with that column missing.");
+      py::doc(
+          "Merges a list of arrow tables into one. \n"
+          "The columns are concatenated (there will be only one chunk per "
+          "column). Columns of the same name must be of the same type, or be a "
+          "column of NullArrays. If a column in some tables are of type T, in "
+          "some other tables are of NullArrays, the concatenated column is of "
+          "type T, with nulls representing the rows from the table with "
+          "NullArrays. If a column appears in some tables but not in some "
+          "other tables, the concatenated column will contain nulls "
+          "representing the rows from the table with that column missing."),
+      py::call_guard<py::gil_scoped_release>());
   m.def(
       "SliceTableByRowIndices",
       [](const std::shared_ptr<arrow::Table>& table,
@@ -148,10 +164,12 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
         }
         return result;
       },
-      "Collects rows in `row_indices` from `table` and form a new Table."
-      "The new Table is guaranteed to contain only one chunk."
-      "`row_indices` must be an arrow::Int32Array. And the indices in it"
-      "must be sorted in ascending order.");
+      py::doc(
+          "Collects rows in `row_indices` from `table` and form a new Table."
+          "The new Table is guaranteed to contain only one chunk."
+          "`row_indices` must be an arrow::Int32Array. And the indices in it"
+          "must be sorted in ascending order."),
+      py::call_guard<py::gil_scoped_release>());
 }
 
 }  // namespace

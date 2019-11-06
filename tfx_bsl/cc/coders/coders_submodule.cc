@@ -35,33 +35,40 @@ void DefineCodersSubmodule(py::module main_module) {
 
   py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
       .def(py::init([](absl::string_view serialized_schema) {
-        std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-        Status s =
-            ExamplesToRecordBatchDecoder::Make(serialized_schema, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      }))
-      .def(py::init([] {
-        std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-        Status s = ExamplesToRecordBatchDecoder::Make(absl::nullopt, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      }))
-      .def("DecodeBatch",
-           [](ExamplesToRecordBatchDecoder* decoder,
-              const std::vector<absl::string_view>& serialized_examples) {
-             std::shared_ptr<arrow::RecordBatch> result;
-             Status s = decoder->DecodeBatch(serialized_examples, &result);
+             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+             Status s =
+                 ExamplesToRecordBatchDecoder::Make(serialized_schema, &result);
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
              }
              return result;
-           });
+           }),
+           py::call_guard<py::gil_scoped_release>())
+      .def(py::init([] {
+             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+             Status s =
+                 ExamplesToRecordBatchDecoder::Make(absl::nullopt, &result);
+             if (!s.ok()) {
+               throw std::runtime_error(s.ToString());
+             }
+             return result;
+           }),
+           py::call_guard<py::gil_scoped_release>())
+      .def(
+          "DecodeBatch",
+          [](ExamplesToRecordBatchDecoder* decoder,
+             const std::vector<absl::string_view>& serialized_examples) {
+            std::shared_ptr<arrow::RecordBatch> result;
+            Status s = decoder->DecodeBatch(serialized_examples, &result);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+            return result;
+          },
+          py::call_guard<py::gil_scoped_release>());
 
+  // We DO NOT RELEASE the GIL before calling ExampleToNumpyDict. It uses
+  // Python C-APIs heavily and assumes GIL is held.
   m.def("ExampleToNumpyDict",
         [](absl::string_view serialized_example) -> py::object {
           PyObject* numpy_dict = nullptr;
