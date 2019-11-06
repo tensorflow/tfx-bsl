@@ -45,14 +45,15 @@ _TEST_CASES = [
         ]),
     dict(
         testcase_name='missing_values',
-        input_lines=['1,,hello', ',12.34,'],
+        input_lines=[',,', '1,,hello', ',12.34,'],
         column_names=['f1', 'f2', 'f3'],
         expected_csv_cells=[
+            [b'', b'', b''],
             [b'1', b'', b'hello'],
             [b'', b'12.34', b''],
         ],
         expected_types=[
-            csv_decoder.ColumnType.FLOAT,
+            csv_decoder.ColumnType.INT,
             csv_decoder.ColumnType.FLOAT,
             csv_decoder.ColumnType.STRING,
         ]),
@@ -171,8 +172,8 @@ _TEST_CASES = [
         column_names=['f1', 'f2'],
         expected_csv_cells=[[], [b'1', b'2']],
         expected_types=[
-            csv_decoder.ColumnType.FLOAT,
-            csv_decoder.ColumnType.FLOAT,
+            csv_decoder.ColumnType.INT,
+            csv_decoder.ColumnType.INT,
         ],
     ),
     dict(
@@ -192,7 +193,7 @@ _TEST_CASES = [
         column_names=['f1'],
         expected_csv_cells=[[], [b'1']],
         expected_types=[
-            csv_decoder.ColumnType.FLOAT,
+            csv_decoder.ColumnType.INT,
         ],
     ),
     dict(
@@ -200,7 +201,14 @@ _TEST_CASES = [
         input_lines=[],
         column_names=['f1'],
         expected_csv_cells=[],
-        expected_types=[None],
+        expected_types=[csv_decoder.ColumnType.UNKNOWN],
+    ),
+    dict(
+        testcase_name='null_column',
+        input_lines=['', ''],
+        column_names=['f1'],
+        expected_csv_cells=[[], []],
+        expected_types=[csv_decoder.ColumnType.UNKNOWN],
     )
 ]
 

@@ -38,11 +38,13 @@ ColumnName = Union[Text, bytes]
 
 
 class ColumnType(enum.IntEnum):
+  UNKNOWN = -1
   INT = statistics_pb2.FeatureNameStatistics.INT
   FLOAT = statistics_pb2.FeatureNameStatistics.FLOAT
   STRING = statistics_pb2.FeatureNameStatistics.STRING
 
   # We need the following to hold for type inference to work.
+  assert UNKNOWN < INT
   assert INT < FLOAT
   assert FLOAT < STRING
 
@@ -155,7 +157,7 @@ class ColumnTypeInferrer(beam.CombineFn):
       self, accumulator: Dict[ColumnName, ColumnType]) -> List[ColumnInfo]:
     """Return a list of tuples containing the column info."""
     return [
-        ColumnInfo(col_name, accumulator.get(col_name, None))
+        ColumnInfo(col_name, accumulator.get(col_name, ColumnType.UNKNOWN))
         for col_name in self._column_names
     ]
 
@@ -212,10 +214,8 @@ _INT64_MAX = np.iinfo(np.int64).max
 
 def _infer_value_type(value: CSVCell) -> ColumnType:
   """Infer column type from the input value."""
-  # If the value is an empty string, we can set the type to be
-  # either FLOAT or STRING. We conservatively set it to be FLOAT.
   if not value:
-    return ColumnType.FLOAT
+    return ColumnType.UNKNOWN
 
   # Check if the value is of type INT.
   try:
