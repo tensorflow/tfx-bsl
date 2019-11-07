@@ -37,7 +37,7 @@
 ### Major Features and Improvements
 
 *   Added a (beam) utility to infer column types from a `PCollection[CSVLine]`.
-*   Added a utility to parse a CSVLine into cells (conforming to RFC4180)
+*   Added a utility to parse a CSVLine into cells (conforming to RFC4180).
 
 ### Bug Fixes and Other Changes
 
