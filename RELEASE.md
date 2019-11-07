@@ -24,10 +24,11 @@
 *   Behavior of csv_decoder.ColumnTypeInferrer was changed. A new column type,
     `ColumnType.UNKNOWN` was added to denote that the inferrer could not
     determine the type of that column (instead of making a guess of FLOAT).
-    Summary of behavior change (values in the examples are from the same column):
+    Summary of behavior change (values in the examples are from the same
+    column):
 
-       +   `<int>, <empty>`: before: `FLOAT`; after: `INT`
-       +   `<empty>, ... , <empty>`: before: `FLOAT`; after: `UNKNOWN`
+    +   `<int>, <empty>`: before: `FLOAT`; after: `INT`
+    +   `<empty>, ... , <empty>`: before: `FLOAT`; after: `UNKNOWN`
 
 ### Deprecations
 
