@@ -43,11 +43,23 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
   m.doc() = "Arrow Array utilities.";
   m.def(
       "ListLengthsFromListArray",
-      WrapUnaryArrayFunction(&ListLengthsFromListArray),
+      WrapUnaryArrayFunction(&GetElementLengths),
       py::doc(
+          "DEPRECATED. Use GetElementLengths instead.\n"
           "Get lengths of lists in `list_array` in an int32 array. "
           "Note that null and empty list both are of length 0 and the returned "
           "array does not have any null element.\n"
+          "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]."),
+      py::call_guard<py::gil_scoped_release>());
+
+  m.def(
+      "GetElementLengths",
+      WrapUnaryArrayFunction(&GetElementLengths),
+      py::doc(
+          "Get lengths of elements from a list-alike `array` (including binary "
+          "and string arrays) in an int32 array. \n"
+          "Note that null and empty elements both are of length 0 and the "
+          "returned array does not have any null.\n"
           "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]."),
       py::call_guard<py::gil_scoped_release>());
 

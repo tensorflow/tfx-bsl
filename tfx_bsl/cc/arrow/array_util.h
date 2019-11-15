@@ -25,11 +25,12 @@ class Array;
 
 namespace tfx_bsl {
 
-// Get lengths of lists in `list_array` in an int32 array.
-// Note that null and empty list both are of length 0 and the returned array
-// does not have any null element.
-// For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]
-Status ListLengthsFromListArray(
+// Get lengths of elements from list-alike `array` (including binary arrays and
+// string arrays) in an int32 array.
+// Note that null and empty elements both are of length 0 and the returned array
+// does not have any null. For example
+// [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]
+Status GetElementLengths(
     const arrow::Array& array,
     std::shared_ptr<arrow::Array>* list_lengths_array);
 

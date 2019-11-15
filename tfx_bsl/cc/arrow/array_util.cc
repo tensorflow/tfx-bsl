@@ -34,21 +34,45 @@ Status GetListArray(const Array& array, const ListArray** list_array) {
   return Status::OK();
 }
 
+class ElementLengthsVisitor : public arrow::ArrayVisitor {
+ public:
+  ElementLengthsVisitor() {}
+  ~ElementLengthsVisitor() override {}
+  std::shared_ptr<Array> result() const { return result_; }
+  arrow::Status Visit(const arrow::StringArray& string_array) override {
+    return VisitInternal(string_array);
+  }
+  arrow::Status Visit(const arrow::BinaryArray& binary_array) override {
+    return VisitInternal(binary_array);
+  }
+  arrow::Status Visit(const arrow::ListArray& list_array) override {
+    return VisitInternal(list_array);
+  }
+
+ private:
+  std::shared_ptr<Array> result_;
+
+  template <class ListLikeArray>
+  arrow::Status VisitInternal(const ListLikeArray& array) {
+    Int32Builder lengths_builder;
+    ARROW_RETURN_NOT_OK(lengths_builder.Reserve(array.length()));
+    for (int i = 0; i < array.length(); ++i) {
+      lengths_builder.UnsafeAppend(array.value_length(i));
+    }
+    return lengths_builder.Finish(&result_);
+  }
+};
+
 }  // namespace
 
-Status ListLengthsFromListArray(
+Status GetElementLengths(
     const Array& array,
     std::shared_ptr<Array>* list_lengths_array) {
-  const ListArray* list_array;
-  TFX_BSL_RETURN_IF_ERROR(GetListArray(array, &list_array));
 
-  Int32Builder lengths_builder;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(lengths_builder.Reserve(list_array->length())));
-  for (int i = 0; i < list_array->length(); ++i) {
-    lengths_builder.UnsafeAppend(list_array->value_length(i));
-  }
-  return FromArrowStatus(lengths_builder.Finish(list_lengths_array));
+  ElementLengthsVisitor v;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
+  *list_lengths_array = v.result();
+  return Status::OK();
 }
 
 Status GetFlattenedArrayParentIndices(

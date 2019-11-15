@@ -34,7 +34,6 @@ class ArrayUtilTest(absltest.TestCase):
   def test_invalid_input_type(self):
 
     functions_expecting_list_array = [
-        array_util.ListLengthsFromListArray,
         array_util.GetFlattenedArrayParentIndices,
     ]
     functions_expecting_array = [array_util.GetArrayNullBitmapAsByteArray]
@@ -64,6 +63,30 @@ class ArrayUtilTest(absltest.TestCase):
     list_lengths = array_util.ListLengthsFromListArray(
         pa.array([[1., 2.], None, [3.]]))
     self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+
+  def test_element_lengths(self):
+    list_lengths = array_util.GetElementLengths(
+        pa.array([], type=pa.list_(pa.int64())))
+    self.assertTrue(list_lengths.equals(pa.array([], type=pa.int32())))
+    list_lengths = array_util.GetElementLengths(
+        pa.array([[1., 2.], [], [3.]]))
+    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+    list_lengths = array_util.GetElementLengths(
+        pa.array([[1., 2.], None, [3.]]))
+    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+
+    list_lengths = array_util.GetElementLengths(
+        pa.array([b"a", b"bb", None, b"", b"ccc"], type=pa.binary()))
+    self.assertTrue(list_lengths.equals(pa.array([1, 2, 0, 0, 3],
+                                                 type=pa.int32())))
+
+    list_lengths = array_util.GetElementLengths(
+        pa.array([u"a", u"bb", None, u"", u"ccc"], type=pa.string()))
+    self.assertTrue(list_lengths.equals(pa.array([1, 2, 0, 0, 3],
+                                                 type=pa.int32())))
+
+    with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
+      array_util.GetElementLengths(pa.array([1, 2, 3], type=pa.int32()))
 
   def test_get_array_null_bitmap_as_byte_array(self):
     array = pa.array([], type=pa.int32())
