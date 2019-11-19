@@ -118,10 +118,10 @@ class ArrayOfNullsMaker {
   }
 
   // TODO(pachristopher): Remove external only tags after arrow 0.14.
-  arrow::Status Visit(const arrow::FixedSizeListType& l) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", l.ToString()));
-  }
+  // EXTERNAL-ONLY: arrow::Status Visit(const arrow::FixedSizeListType& l) {
+  // EXTERNAL-ONLY:   return arrow::Status::NotImplemented(
+  // EXTERNAL-ONLY:       absl::StrCat("Make array of nulls: ", l.ToString()));
+  // EXTERNAL-ONLY: }
 
   arrow::Status Visit(const arrow::StructType& s) {
     std::shared_ptr<Buffer> null_bitmap;
