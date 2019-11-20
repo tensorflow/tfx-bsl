@@ -238,13 +238,16 @@ class MergeTablesTest(parameterized.TestCase):
     merged = table_util.MergeTables(input_tables)
 
     self.assertLen(expected_output, merged.num_columns)
-    for c in merged.columns:
-      self.assertEqual(c.data.num_chunks, 1)
+    # TODO(zhuo): stop using column.data after arrow dep is bumped to 0.15.
+    for column_name in merged.schema.names:
+      column = merged.column(column_name)
+      self.assertEqual(column.data.num_chunks, 1)
       try:
-        self.assertTrue(expected_output[c.name].equals(c.data.chunk(0)))
+        self.assertTrue(expected_output[column_name].equals(
+            column.data.chunk(0)))
       except AssertionError:
         self.fail(msg="Column {}:\nexpected:{}\ngot: {}".format(
-            c.name, expected_output[c.name], c))
+            column_name, expected_output[column_name], column))
 
 
 _SLICE_TEST_CASES = [
@@ -347,6 +350,7 @@ class SliceTableByRowIndicesTest(parameterized.TestCase):
         "Expected {}, got {}".format(expected_output, sliced))
     if sliced.num_rows > 0:
       for c in sliced.columns:
+        # TODO(zhuo): stop using column.data after arrow dep is bumped to 0.15.
         self.assertEqual(c.data.num_chunks, 1)
 
   @parameterized.named_parameters(*_SLICE_INVALID_INPUT_TEST_CASES)

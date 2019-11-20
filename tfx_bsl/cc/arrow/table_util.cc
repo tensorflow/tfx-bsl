@@ -34,7 +34,7 @@ using ::arrow::Array;
 using ::arrow::ArrayData;
 using ::arrow::ArrayVector;
 using ::arrow::Buffer;
-using ::arrow::Column;
+using ::arrow::ChunkedArray;
 using ::arrow::Concatenate;
 using ::arrow::DataType;
 using ::arrow::Field;
@@ -42,31 +42,65 @@ using ::arrow::Schema;
 using ::arrow::Table;
 using ::arrow::Type;
 
+// arrow::Column has been removed since 0.15.
+#if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR <= 14)
 // If a column contains multiple chunks, concatenates those chunks into one and
 // makes a new column out of it.
-Status CompactColumn(const Column& column,
-                     std::shared_ptr<Column>* compacted) {
+Status CompactColumn(const arrow::Column& column,
+                     std::shared_ptr<arrow::Column>* compacted) {
   std::shared_ptr<Array> merged_data_array;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
       Concatenate(column.data()->chunks(), arrow::default_memory_pool(),
                   &merged_data_array)));
-  *compacted = std::make_shared<Column>(column.field(), merged_data_array);
+  *compacted =
+      std::make_shared<arrow::Column>(column.field(), merged_data_array);
   return Status::OK();
 }
 
-// Compacts all the columns in `table`.
-// TODO(zhuo): this function is no longer needed once Table.Compact() is
-// available.
 Status CompactTable(const Table& table, std::shared_ptr<Table>* compacted) {
-  std::vector<std::shared_ptr<Column>> compacted_columns;
+  std::vector<std::shared_ptr<arrow::Column>> compacted_columns;
   for (int i = 0; i < table.num_columns(); ++i) {
-    std::shared_ptr<Column> compacted_column;
+    std::shared_ptr<arrow::Column> compacted_column;
     TFX_BSL_RETURN_IF_ERROR(CompactColumn(*table.column(i), &compacted_column));
     compacted_columns.push_back(std::move(compacted_column));
   }
   *compacted = Table::Make(table.schema(), compacted_columns);
   return Status::OK();
 }
+
+std::shared_ptr<ChunkedArray> GetChunkedArrayFromColumn(
+    const std::shared_ptr<arrow::Column>& column) {
+  return column->data();
+}
+
+std::shared_ptr<Table> SliceTable(const Table& table, int64_t offset,
+                                  int64_t length) {
+  const int num_columns = table.num_columns();
+  std::vector<std::shared_ptr<arrow::Column>> sliced_columns(num_columns);
+  for (int i = 0; i < num_columns; ++i) {
+    sliced_columns[i] = table.column(i)->Slice(offset, length);
+  }
+  return Table::Make(table.schema(), sliced_columns, length);
+}
+
+#else
+
+Status CompactTable(const Table& table, std::shared_ptr<Table>* compacted) {
+  return FromArrowStatus(
+      table.CombineChunks(arrow::default_memory_pool(), compacted));
+}
+
+std::shared_ptr<ChunkedArray> GetChunkedArrayFromColumn(
+    const std::shared_ptr<ChunkedArray>& column) {
+  return column;
+}
+
+std::shared_ptr<Table> SliceTable(const Table& table, int64_t offset,
+                                  int64_t length) {
+  return table.Slice(offset, length);
+}
+
+#endif
 
 // Makes arrays of nulls of various types.
 class ArrayOfNullsMaker {
@@ -117,11 +151,27 @@ class ArrayOfNullsMaker {
     return arrow::Status::OK();
   }
 
-  // TODO(pachristopher): Remove external only tags after arrow 0.14.
-  // EXTERNAL-ONLY: arrow::Status Visit(const arrow::FixedSizeListType& l) {
-  // EXTERNAL-ONLY:   return arrow::Status::NotImplemented(
-  // EXTERNAL-ONLY:       absl::StrCat("Make array of nulls: ", l.ToString()));
-  // EXTERNAL-ONLY: }
+#if (ARROW_VERSION_MAJOR > 0) || (ARROW_VERSION_MINOR >= 14)
+  arrow::Status Visit(const arrow::FixedSizeListType& l) {
+    return arrow::Status::NotImplemented(
+        absl::StrCat("Make array of nulls: ", l.ToString()));
+  }
+#endif
+
+#if (ARROW_VERSION_MAJOR > 0) || (ARROW_VERSION_MINOR >= 15)
+  arrow::Status Visit(const arrow::LargeStringType& l) {
+    return arrow::Status::NotImplemented(
+        absl::StrCat("Make array of nulls: ", l.ToString()));
+  }
+  arrow::Status Visit(const arrow::LargeBinaryType& l) {
+    return arrow::Status::NotImplemented(
+        absl::StrCat("Make array of nulls: ", l.ToString()));
+  }
+  arrow::Status Visit(const arrow::LargeListType& l) {
+    return arrow::Status::NotImplemented(
+        absl::StrCat("Make array of nulls: ", l.ToString()));
+  }
+#endif
 
   arrow::Status Visit(const arrow::StructType& s) {
     std::shared_ptr<Buffer> null_bitmap;
@@ -205,7 +255,7 @@ class FieldRep {
   }
 
   // Appends `column` to the column of the field in merged table.
-  Status AppendColumn(const Column& column) {
+  Status AppendColumn(const ChunkedArray& column) {
     const auto& this_type = field_->type();
     const auto& other_type = column.type();
     if (other_type->id() == Type::NA) {
@@ -213,17 +263,17 @@ class FieldRep {
       return Status::OK();
     }
     if (this_type->id() == Type::NA) {
-      field_ = column.field();
+      field_ = arrow::field(field_->name(), other_type);
     } else if (!this_type->Equals(other_type)) {
       return errors::InvalidArgument(
           absl::StrCat("Trying to append a column of different type. ",
-                       "Column name: ", column.name(),
+                       "Column name: ", field_->name(),
                        " , Current type: ", this_type->ToString(),
                        " , New type: ", other_type->ToString()));
     }
     arrays_or_nulls_.insert(arrays_or_nulls_.end(),
-                            column.data()->chunks().begin(),
-                            column.data()->chunks().end());
+                            column.chunks().begin(),
+                            column.chunks().end());
     return Status::OK();
   }
 
@@ -275,19 +325,6 @@ class FieldRep {
   std::vector<absl::variant<std::shared_ptr<Array>, int64_t>> arrays_or_nulls_;
 };
 
-
-// TODO(zhuo): This function is no longer needed once Table.Slice() is
-// available.
-std::shared_ptr<Table> SliceTable(const Table& table, int64_t offset,
-                                  int64_t length) {
-  const int num_columns = table.num_columns();
-  std::vector<std::shared_ptr<Column>> sliced_columns(num_columns);
-  for (int i = 0; i < num_columns; ++i) {
-    sliced_columns[i] = table.column(i)->Slice(offset, length);
-  }
-  return Table::Make(table.schema(), sliced_columns, length);
-}
-
 }  // namespace
 
 Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
@@ -309,7 +346,8 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
       }
       field_seen_by_field_index[iter->second] = true;
       FieldRep& field_rep = field_rep_by_field_index[iter->second];
-      TFX_BSL_RETURN_IF_ERROR(field_rep.AppendColumn(*t->column(i)));
+      TFX_BSL_RETURN_IF_ERROR(
+          field_rep.AppendColumn(*GetChunkedArrayFromColumn(t->column(i))));
     }
     for (int i = 0; i < field_seen_by_field_index.size(); ++i) {
       if (!field_seen_by_field_index[i]) {
