@@ -139,6 +139,42 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
           "`values_array` must be an arrow Array and its length must equal to "
           "the length of `parent_indices`."),
       py::call_guard<py::gil_scoped_release>());
+
+  m.def(
+      "CooFromListArray",
+      [](const std::shared_ptr<arrow::Array>& list_array) {
+        std::shared_ptr<arrow::Array> coo;
+        std::shared_ptr<arrow::Array> dense_shape;
+        Status s = CooFromListArray(list_array, &coo, &dense_shape);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return std::make_pair(coo, dense_shape);
+      },
+      py::doc(
+          "Converts a ListArray to a COO (coordinate list) represented sparse "
+          "tensor.\n"
+          "`list_array` should be a ListArray<InnerArray> where InnerArray is "
+          "a ListArray<InnerArray> or any primitive array or binary array "
+          "(i.e. nested lists are supported). \n"
+          "Two arrays are produced: `coo_array` is an Int64Array that contains "
+          "the coordinates of flattened values of `list_array`. If "
+          "`list_array` is N-nested (ListArray<primitive> is 1-nested), each "
+          "coordinate will contain N + 1 numbers. The coordinates are "
+          "concatenated together. `dense_shape_array` is an Int64Array that "
+          "contains the size of the bounding-box of `list_array`. Note that "
+          "nulls and empty lists are not distinguished in the COO form."),
+      py::call_guard<py::gil_scoped_release>());
+
+  m.def("FillNullLists", [](const std::shared_ptr<arrow::Array>& list_array,
+                            const std::shared_ptr<arrow::Array>& fill_with) {
+    std::shared_ptr<arrow::Array> result;
+    Status s = FillNullLists(list_array, fill_with, &result);
+    if (!s.ok()) {
+      throw std::runtime_error(s.ToString());
+    }
+    return result;
+  });
 }
 
 void DefineTableUtilSubmodule(pybind11::module arrow_module) {

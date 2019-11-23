@@ -78,5 +78,31 @@ Status MakeListArrayFromParentIndicesAndValues(
     const std::shared_ptr<arrow::Array>& values_array,
     std::shared_ptr<arrow::Array>* output_list_array);
 
+// Converts a ListArray to a COO (coordinate list) represented sparse tensor.
+// `list_array` should be a ListArray<InnerArray> where InnerArray is
+// ListArray<InnerArray> or any primitive array or binary array (i.e. nested
+// lists are supported). Two arrays are produced:
+// `coo_array` is an Int64Array that contains the coordinates of flattened
+// values of `list_array`. If `list_array` is N-nested (ListArray<primitive> is
+// 1-nested), each coordinate will contain N + 1 numbers.
+// `coo_array`[(i*N):(i*(N+1))] contains the coordinates of the i-th value.
+// `dense_shape_array` is an Int64Array that contains the size of the
+// bounding-box of `list_array`.
+// Note that nulls and empty lists are not distinguished in the COO form.
+// For example:
+// if given ListArray [[1, 2], [], [3], None]
+// `coo_array` would be: [0, 1,  0, 2,  2, 1]
+// `dense_shape_array` would be: [4, 2]
+Status CooFromListArray(
+    const std::shared_ptr<arrow::Array>& list_array,
+    std::shared_ptr<arrow::Array>* coo_array,
+    std::shared_ptr<arrow::Array>* dense_shape_array);
+
+// Fills nulls in a `list_array` with `fill_with`. the type of `fill_with` must
+// equal to the value type of `list_array`.
+Status FillNullLists(const std::shared_ptr<arrow::Array>& list_array,
+                     const std::shared_ptr<arrow::Array>& fill_with,
+                     std::shared_ptr<arrow::Array>* filled);
+
 }  // namespace tfx_bsl
 #endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

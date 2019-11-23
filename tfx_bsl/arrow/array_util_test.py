@@ -235,5 +235,120 @@ class MakeListArrayFromParentIndicesAndValuesTest(parameterized.TestCase):
         actual.equals(expected),
         "actual: {}, expected: {}".format(actual, expected))
 
+
+_COO_FROM_LIST_ARRAY_TEST_CASES = [
+    dict(
+        testcase_name="flat_array",
+        list_array=[1, 2, 3, 4],
+        expected_coo=[0, 1, 2, 3],
+        expected_dense_shape=[4],
+    ),
+    dict(
+        testcase_name="empty_array",
+        list_array=[],
+        expected_coo=[],
+        expected_dense_shape=[0],
+    ),
+    dict(
+        testcase_name="empty_2d_array",
+        list_array=[[]],
+        expected_coo=[],
+        expected_dense_shape=[1, 0],
+    ),
+    dict(
+        testcase_name="2d_ragged",
+        list_array=[["a", "b"], ["c"], [], ["d", "e"]],
+        expected_coo=[0, 0,
+                      0, 1,
+                      1, 0,
+                      3, 0,
+                      3, 1],
+        expected_dense_shape=[4, 2],
+    ),
+    dict(
+        testcase_name="3d_ragged",
+        list_array=[[["a", "b"], ["c"]], [[], ["d", "e"]]],
+        expected_coo=[0, 0, 0,
+                      0, 0, 1,
+                      0, 1, 0,
+                      1, 1, 0,
+                      1, 1, 1],
+        expected_dense_shape=[2, 2, 2],
+    ),
+]
+
+
+class CooFromListArrayTest(parameterized.TestCase):
+
+  @parameterized.named_parameters(*_COO_FROM_LIST_ARRAY_TEST_CASES)
+  def testCooFromListArray(
+      self, list_array, expected_coo, expected_dense_shape):
+
+    for input_array in [
+        pa.array(list_array),
+        # it should work for sliced arrays.
+        pa.array(list_array + list_array).slice(0, len(list_array)),
+        pa.array(list_array + list_array).slice(len(list_array)),
+    ]:
+      coo, dense_shape = array_util.CooFromListArray(input_array)
+      self.assertTrue(coo.type.equals(pa.int64()))
+      self.assertTrue(dense_shape.type.equals(pa.int64()))
+
+      self.assertEqual(expected_coo, coo.to_pylist())
+      self.assertEqual(expected_dense_shape, dense_shape.to_pylist())
+
+
+_FILL_NULL_LISTS_TEST_CASES = [
+    dict(
+        testcase_name="no_nulls",
+        list_array=pa.array([[1], [2], [3]]),
+        fill_with=pa.array([0]),
+        expected=pa.array([[1], [2], [3]]),
+    ),
+    dict(
+        testcase_name="all_nulls",
+        list_array=pa.array([None, None, None], type=pa.list_(pa.int64())),
+        fill_with=pa.array([0, 1]),
+        expected=pa.array([[0, 1], [0, 1], [0, 1]]),
+    ),
+    dict(
+        testcase_name="nulls_at_end",
+        list_array=pa.array([[1], [2], None]),
+        fill_with=pa.array([0, 1]),
+        expected=pa.array([[1], [2], [0, 1]]),
+    ),
+    dict(
+        testcase_name="nulls_at_beginning",
+        list_array=pa.array([None, None, [1]]),
+        fill_with=pa.array([], type=pa.int64()),
+        expected=pa.array([[], [], [1]]),
+    ),
+    dict(
+        testcase_name="nulls_scattered",
+        list_array=pa.array([["a"], ["b"], ["c"], None, ["d"], None, ["e"]]),
+        fill_with=pa.array(["x", "x"]),
+        expected=pa.array([["a"], ["b"], ["c"], ["x", "x"], ["d"], ["x", "x"],
+                           ["e"]]),
+    )
+]
+
+
+class FillNullListsTest(parameterized.TestCase):
+
+  @parameterized.named_parameters(*_FILL_NULL_LISTS_TEST_CASES)
+  def testFillNullLists(self, list_array, fill_with, expected):
+    actual = array_util.FillNullLists(list_array, fill_with)
+    self.assertTrue(
+        actual.equals(expected), "{} vs {}".format(actual, expected))
+
+  def testNonListArray(self):
+    with self.assertRaisesRegex(RuntimeError, "Expected a ListArray"):
+      array_util.FillNullLists(pa.array([1, 2, 3]), pa.array([4]))
+
+  def testValueTypeDoesNotEqualFillType(self):
+    with self.assertRaisesRegex(RuntimeError, "to be of the same type"):
+      array_util.FillNullLists(pa.array([[1]]), pa.array(["a"]))
+
+
 if __name__ == "__main__":
   absltest.main()
