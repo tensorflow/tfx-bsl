@@ -159,6 +159,8 @@ _Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
 # TODO(b/131873699): Add typehints once
 # [BEAM-8381](https://issues.apache.org/jira/browse/BEAM-8381)
 # is fixed.
+# TODO(b/143484017): Add batch_size back off in the case there are functional
+# reasons large batch sizes cannot be handled.
 class _BaseBatchDoFn(beam.DoFn):
   """A base DoFn that loads the model, creates session and performs prediction.
 
@@ -258,6 +260,7 @@ class _BaseBatchDoFn(beam.DoFn):
 
     def load():
       """Function for constructing shared LoadedModel."""
+      # TODO(b/143484017): Do warmup and other heavy model construction here.
       result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
       memory_before = _get_current_process_memory_in_bytes()
       start_time = self._clock.get_current_time_in_microseconds()
