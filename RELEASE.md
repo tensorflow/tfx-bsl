@@ -6,6 +6,9 @@
 
 ### Bug Fixes and Other Changes
 
+*  Added a test_util sub-package that contains a tool to discover and run all
+   the absltests in a dir (like python's unittest discovery).
+
 ### Breaking Changes
 
 ### Deprecations
