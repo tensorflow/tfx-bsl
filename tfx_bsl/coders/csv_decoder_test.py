@@ -237,7 +237,7 @@ class CSVDecoderTest(parameterized.TestCase):
 
     with beam.Pipeline() as p:
       parsed_csv_cells = (
-          p | beam.Create(input_lines)
+          p | beam.Create(input_lines, reshuffle=False)
           | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=delimiter)))
       inferred_types = parsed_csv_cells | beam.CombineGlobally(
           csv_decoder.ColumnTypeInferrer(
@@ -255,7 +255,7 @@ class CSVDecoderTest(parameterized.TestCase):
         ValueError, '.*Columns do not match specified csv headers.*'):
       with beam.Pipeline() as p:
         result = (
-            p | beam.Create(input_lines)
+            p | beam.Create(input_lines, reshuffle=False)
             | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=','))
             | beam.CombineGlobally(
                 csv_decoder.ColumnTypeInferrer(
