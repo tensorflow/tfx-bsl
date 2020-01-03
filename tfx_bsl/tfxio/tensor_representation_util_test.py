@@ -305,6 +305,35 @@ _LEGACY_INFER_TEST_CASES = [
 ]
 
 
+_GET_SOURCE_COLUMNS_TEST_CASES = [
+    dict(
+        testcase_name='oneof_unspecified',
+        pbtxt='',
+        expected=[],
+    ),
+    dict(
+        testcase_name='dense_tensor',
+        pbtxt="""
+            dense_tensor {
+              column_name: "my_column"
+              shape {
+              }
+            }
+        """,
+        expected=['my_column'],
+    ),
+    dict(
+        testcase_name='varlen_sparse_tensor',
+        pbtxt="""
+         varlen_sparse_tensor {
+           column_name: "my_column"
+         }
+         """,
+        expected=['my_column'],
+    ),
+]
+
+
 class TensorRepresentationUtilTest(parameterized.TestCase):
 
   @parameterized.named_parameters(
@@ -347,6 +376,13 @@ class TensorRepresentationUtilTest(parameterized.TestCase):
         schema)
     self.assertTrue(result)
     self.assertIn('a', result)
+
+  @parameterized.named_parameters(*_GET_SOURCE_COLUMNS_TEST_CASES)
+  def testGetSourceColumnsFromTensorRepresentation(self, pbtxt, expected):
+    self.assertEqual(
+        expected,
+        tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
+            text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())))
 
 
 if __name__ == '__main__':

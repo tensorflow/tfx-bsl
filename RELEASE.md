@@ -4,6 +4,9 @@
 
 ### Major Features and Improvements
 
+*  Introduced TFXIO, the interface for [Standardized TFX Inputs](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
+*  Added the first implementation of TFXIO, for tf.Example on TFRecords.
+
 ### Bug Fixes and Other Changes
 
 *  Added a test_util sub-package that contains a tool to discover and run all

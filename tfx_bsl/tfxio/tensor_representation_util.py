@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 from absl import logging
-from typing import Dict, Optional, Text
+from typing import List, Dict, Mapping, Optional, Text
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -47,6 +47,25 @@ _LEGACY_DEFAULT_VALUE_FOR_FEATURE_TYPE = {
     schema_pb2.FLOAT:
         schema_pb2.TensorRepresentation.DefaultValue(float_value=-1.0),
 }
+
+_TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER = {
+    "dense_tensor": lambda tr: [tr.dense_tensor.column_name],
+    "varlen_sparse_tensor": lambda tr: [tr.varlen_sparse_tensor.column_name],
+    None: lambda _: [],
+}
+
+
+def SetTensorRepresentationsInSchema(
+    schema: schema_pb2.Schema,
+    tensor_representations: Mapping[Text, schema_pb2.TensorRepresentation],
+    tensor_representation_group_name: Text = _DEFAULT_TENSOR_REPRESENTATION_GROUP
+    ) -> None:
+  """Sets the TensorRepresentationGroup of the given name to the given value."""
+  tensor_representation_map = schema.tensor_representation_group[
+      tensor_representation_group_name].tensor_representation
+  tensor_representation_map.clear()
+  for k, v in tensor_representations.items():
+    tensor_representation_map[k].CopyFrom(v)
 
 
 def GetTensorRepresentationsFromSchema(
@@ -85,6 +104,14 @@ def InferTensorRepresentationsFromSchema(
   return {
       f.name: infer_func(f) for f in schema.feature if _ShouldIncludeFeature(f)
   }
+
+
+def GetSourceColumnsFromTensorRepresentation(
+    tensor_representation: schema_pb2.TensorRepresentation) -> List[Text]:
+  """Returns columns required by the given TensorRepresentation."""
+
+  return _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER[
+      tensor_representation.WhichOneof("kind")](tensor_representation)
 
 
 def _ShouldIncludeFeature(feature: schema_pb2.Feature) -> bool:
