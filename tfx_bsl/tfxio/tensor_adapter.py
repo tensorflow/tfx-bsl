@@ -296,12 +296,92 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     return depth == 1 and _IsSupportedArrowValueType(value_type)
 
 
+class _SparseTensorHandler(_TypeHandler):
+  """Handles conversion to SparseTensors."""
+
+  __slots__ = ["_index_column_indices", "_value_column_index", "_shape",
+               "_dtype", "_coo_size"]
+
+  def __init__(self, arrow_schema: pa.Schema,
+               tensor_representation: schema_pb2.TensorRepresentation):
+    super(_SparseTensorHandler, self).__init__(
+        arrow_schema, tensor_representation)
+    sparse_representation = tensor_representation.sparse_tensor
+    self._index_column_indices = tuple(
+        arrow_schema.get_field_index(c)
+        for c in sparse_representation.index_column_names)
+    self._value_column_index = arrow_schema.get_field_index(
+        sparse_representation.value_column_name)
+    self._shape = [dim.size for dim in sparse_representation.dense_shape.dim]
+    _, value_type = _GetNestDepthAndValueType(
+        arrow_schema[self._value_column_index])
+    self._dtype = _ArrowTypeToTfDtype(value_type)
+    self._coo_size = len(self._shape) + 1
+
+  @property
+  def type_spec(self) -> tf.TypeSpec:
+    return tf.SparseTensorSpec(tf.TensorShape([None] + self._shape),
+                               self._dtype)
+
+  def GetTensor(self, record_batch: pa.RecordBatch) -> Any:
+    values_array = record_batch.column(self._value_column_index)
+    values_parent_indices = array_util.GetFlattenedArrayParentIndices(
+        values_array)
+    indices_arrays = [np.asarray(values_parent_indices)]
+    for index_column_index in self._index_column_indices:
+      indices_arrays.append(
+          np.asarray(record_batch.column(index_column_index).flatten()))
+    values_np = np.asarray(values_array.flatten())
+    coo_np = np.empty(shape=(len(values_np), self._coo_size), dtype=np.int64)
+    try:
+      np.stack(indices_arrays, axis=1, out=coo_np)
+    except ValueError as e:
+      raise ValueError("Error constructing the COO for SparseTensor. "
+                       "number of values: {}; "
+                       "size of each index array: {}; "
+                       "original error {}.".format(
+                           len(values_np), [len(i) for i in indices_arrays], e))
+
+    dense_shape = [len(record_batch)] + self._shape
+
+    if tf.executing_eagerly():
+      return tf.sparse.SparseTensor(
+          indices=tf.convert_to_tensor(coo_np),
+          dense_shape=tf.convert_to_tensor(dense_shape, dtype=tf.int64),
+          values=tf.convert_to_tensor(values_np))
+    return tf.compat.v1.SparseTensorValue(
+        indices=coo_np, dense_shape=dense_shape, values=values_np)
+
+  @staticmethod
+  def CanHandle(
+      arrow_schema: pa.Schema,
+      tensor_representation: schema_pb2.TensorRepresentation) -> bool:
+    """Returns whether `tensor_representation` can be handled."""
+    sparse_representation = tensor_representation.sparse_tensor
+    if (len(sparse_representation.dense_shape.dim) !=
+        len(sparse_representation.index_column_names)):
+      return False
+    if any([d.size <= 0 for d in sparse_representation.dense_shape.dim]):
+      return False
+
+    # All the index columns must be of integral types.
+    for index_column in sparse_representation.index_column_names:
+      depth, value_type = _GetNestDepthAndValueType(
+          arrow_schema.field_by_name(index_column))
+      if depth != 1 or not pa.types.is_integer(value_type):
+        return False
+
+    depth, value_type = _GetNestDepthAndValueType(
+        arrow_schema.field_by_name(sparse_representation.value_column_name))
+    return depth == 1 and _IsSupportedArrowValueType(value_type)
+
 # Mapping from TensorRepresentation's "kind" oneof field name to TypeHandler
 # classes. Note that one kind may have multiple handlers and the first one
 # whose CanHandle() returns true will be used.
 _TYPE_HANDLER_MAP = {
     "dense_tensor": [_DenseTensorHandler, _DefaultFillingDenseTensorHandler],
     "varlen_sparse_tensor": [_VarLenSparseTensorHandler],
+    "sparse_tensor": [_SparseTensorHandler],
 }
 
 

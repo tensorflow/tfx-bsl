@@ -67,6 +67,63 @@ _ARROW_TYPE_TO_NP_TYPE = {
 }
 
 
+def _Make1DSparseTensorTestCases():
+  result = []
+  tensor_representation_textpb = """
+  sparse_tensor {
+    index_column_names: ["key"]
+    value_column_name: "value"
+    dense_shape {
+      dim {
+        size: 100
+      }
+    }
+  }
+  """
+  for t in _ALL_SUPPORTED_VALUE_TYPES:
+    expected_type_spec = tf.SparseTensorSpec([None, 100],
+                                             _ARROW_TYPE_TO_TF_TYPE[t])
+    if pa.types.is_integer(t):
+      values = [[1, 2], None, [], [3]]
+      expected_values = [1, 2, 3]
+    elif pa.types.is_floating(t):
+      values = [[1.0, 2.0], None, [], [3.0]]
+      expected_values = [1.0, 2.0, 3.0]
+    else:
+      values = [[b"a", b"b"], None, [], [b"c"]]
+      expected_values = [b"a", b"b", b"c"]
+    indices = [[0, 99], None, [], [8]]
+
+    if tf.executing_eagerly():
+      expected_output = tf.sparse.SparseTensor(
+          indices=[[0, 0], [0, 99], [3, 8]],
+          values=tf.constant(expected_values, dtype=_ARROW_TYPE_TO_TF_TYPE[t]),
+          dense_shape=(4, 100))
+    else:
+      expected_output = tf.compat.v1.SparseTensorValue(
+          indices=[[0, 0], [0, 99], [3, 8]],
+          values=np.array(expected_values, _ARROW_TYPE_TO_NP_TYPE[t]),
+          dense_shape=(4, 100))
+
+    result.append({
+        "testcase_name":
+            "1dsparse_tensor_{}".format(t),
+        "tensor_representation_textpb":
+            tensor_representation_textpb,
+        "record_batch":
+            pa.RecordBatch.from_arrays([
+                pa.array(indices, type=pa.list_(pa.int64())),
+                pa.array(values, type=pa.list_(t))
+            ], ["key", "value"]),
+        "expected_output":
+            expected_output,
+        "expected_type_spec":
+            expected_type_spec,
+    })
+
+  return result
+
+
 def _MakeDenseTensorFromListArrayTestCases():
   result = []
   tensor_representation_textpb = """
@@ -234,17 +291,10 @@ def _MakeVarLenSparseTensorFromListArrayTestCases():
       expected_values = [b"a", b"b", b"c", b"d"]
     expected_sparse_indices = [[0, 0], [0, 1], [2, 0], [4, 0]]
     expected_dense_shape = [5, 2]
-    if tf.executing_eagerly():
-      expected_output = tf.sparse.SparseTensor(
-          indices=expected_sparse_indices,
-          dense_shape=expected_dense_shape,
-          values=tf.constant(expected_values,
-                             dtype=_ARROW_TYPE_TO_TF_TYPE[t]))
-    else:
-      expected_output = tf.compat.v1.SparseTensorValue(
-          indices=np.array(expected_sparse_indices, dtype=np.int64),
-          dense_shape=np.array(expected_dense_shape, dtype=np.int64),
-          values=np.array(expected_values, dtype=_ARROW_TYPE_TO_NP_TYPE[t]))
+    expected_output = tf.compat.v1.SparseTensorValue(
+        indices=np.array(expected_sparse_indices, dtype=np.int64),
+        dense_shape=np.array(expected_dense_shape, dtype=np.int64),
+        values=np.array(expected_values, dtype=_ARROW_TYPE_TO_NP_TYPE[t]))
     result.append({
         "testcase_name":
             "varlen_sparse_from_list_array_{}".format(t),
@@ -269,6 +319,7 @@ _ONE_TENSOR_TEST_CASES = (
     _MakeStringDefaultFilledDenseTensorFromListArrayTestCases() +
     _MakeVarLenSparseTensorFromListArrayTestCases()
 )
+
 _INVALID_DEFAULT_VALUE_TEST_CASES = [
     dict(
         testcase_name="default_value_not_set",
@@ -293,6 +344,60 @@ _INVALID_DEFAULT_VALUE_TEST_CASES = [
         default_value_pbtxt="int_value: 0x7fffffffffffffff",
         exception_regexp="Integer default value out of range",
     ),
+]
+
+_INVALID_SPARSE_TENSOR_TEST_CASES = [
+    dict(testcase_name="dense_rank_not_equal_num_index_columns",
+         tensor_representation_textpb="""
+         sparse_tensor {
+           index_column_names: ["key"]
+           value_column_name: "value"
+           dense_shape {
+             dim {
+               size: 10
+             }
+             dim {
+               size: 5
+             }
+           }
+         }
+         """,
+         arrow_schema={
+             "key": pa.list_(pa.int64()),
+             "value": pa.list_(pa.int64()),
+         }),
+    dict(testcase_name="invalid_dense_shape_dim_size",
+         tensor_representation_textpb="""
+         sparse_tensor {
+           index_column_names: ["key"]
+           value_column_name: "value"
+           dense_shape {
+             dim {
+               size: -1
+             }
+           }
+         }
+         """,
+         arrow_schema={
+             "key": pa.list_(pa.int64()),
+             "value": pa.list_(pa.int64()),
+         }),
+    dict(testcase_name="invalid_index_column_type",
+         tensor_representation_textpb="""
+         sparse_tensor {
+           index_column_names: ["key"]
+           value_column_name: "value"
+           dense_shape {
+             dim {
+               size: 10
+             }
+           }
+         }
+         """,
+         arrow_schema={
+             "key": pa.list_(pa.float32()),
+             "value": pa.list_(pa.int64()),
+         }),
 ]
 
 
@@ -338,6 +443,69 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
       self.assertSparseAllEqual(expected_output, actual_output)
     else:
       self.assertAllEqual(expected_output, actual_output)
+
+  @parameterized.named_parameters(*_Make1DSparseTensorTestCases())
+  @test_util.run_in_graph_and_eager_modes
+  def test1DSparseTensor(self, tensor_representation_textpb, record_batch,
+                         expected_type_spec, expected_output):
+    tensor_representation = text_format.Parse(tensor_representation_textpb,
+                                              schema_pb2.TensorRepresentation())
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           {"output": tensor_representation}))
+    converted = adapter.ToBatchTensors(record_batch)
+    self.assertLen(converted, 1)
+    self.assertIn("output", converted)
+    actual_output = converted["output"]
+    self.assertIsInstance(actual_output,
+                          (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
+    if tf.executing_eagerly():
+      self.assertTrue(
+          expected_type_spec.is_compatible_with(actual_output),
+          "{} is not compatible with spec {}".format(actual_output,
+                                                     expected_type_spec))
+
+    self.assertSparseAllEqual(expected_output, actual_output)
+
+  @test_util.run_in_graph_and_eager_modes
+  def test2DSparseTensor(self):
+    tensor_representation = text_format.Parse(
+        """
+        sparse_tensor {
+          value_column_name: "values"
+          index_column_names: ["d0", "d1"]
+          dense_shape {
+            dim {
+              size: 10
+            }
+            dim {
+              size: 20
+            }
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.array([[1], None, [2], [3, 4, 5], []], type=pa.list_(pa.int64())),
+        # Also test that the index column can be of an integral type other
+        # than int64.
+        pa.array([[9], None, [9], [7, 8, 9], []], type=pa.list_(pa.uint32())),
+        pa.array([[0], None, [0], [0, 1, 2], []], type=pa.list_(pa.int64()))
+    ], ["values", "d0", "d1"])
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           {"output": tensor_representation}))
+    converted = adapter.ToBatchTensors(record_batch)
+    self.assertLen(converted, 1)
+    self.assertIn("output", converted)
+    actual_output = converted["output"]
+    self.assertIsInstance(actual_output,
+                          (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
+    self.assertSparseAllEqual(
+        tf.compat.v1.SparseTensorValue(
+            dense_shape=[5, 10, 20],
+            indices=[[0, 9, 0], [2, 9, 0], [3, 7, 0], [3, 8, 1], [3, 9, 2]],
+            values=tf.convert_to_tensor([1, 2, 3, 4, 5], dtype=tf.int64)),
+        actual_output)
 
   @test_util.run_in_graph_and_eager_modes
   def testMultipleColumns(self):
@@ -488,18 +656,30 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
   @parameterized.named_parameters(*_INVALID_DEFAULT_VALUE_TEST_CASES)
   def testRaiseOnInvalidDefaultValue(self, value_type, default_value_pbtxt,
                                      exception_regexp):
-    with self.assertRaisesRegexp(ValueError, exception_regexp):
-      tensor_representation = text_format.Parse("""
+    tensor_representation = text_format.Parse("""
                   dense_tensor {
                     column_name: "column"
                     shape {}
                   }""", schema_pb2.TensorRepresentation())
-      tensor_representation.dense_tensor.default_value.CopyFrom(
-          text_format.Parse(default_value_pbtxt,
-                            schema_pb2.TensorRepresentation.DefaultValue()))
+    tensor_representation.dense_tensor.default_value.CopyFrom(
+        text_format.Parse(default_value_pbtxt,
+                          schema_pb2.TensorRepresentation.DefaultValue()))
+    with self.assertRaisesRegexp(ValueError, exception_regexp):
       tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               pa.schema([pa.field("column", pa.list_(value_type))]),
+              {"tensor": tensor_representation}))
+
+  @parameterized.named_parameters(*_INVALID_SPARSE_TENSOR_TEST_CASES)
+  def testRaiseOnInvalidSparseTensorRepresentation(self,
+                                                   tensor_representation_textpb,
+                                                   arrow_schema):
+    tensor_representation = text_format.Parse(tensor_representation_textpb,
+                                              schema_pb2.TensorRepresentation())
+    with self.assertRaisesRegexp(ValueError, "Unable to handle tensor"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(
+              pa.schema([pa.field(k, v) for k, v in arrow_schema.items()]),
               {"tensor": tensor_representation}))
 
 

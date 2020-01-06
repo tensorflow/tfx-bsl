@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 from absl import logging
-from typing import List, Dict, Mapping, Optional, Text
+from typing import List, Dict, Mapping, Optional, Text, Tuple, Union
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -97,13 +97,11 @@ def InferTensorRepresentationsFromSchema(
   """Infers TensorRepresentations from the schema's Features."""
   # TODO(zhuo): Add support for SparseFeature -> SparseTensor representation.
   if _ShouldUseLegacyLogic(schema):
-    infer_func = _LegacyInferTensorRepresentationFromFeature
+    infer_func = _LegacyInferTensorRepresentationFromSchema
   else:
-    infer_func = _InferTensorRepresentationFromFeature
+    infer_func = _InferTensorRepresentationFromSchema
 
-  return {
-      f.name: infer_func(f) for f in schema.feature if _ShouldIncludeFeature(f)
-  }
+  return infer_func(schema)
 
 
 def GetSourceColumnsFromTensorRepresentation(
@@ -114,48 +112,132 @@ def GetSourceColumnsFromTensorRepresentation(
       tensor_representation.WhichOneof("kind")](tensor_representation)
 
 
-def _ShouldIncludeFeature(feature: schema_pb2.Feature) -> bool:
+def _ShouldIncludeFeature(
+    feature: Union[schema_pb2.Feature, schema_pb2.SparseFeature]) -> bool:
   return not (feature.deprecated or
               feature.lifecycle_stage in _DISQUALIFYING_LIFECYCLE_STAGES)
 
 
-def _InferTensorRepresentationFromFeature(
-    feature: schema_pb2.Feature) -> schema_pb2.TensorRepresentation:
+def _InferTensorRepresentationFromSchema(
+    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
   """Translate a Feature proto into a TensorRepresentation proto.
 
   We apply the following rules:
-    1. if the feature has a fixed shape (set through Feature.shape field),
+    1. If the feature has a fixed shape (set through Feature.shape field),
        then the feature must always be present (
        Feature.presence.min_fraction == 1.0), and a DenseTensor representation
        will be produced for it.
     2. Otherwise, a VarLenSparseTensor representation will be produced for it.
 
   Args:
-    feature: a schema_pb2.Feature.
+    schema: a schema_pb2.Schema.
 
   Returns:
-    a schema_pb2.TensorRepresentation.
+    A Dict mapping tensor names to their TensorRepresentations.
 
   Raises:
     ValueError: if the feature has a fixed shape but is not always present.
   """
-  if feature.HasField("shape"):
-    if feature.presence.min_fraction != 1:
+  result = {}
+  sparse_tensor_repsentations, columns_remaining = (
+      _InferSparseTensorRepresentationsFromSchema(schema))
+  result.update(sparse_tensor_repsentations)
+  for feature in columns_remaining:
+    if not _ShouldIncludeFeature(feature):
+      continue
+    if feature.HasField("shape"):
+      if feature.presence.min_fraction != 1:
+        raise ValueError(
+            "Feature {} had shape {} set but min_fraction {} != 1.  Use"
+            " value_count not shape field when min_fraction != 1.".format(
+                feature.name, feature.shape, feature.presence.min_fraction))
+      logging.info("Feature %s has a shape %s. Setting to DenseTensor.",
+                   feature.name, feature.shape)
+      result[feature.name] = schema_pb2.TensorRepresentation(
+          dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
+              column_name=feature.name, shape=feature.shape))
+    else:
+      logging.info("Feature %s has no shape. Setting to VarLenSparseTensor.",
+                   feature.name)
+      result[feature.name] = schema_pb2.TensorRepresentation(
+          varlen_sparse_tensor=schema_pb2.TensorRepresentation
+          .VarLenSparseTensor(column_name=feature.name))
+
+  return result
+
+
+def _InferSparseTensorRepresentationsFromSchema(
+    schema: schema_pb2.Schema
+) -> Tuple[Dict[Text, schema_pb2.TensorRepresentation],
+           List[schema_pb2.Feature]]:
+  """Infers SparseTensor TensorRepresentation from the given schema."""
+  columns_remaining = {f.name: f for f in schema.feature}
+  sparse_tensor_representations = {}
+  for sparse_feature in schema.sparse_feature:
+    if not _ShouldIncludeFeature(sparse_feature):
+      continue
+    index_keys = [
+        index_feature.name for index_feature in sparse_feature.index_feature]
+    index_features = []
+    for index_key in index_keys:
+      try:
+        index_features.append(columns_remaining.pop(index_key))
+      except KeyError:
+        raise ValueError(
+            "sparse_feature {} referred to index feature {} which did not "
+            "exist in the schema".format(sparse_feature.name, index_key))
+
+    if len(index_features) != 1:
       raise ValueError(
-          "Feature {} had shape {} set but min_fraction {} != 1.  Use"
-          " value_count not shape field when min_fraction != 1.".format(
-              feature.name, feature.shape, feature.presence.min_fraction))
-    logging.info("Feature %s has a shape %s. Setting to DenseTensor.",
-                 feature.name, feature.shape)
-    return schema_pb2.TensorRepresentation(
-        dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
-            column_name=feature.name, shape=feature.shape))
-  else:
-    logging.info("Feature %s has no shape. Setting to VarLenSparseTensor.",
-                 feature.name)
-    return schema_pb2.TensorRepresentation(
-        varlen_sparse_tensor=schema_pb2.TensorRepresentation.VarLenSparseTensor(
-            column_name=feature.name))
+          "sparse_feature {} had rank {} but currently only rank 1"
+          " sparse features are supported".format(
+              sparse_feature.name, len(index_features)))
+
+    value_key = sparse_feature.value_feature.name
+    try:
+      columns_remaining.pop(value_key)
+    except KeyError:
+      raise ValueError(
+          "sparse_feature {} referred to value feature {} which did not "
+          "exist in the schema or was referred to as an index or value multiple "
+          "times.".format(sparse_feature.name, value_key))
+
+    if index_features[0].HasField("int_domain"):
+      # Currently we only handle O-based INT index features whose minimum
+      # domain value must be zero.
+      if not index_features[0].int_domain.HasField("min"):
+        raise ValueError("Cannot determine dense shape of sparse feature "
+                         "{}. The minimum domain value of index feature {}"
+                         " is not set."
+                         .format(sparse_feature.name, index_keys[0]))
+      if index_features[0].int_domain.min != 0:
+        raise ValueError("Only 0-based index features are supported. Sparse "
+                         "feature {} has index feature {} whose minimum "
+                         "domain value is {}.".format(
+                             sparse_feature.name, index_keys[0],
+                             index_features[0].int_domain.min))
+
+      if not index_features[0].int_domain.HasField("max"):
+        raise ValueError("Cannot determine dense shape of sparse feature "
+                         "{}. The maximum domain value of index feature {}"
+                         " is not set."
+                         .format(sparse_feature.name, index_keys[0]))
+      shape = schema_pb2.FixedShape(dim=[
+          schema_pb2.FixedShape.Dim(size=index_features[0].int_domain.max + 1)
+      ])
+    else:
+      raise ValueError("Cannot determine dense shape of sparse feature {}."
+                       " The index feature {} had no int_domain set.".format(
+                           sparse_feature.name, index_keys[0]))
+
+    sparse_tensor_representations[sparse_feature.name] = (
+        schema_pb2.TensorRepresentation(
+            sparse_tensor=schema_pb2.TensorRepresentation.SparseTensor(
+                dense_shape=shape,
+                index_column_names=index_keys,
+                value_column_name=value_key)))
+
+  return sparse_tensor_representations, list(columns_remaining.values())
 
 
 def _ShouldUseLegacyLogic(schema: schema_pb2.Schema) -> bool:
@@ -164,8 +246,8 @@ def _ShouldUseLegacyLogic(schema: schema_pb2.Schema) -> bool:
   return False
 
 
-def _LegacyInferTensorRepresentationFromFeature(
-    feature) -> schema_pb2.TensorRepresentation:
+def _LegacyInferTensorRepresentationFromSchema(
+    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
   """Translate a Feature proto into a TensorRepresentation proto.
 
   This function applies heuristics to deduce the shape and other information
@@ -195,64 +277,70 @@ def _LegacyInferTensorRepresentationFromFeature(
     3. Features that are deprecated are completely ignored and removed.
 
   Args:
-    feature: A FeatureProto
+    schema: A Schema proto.
 
   Returns:
-    A schema_pb2.TensorRepresentation.
+    A Dict mapping tensor names to their TensorRepresentations.
 
   Raises:
     ValueError: If the feature's type is not supported or the schema is invalid.
   """
-  # Infer canonical tensorflow dtype.
+  result = {}
+  for feature in schema.feature:
+    if not _ShouldIncludeFeature(feature):
+      continue
+    # Infer canonical tensorflow dtype.
+    if feature.value_count.min < 0:
+      raise ValueError(
+          "Feature {} has value_count.min < 0 (value was {}).".format(
+              feature.name, feature.value_count.min))
 
-  if feature.value_count.min < 0:
-    raise ValueError(
-        "Feature {} has value_count.min < 0 (value was {}).".format(
-            feature.name, feature.value_count.min))
+    if feature.value_count.max < 0:
+      raise ValueError(
+          "Feature {} has value_count.max < 0 (value was {}).".format(
+              feature.name, feature.value_count.max))
 
-  if feature.value_count.max < 0:
-    raise ValueError(
-        "Feature {} has value_count.max < 0 (value was {}).".format(
-            feature.name, feature.value_count.max))
+    # Use heuristics to infer the shape and representation.
+    if (feature.value_count.min == feature.value_count.max
+        and feature.value_count.min == 1):
+      # Case 1: value_count.min == value_count.max == 1.  Infer a DenseTensor
+      # with rank 0 and a default value.
+      logging.info(
+          "Feature %s has value_count.min == value_count.max == 1. Setting to "
+          "DenseTensor.", feature.name)
+      result[feature.name] = schema_pb2.TensorRepresentation(
+          dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
+              column_name=feature.name,
+              shape=schema_pb2.FixedShape(),
+              default_value=_LegacyInferDefaultValue(feature)))
 
-  # Use heuristics to infer the shape and representation.
-  if (feature.value_count.min == feature.value_count.max
-      and feature.value_count.min == 1):
-    # Case 1: value_count.min == value_count.max == 1.  Infer a DenseTensor
-    # with rank 0 and a default value.
-    logging.info(
-        "Feature %s has value_count.min == value_count.max == 1. Setting to "
-        "DenseTensor.", feature.name)
-    return schema_pb2.TensorRepresentation(
-        dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
-            column_name=feature.name,
-            shape=schema_pb2.FixedShape(),
-            default_value=_LegacyInferDefaultValue(feature)))
+    elif (feature.value_count.min == feature.value_count.max
+          and feature.value_count.min > 1):
+      # Case 2: value_count.min == value_count.max > 1.  Infer a DenseTensor
+      # with rank 1 and a default value.
+      shape = schema_pb2.FixedShape(
+          dim=[schema_pb2.FixedShape.Dim(size=feature.value_count.min)])
+      logging.info(
+          "Feature %s has value_count.min == value_count.max > 1. Setting to "
+          "DenseTensor.", feature.name)
+      result[feature.name] = schema_pb2.TensorRepresentation(
+          dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
+              column_name=feature.name, shape=shape,
+              default_value=_LegacyInferDefaultValue(feature)))
 
-  elif (feature.value_count.min == feature.value_count.max
-        and feature.value_count.min > 1):
-    # Case 2: value_count.min == value_count.max > 1.  Infer a DenseTensor
-    # with rank 1 and a default value.
-    shape = schema_pb2.FixedShape(
-        dim=[schema_pb2.FixedShape.Dim(size=feature.value_count.min)])
-    logging.info(
-        "Feature %s has value_count.min == value_count.max > 1. Setting to "
-        "DenseTensor.", feature.name)
-    return schema_pb2.TensorRepresentation(
-        dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
-            column_name=feature.name, shape=shape,
-            default_value=_LegacyInferDefaultValue(feature)))
+    else:
+      # Case 3: Either value_count.min != value_count.max or
+      # value_count.min == value_count.max == 0.  Infer a VarLenSparseTensor.
+      logging.info(
+          "Feature %s has value_count.min != value_count.max or "
+          "value_count.min == value_count.max == 0. "
+          "Setting to VarLenSparseTensor.", feature.name)
+      result[feature.name] = schema_pb2.TensorRepresentation(
+          varlen_sparse_tensor=
+          schema_pb2.TensorRepresentation.VarLenSparseTensor(
+              column_name=feature.name))
 
-  else:
-    # Case 3: Either value_count.min != value_count.max or
-    # value_count.min == value_count.max == 0.  Infer a VarLenSparseTensor.
-    logging.info(
-        "Feature %s has value_count.min != value_count.max or "
-        "value_count.min == value_count.max == 0. "
-        "Setting to VarLenSparseTensor.", feature.name)
-    return schema_pb2.TensorRepresentation(
-        varlen_sparse_tensor=schema_pb2.TensorRepresentation.VarLenSparseTensor(
-            column_name=feature.name))
+  return result
 
 
 def _LegacyInferDefaultValue(

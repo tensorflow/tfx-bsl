@@ -98,6 +98,40 @@ _INFER_TEST_CASES = [
     },
     {
         'testcase_name':
+            'sparse',
+        'ascii_proto':
+            """
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 max: 9 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }""",
+        'expected': {
+            'x':
+                """
+              sparse_tensor {
+                index_column_names: ["index_key"]
+                value_column_name: "value_key"
+                dense_shape {
+                  dim {
+                    size: 10
+                  }
+                }
+              }
+            """
+        }
+    },
+    {
+        'testcase_name':
             'deprecated_feature',
         'ascii_proto':
             """
@@ -305,6 +339,162 @@ _LEGACY_INFER_TEST_CASES = [
 ]
 
 
+_INVALID_SCHEMA_INFER_TEST_CASES = [
+    dict(
+        testcase_name='sparse_feature_no_index_int_domain',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        error_msg=r'Cannot determine dense shape of sparse feature'),
+    dict(
+        testcase_name='sparse_feature_no_index_int_domain_min',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { max: 9 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+          """,
+        error_msg=(r'Cannot determine dense shape of sparse feature x. '
+                   r'The minimum domain value of index feature index_key'
+                   r' is not set.')),
+    dict(
+        testcase_name='sparse_feature_non_zero_index_int_domain_min',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 1 max: 9 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+          """,
+        error_msg=(r'Only 0-based index features are supported. Sparse '
+                   r'feature x has index feature index_key whose '
+                   r'minimum domain value is 1')),
+    dict(
+        testcase_name='sparse_feature_no_index_int_domain_max',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+          """,
+        error_msg=(r'Cannot determine dense shape of sparse feature x. '
+                   r'The maximum domain value of index feature index_key'
+                   r' is not set.')),
+    dict(
+        testcase_name='sparse_feature_rank_0',
+        ascii_proto="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            value_feature {name: "value_key"}
+          }
+        """,
+        error_msg=(r'sparse_feature x had rank 0 but currently only'
+                   r' rank 1 sparse features are supported')),
+    dict(
+        testcase_name='sparse_feature_rank_2',
+        ascii_proto="""
+          feature {
+            name: "index_key_1"
+            type: INT
+          }
+          feature {
+            name: "index_key_2"
+            type: INT
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            is_sorted: true
+            index_feature {name: "index_key_1"}
+            index_feature {name: "index_key_2"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        error_msg=(r'sparse_feature x had rank 2 but currently only '
+                   r'rank 1 sparse features are supported')),
+    dict(
+        testcase_name='sparse_feature_missing_index_key',
+        ascii_proto="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            is_sorted: true
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        error_msg=(r'sparse_feature x referred to index feature '
+                   r'index_key which did not exist in the schema')),
+    dict(
+        testcase_name='sparse_feature_missing_value_key',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 max: 9 }
+          }
+          sparse_feature {
+            name: "x"
+            is_sorted: true
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        error_msg=(r'sparse_feature x referred to value feature '
+                   r'value_key which did not exist in the schema')),
+]
+
 _GET_SOURCE_COLUMNS_TEST_CASES = [
     dict(
         testcase_name='oneof_unspecified',
@@ -356,6 +546,18 @@ class TensorRepresentationUtilTest(parameterized.TestCase):
         expected_protos,
         tensor_representation_util.InferTensorRepresentationsFromSchema(
             schema))
+
+  @parameterized.named_parameters(*_INVALID_SCHEMA_INFER_TEST_CASES)
+  def testInferTensorRepresentationsFromSchemaInvalidSchema(
+      self, ascii_proto, error_msg, generate_legacy_feature_spec=False):
+    if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
+      print('Skipping test case: ', self.id(), file=sys.stderr)
+      return
+    schema = text_format.Parse(ascii_proto, schema_pb2.Schema())
+    if _IS_LEGACY_SCHEMA:
+      schema.generate_legacy_feature_spec = generate_legacy_feature_spec
+    with self.assertRaisesRegex(ValueError, error_msg):
+      tensor_representation_util.InferTensorRepresentationsFromSchema(schema)
 
   def testGetTensorRepresentationsFromSchema(self):
     self.assertIsNone(

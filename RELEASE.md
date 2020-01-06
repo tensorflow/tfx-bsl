@@ -6,6 +6,7 @@
 
 *  Introduced TFXIO, the interface for [Standardized TFX Inputs](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
 *  Added the first implementation of TFXIO, for tf.Example on TFRecords.
+*  Started requiring `tensorflow-metadata>=0.15.2,<0.16`.
 
 ### Bug Fixes and Other Changes
 
