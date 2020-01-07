@@ -3,6 +3,8 @@
 ## Current version (not yet released; still in development)
 
 ### Major Features and Improvements
+*  Requires `apache-beam>=2.17,<3`
+*  Requires `pyarrow>=0.15,<0.16`
 
 *  Introduced TFXIO, the interface for [Standardized TFX Inputs](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
 *  Added the first implementation of TFXIO, for tf.Example on TFRecords.
