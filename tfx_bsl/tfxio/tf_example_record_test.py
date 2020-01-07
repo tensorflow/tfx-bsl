@@ -131,7 +131,7 @@ class TfExampleRecordTest(absltest.TestCase):
     _WriteInputs(cls._example_file)
 
   def _MakeTFXIO(self, schema):
-    return tf_example_record.TFExampleRecord(self._example_file, schema)
+    return tf_example_record.TFExampleRecord(self._example_file, schema=schema)
 
   def ValidateRecordBatch(self, record_batch):
     self.assertIsInstance(record_batch, pa.RecordBatch)

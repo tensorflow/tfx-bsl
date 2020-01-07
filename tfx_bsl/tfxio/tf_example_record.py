@@ -125,18 +125,28 @@ class TFExampleRecord(_TFExampleRecordBase):
 
   def __init__(self,
                file_pattern: Text,
+               validate: bool = True,
                schema: Optional[schema_pb2.Schema] = None):
+    """Initializes a TFExampleRecord TFXIO.
+
+    Args:
+      file_pattern: A file glob pattern to read TFRecords from.
+      validate: Boolean flag to verify that the files exist during the pipeline
+          creation time.
+      schema: A TFMD Schema describing the dataset.
+    """
     super(TFExampleRecord, self).__init__(schema)
     self._file_pattern = file_pattern
+    self._validate = validate
 
   def _SerializedExamplesSource(self) -> beam.PTransform:
     """Returns a PTransform that produces PCollection[bytes]."""
-    return beam.io.ReadFromTFRecord(self._file_pattern)
+    return beam.io.ReadFromTFRecord(self._file_pattern, validate=self._validate)
 
   def Project(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     return TFExampleRecord(
-        self._file_pattern, projected_schema)
+        self._file_pattern, validate=self._validate, schema=projected_schema)
 
   def TensorFlowDataset(self):
     raise NotImplementedError
