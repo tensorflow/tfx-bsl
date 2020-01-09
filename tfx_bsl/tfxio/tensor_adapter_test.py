@@ -408,6 +408,39 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllEqual(a.values, b.values)
     self.assertAllEqual(a.dense_shape, b.dense_shape)
 
+  def assertNonEager(self, v):
+    """Asserts `v` is not a Eager tensor."""
+    self.assertIsInstance(v, (tf.compat.v1.SparseTensorValue, np.ndarray))
+
+  def assertAdapterCanProduceNonEagerInEagerMode(self, adapter, record_batch):
+    if tf.executing_eagerly():
+      converted_non_eager = adapter.ToBatchTensors(
+          record_batch, produce_eager_tensors=False)
+      for v in converted_non_eager.values():
+        self.assertNonEager(v)
+
+  @test_util.deprecated_graph_mode_only
+  def testRaiseOnRequestingEagerTensorsInGraphMode(self):
+    tensor_representation = text_format.Parse(
+        """
+  sparse_tensor {
+    index_column_names: ["key"]
+    value_column_name: "value"
+    dense_shape {
+      dim {
+        size: 100
+      }
+    }
+  }
+  """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays(
+        [pa.array([[1]]), pa.array([[2]])], ["key", "value"])
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           {"output": tensor_representation}))
+    with self.assertRaisesRegexp(RuntimeError, "eager mode was not enabled"):
+      adapter.ToBatchTensors(record_batch, produce_eager_tensors=True)
+
   @parameterized.named_parameters(*_ONE_TENSOR_TEST_CASES)
   @test_util.run_in_graph_and_eager_modes
   def testOneTensorFromOneColumn(self, tensor_representation_textpb,
@@ -444,6 +477,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     else:
       self.assertAllEqual(expected_output, actual_output)
 
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
+
   @parameterized.named_parameters(*_Make1DSparseTensorTestCases())
   @test_util.run_in_graph_and_eager_modes
   def test1DSparseTensor(self, tensor_representation_textpb, record_batch,
@@ -466,6 +501,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                                                      expected_type_spec))
 
     self.assertSparseAllEqual(expected_output, actual_output)
+
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
   @test_util.run_in_graph_and_eager_modes
   def test2DSparseTensor(self):
@@ -506,6 +543,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
             indices=[[0, 9, 0], [2, 9, 0], [3, 7, 0], [3, 8, 1], [3, 9, 2]],
             values=tf.convert_to_tensor([1, 2, 3, 4, 5], dtype=tf.int64)),
         actual_output)
+
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
   @test_util.run_in_graph_and_eager_modes
   def testMultipleColumns(self):
@@ -627,6 +666,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
         self.assertTrue(
             spec.is_compatible_with(tensors[name]),
             "{} is not compatible with spec {}".format(tensors[name], spec))
+
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
   def testRaiseOnUnsupportedTensorRepresentation(self):
     with self.assertRaisesRegexp(ValueError, "Unable to handle tensor"):

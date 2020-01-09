@@ -26,7 +26,7 @@ import six
 from tfx_bsl.arrow import array_util
 from tfx_bsl.pyarrow_tf import pyarrow as pa
 from tfx_bsl.pyarrow_tf import tensorflow as tf
-from typing import Any, Dict, List, Text, Tuple, Union
+from typing import Any, Dict, List, Text, Optional, Tuple, Union
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -64,6 +64,7 @@ class TensorAdapter(object):
   __slots__ = ["_arrow_schema", "_type_handlers", "_type_specs"]
 
   def __init__(self, config: TensorAdapterConfig):
+
     self._arrow_schema = config.arrow_schema
     self._type_handlers = _BuildTypeHandlers(
         config.tensor_representations, config.arrow_schema)
@@ -76,14 +77,38 @@ class TensorAdapter(object):
     """Returns the TypeSpec for each tensor."""
     return self._type_specs
 
-  def ToBatchTensors(self, record_batch: pa.RecordBatch) -> Dict[Text, Any]:
-    """Returns a batch of tensors translated from record_batch."""
+  def ToBatchTensors(
+      self,
+      record_batch: pa.RecordBatch,
+      produce_eager_tensors: Optional[bool] = None) -> Dict[Text, Any]:
+    """Returns a batch of tensors translated from `record_batch`.
+
+    Args:
+      record_batch: input RecordBatch.
+      produce_eager_tensors: controls whether the ToBatchTensors() produces
+        eager tensors or ndarrays (or Tensor value objects). If None, determine
+        that from whether TF Eager mode is enabled.
+
+    Raises:
+      RuntimeError: when Eager Tensors are requested but TF is not executing
+        eagerly.
+      ValueError: when Any handler failed to produce a Tensor.
+    """
+
+    tf_executing_eagerly = tf.executing_eagerly()
+    if produce_eager_tensors and not tf_executing_eagerly:
+      raise RuntimeError(
+          "Eager Tensors were requested but eager mode was not enabled.")
+    if produce_eager_tensors is None:
+      produce_eager_tensors = tf_executing_eagerly
+
     if not record_batch.schema.equals(self._arrow_schema):
       raise ValueError("Expected same schema.")
     result = {}
     for tensor_name, handler in self._type_handlers:
       try:
-        result[tensor_name] = handler.GetTensor(record_batch)
+        result[tensor_name] = handler.GetTensor(record_batch,
+                                                produce_eager_tensors)
       except Exception as e:
         raise ValueError("Error raised when handling tensor {}: {}"
                          .format(tensor_name, e))
@@ -124,7 +149,8 @@ class _TypeHandler(object):
     """Returns the TypeSpec of the converted Tensor or CompositeTensor."""
 
   @abc.abstractmethod
-  def GetTensor(self, record_batch: pa.RecordBatch) -> Any:
+  def GetTensor(self, record_batch: pa.RecordBatch,
+                produce_eager_tensors: bool) -> Any:
     """Converts the RecordBatch to Tensor or CompositeTensor.
 
     The result must be of the same (not only compatible) TypeSpec as
@@ -133,6 +159,8 @@ class _TypeHandler(object):
     Args:
       record_batch: a RecordBatch that is of the same Schema as what was
         passed at initialization time.
+      produce_eager_tensors: if True, returns Eager Tensors, otherwise returns
+        ndarrays or Tensor value objects.
 
     Returns:
       A Tensor or a CompositeTensor. Note that their types may vary depending
@@ -172,7 +200,8 @@ class _BaseDenseTensorHandler(_TypeHandler):
     return tf.TensorSpec(self._shape, self._dtype)
 
   def _ListArrayToTensor(
-      self, list_array: pa.Array) -> Union[np.ndarray, tf.Tensor]:
+      self, list_array: pa.Array,
+      produce_eager_tensors: bool) -> Union[np.ndarray, tf.Tensor]:
     """Converts a ListArray to a dense tensor."""
     values = list_array.flatten()
     batch_size = len(list_array)
@@ -188,7 +217,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
     actual_shape = list(self._shape)
     actual_shape[0] = batch_size
     values_np = np.asarray(values).reshape(actual_shape)
-    if tf.executing_eagerly():
+    if produce_eager_tensors:
       return tf.convert_to_tensor(values_np)
 
     return values_np
@@ -209,10 +238,10 @@ class _DenseTensorHandler(_BaseDenseTensorHandler):
 
   __slots__ = []
 
-  def GetTensor(
-      self, record_batch: pa.RecordBatch) -> Union[np.ndarray, tf.Tensor]:
+  def GetTensor(self, record_batch: pa.RecordBatch,
+                produce_eager_tensors: bool) -> Union[np.ndarray, tf.Tensor]:
     column = record_batch.column(self._column_index)
-    return self._ListArrayToTensor(column)
+    return self._ListArrayToTensor(column, produce_eager_tensors)
 
   @staticmethod
   def CanHandle(arrow_schema: pa.Schema,
@@ -236,11 +265,11 @@ class _DefaultFillingDenseTensorHandler(_BaseDenseTensorHandler):
         self._shape[1:], value_type,
         tensor_representation.dense_tensor.default_value)
 
-  def GetTensor(
-      self, record_batch: pa.RecordBatch) -> Union[np.ndarray, tf.Tensor]:
+  def GetTensor(self, record_batch: pa.RecordBatch,
+                produce_eager_tensors: bool) -> Union[np.ndarray, tf.Tensor]:
     column = record_batch.column(self._column_index)
     column = array_util.FillNullLists(column, self._default_fill)
-    return self._ListArrayToTensor(column)
+    return self._ListArrayToTensor(column, produce_eager_tensors)
 
   @staticmethod
   def CanHandle(arrow_schema: pa.Schema,
@@ -270,14 +299,15 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     return tf.SparseTensorSpec(
         tf.TensorShape([None, None]), self._dtype)
 
-  def GetTensor(self, record_batch: pa.RecordBatch) -> Any:
+  def GetTensor(self, record_batch: pa.RecordBatch,
+                produce_eager_tensors: bool) -> Any:
     array = record_batch.column(self._column_index)
     coo_array, dense_shape_array = array_util.CooFromListArray(array)
     dense_shape_np = dense_shape_array.to_numpy()
     values_np = np.asarray(array.flatten())
     coo_np = coo_array.to_numpy().reshape(values_np.size, 2)
 
-    if tf.executing_eagerly():
+    if produce_eager_tensors:
       return tf.sparse.SparseTensor(
           indices=tf.convert_to_tensor(coo_np),
           dense_shape=tf.convert_to_tensor(dense_shape_np),
@@ -323,7 +353,8 @@ class _SparseTensorHandler(_TypeHandler):
     return tf.SparseTensorSpec(tf.TensorShape([None] + self._shape),
                                self._dtype)
 
-  def GetTensor(self, record_batch: pa.RecordBatch) -> Any:
+  def GetTensor(self, record_batch: pa.RecordBatch,
+                produce_eager_tensors: bool) -> Any:
     values_array = record_batch.column(self._value_column_index)
     values_parent_indices = array_util.GetFlattenedArrayParentIndices(
         values_array)
@@ -344,7 +375,7 @@ class _SparseTensorHandler(_TypeHandler):
 
     dense_shape = [len(record_batch)] + self._shape
 
-    if tf.executing_eagerly():
+    if produce_eager_tensors:
       return tf.sparse.SparseTensor(
           indices=tf.convert_to_tensor(coo_np),
           dense_shape=tf.convert_to_tensor(dense_shape, dtype=tf.int64),
