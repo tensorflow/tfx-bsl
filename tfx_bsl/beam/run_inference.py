@@ -21,12 +21,16 @@ from __future__ import print_function
 import collections
 import os
 import platform
+import sys
 import time
+try:
+  import resource
+except ImportError:
+  resource = None
 
 from absl import logging
 import apache_beam as beam
 import numpy as np
-import psutil
 from tfx_bsl.beam import shared
 from tfx_bsl.proto import model_spec_pb2
 from tfx_bsl.pyarrow_tf import tensorflow as tf
@@ -830,9 +834,17 @@ def _get_meta_graph_def(saved_model_pb: _SavedModel,
 
 
 def _get_current_process_memory_in_bytes():
-  """Returns memory usage in types."""
+  """Returns memory usage in bytes."""
 
-  return psutil.Process(os.getpid()).memory_info().rss
+  if resource is not None:
+    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if _is_darwin():
+      return usage
+    return usage * 1024
+  else:
+    logging.warning('Resource module is not available for current platform, '
+                    'memory usage cannot be fetched.')
+  return 0
 
 
 def _get_tags(
@@ -843,6 +855,10 @@ def _get_tags(
     return list(inference_endpoint.saved_model_spec.tag)
   else:
     return [tf.saved_model.SERVING]
+
+
+def _is_darwin() -> bool:
+  return sys.platform == 'darwin'
 
 
 def _is_windows() -> bool:
