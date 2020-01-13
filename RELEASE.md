@@ -1,19 +1,22 @@
 # `tfx_bsl` release notes
 
-## Current version (not yet released; still in development)
+## Release 0.21.0
 
 ### Major Features and Improvements
-*  Requires `apache-beam>=2.17,<3`
-*  Requires `pyarrow>=0.15,<0.16`
 
-*  Introduced TFXIO, the interface for [Standardized TFX Inputs](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
-*  Added the first implementation of TFXIO, for tf.Example on TFRecords.
-*  Started requiring `tensorflow-metadata>=0.15.2,<0.16`.
+*   Introduced TFXIO, the interface for
+    [Standardized TFX Inputs](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
+
+*   Added the first implementation of TFXIO, for tf.Example on TFRecords.
 
 ### Bug Fixes and Other Changes
 
-*  Added a test_util sub-package that contains a tool to discover and run all
-   the absltests in a dir (like python's unittest discovery).
+*   Added a test_util sub-package that contains a tool to discover and run all
+    the absltests in a dir (like python's unittest discovery).
+*   Requires `apache-beam>=2.17,<3`
+*   Requires `pyarrow>=0.15,<0.16`
+*   Requires `tensorflow>=1.15,<3`
+*   Requires `tensorflow-metadata>=0.21,<0.22`.
 
 ### Breaking Changes
 
