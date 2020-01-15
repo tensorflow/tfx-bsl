@@ -49,7 +49,7 @@ pip install ${TENSORFLOW} && \
 pip uninstall -y Cython && \
 
 "${PYTHON_BIN_PATH}" -m tfx_bsl.test_util.run_all_tests --start_dir="tfx_bsl" \
-  || { echo "Failed to run unit tests." exit 1; }
+  || { echo "Unit tests failed."; exit 1; }
 
 # copy wheel to ${KOKORO_ARTIFACTS_DIR}
 cp ${wheel} ${KOKORO_ARTIFACTS_DIR}
