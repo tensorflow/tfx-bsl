@@ -30,9 +30,9 @@ from __future__ import print_function
 
 import abc
 import apache_beam as beam
+import pyarrow as pa
 import six
-from tfx_bsl.pyarrow_tf import pyarrow as pa
-from tfx_bsl.pyarrow_tf import tensorflow as tf
+import tensorflow as tf
 from tfx_bsl.tfxio import tensor_adapter
 from typing import List, Text
 

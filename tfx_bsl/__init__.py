@@ -13,10 +13,4 @@
 # limitations under the License.
 """Init module for tfx_bsl."""
 
-# tfx_bsl's extension module depends on pyarrow's and tensorflow's shared
-# libraries. Importing the corresponding python packages will cause those
-# libraries to be loaded. This way the dynamic linker wouldn't need to search
-# for those libraries in the filesystem (which is bound to fail).
-from tfx_bsl import pyarrow_tf as _
-
 from tfx_bsl.version import __version__

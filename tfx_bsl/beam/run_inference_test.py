@@ -22,9 +22,9 @@ import os
 
 import apache_beam as beam
 from apache_beam.metrics.metric import MetricsFilter
+import tensorflow as tf
 from tfx_bsl.beam import run_inference
 from tfx_bsl.proto import model_spec_pb2
-from tfx_bsl.pyarrow_tf import tensorflow as tf
 
 from google.protobuf import text_format
 

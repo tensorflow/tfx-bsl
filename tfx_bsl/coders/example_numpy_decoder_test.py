@@ -18,8 +18,8 @@ from __future__ import print_function
 
 import sys
 import numpy as np
+import tensorflow as tf
 from tfx_bsl.coders import example_coder
-from tfx_bsl.pyarrow_tf import tensorflow as tf
 
 from google.protobuf import text_format
 from absl.testing import absltest

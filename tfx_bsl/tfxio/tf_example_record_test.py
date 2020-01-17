@@ -22,8 +22,8 @@ import os
 from absl import flags
 import apache_beam as beam
 from apache_beam.testing import util as beam_testing_util
-from tfx_bsl.pyarrow_tf import pyarrow as pa
-from tfx_bsl.pyarrow_tf import tensorflow as tf
+import pyarrow as pa
+import tensorflow as tf
 from tfx_bsl.tfxio import tf_example_record
 from google.protobuf import text_format
 from absl.testing import absltest

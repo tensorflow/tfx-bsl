@@ -22,10 +22,11 @@ import abc
 import collections
 
 import numpy as np
+import pyarrow as pa
 import six
+import tensorflow as tf
 from tfx_bsl.arrow import array_util
-from tfx_bsl.pyarrow_tf import pyarrow as pa
-from tfx_bsl.pyarrow_tf import tensorflow as tf
+import typing
 from typing import Any, Dict, List, Text, Optional, Tuple, Union
 
 from tensorflow_metadata.proto.v0 import schema_pb2
@@ -197,7 +198,8 @@ class _BaseDenseTensorHandler(_TypeHandler):
 
   @property
   def type_spec(self) -> tf.TypeSpec:
-    return tf.TensorSpec(self._shape, self._dtype)
+    # TF's type stub is not correct about TypeSpec and its sub-classes.
+    return typing.cast(tf.TypeSpec, tf.TensorSpec(self._shape, self._dtype))
 
   def _ListArrayToTensor(
       self, list_array: pa.Array,
@@ -296,8 +298,8 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   @property
   def type_spec(self) -> tf.TypeSpec:
-    return tf.SparseTensorSpec(
-        tf.TensorShape([None, None]), self._dtype)
+    return typing.cast(tf.TypeSpec, tf.SparseTensorSpec(
+        tf.TensorShape([None, None]), self._dtype))
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Any:
@@ -350,8 +352,9 @@ class _SparseTensorHandler(_TypeHandler):
 
   @property
   def type_spec(self) -> tf.TypeSpec:
-    return tf.SparseTensorSpec(tf.TensorShape([None] + self._shape),
-                               self._dtype)
+    return typing.cast(tf.TypeSpec,
+                       tf.SparseTensorSpec(tf.TensorShape([None] + self._shape),
+                                           self._dtype))
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Any:

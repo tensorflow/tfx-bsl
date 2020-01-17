@@ -17,8 +17,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import pyarrow as pa
 from tfx_bsl.arrow import table_util
-from tfx_bsl.pyarrow_tf import pyarrow as pa
 
 from absl.testing import absltest
 from absl.testing import parameterized

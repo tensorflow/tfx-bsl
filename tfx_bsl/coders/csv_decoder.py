@@ -25,7 +25,7 @@ import apache_beam as beam
 import enum
 import numpy as np
 import six
-from tfx_bsl.pyarrow_tf import tensorflow as tf
+import tensorflow as tf
 from typing import Any, Dict, List, Text, Union
 
 from tensorflow_metadata.proto.v0 import statistics_pb2

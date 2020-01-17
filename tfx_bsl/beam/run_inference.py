@@ -31,9 +31,9 @@ except ImportError:
 from absl import logging
 import apache_beam as beam
 import numpy as np
+import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.proto import model_spec_pb2
-from tfx_bsl.pyarrow_tf import tensorflow as tf
 from typing import Any, Iterable, List, Mapping, Sequence, Text, Tuple, Union
 
 # TODO(b/131873699): Remove once 1.x support is dropped.

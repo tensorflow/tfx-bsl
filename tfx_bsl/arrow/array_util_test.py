@@ -20,10 +20,10 @@ from __future__ import print_function
 import itertools
 
 import numpy as np
+import pyarrow as pa
 import six
 
 from tfx_bsl.arrow import array_util
-from tfx_bsl.pyarrow_tf import pyarrow as pa
 
 from absl.testing import absltest
 from absl.testing import parameterized

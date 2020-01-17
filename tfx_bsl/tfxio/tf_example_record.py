@@ -21,8 +21,8 @@ from __future__ import print_function
 import abc
 
 import apache_beam as beam
+import pyarrow as pa
 from tfx_bsl.coders import example_coder
-from tfx_bsl.pyarrow_tf import pyarrow as pa
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
 from tfx_bsl.tfxio import tfxio
