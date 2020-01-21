@@ -13,7 +13,9 @@ tf_pybind_extension(
         "tfx_bsl_extension.cc",
     ],
     module_name = "tfx_bsl_extension",
-    visibility = ["//tfx_bsl:__pkg__"],
+    visibility = [
+        "//tfx_bsl:__pkg__",
+    ],
     deps = [
         "//tfx_bsl/cc/arrow:arrow_submodule",
         "//tfx_bsl/cc/coders:coders_submodule",
