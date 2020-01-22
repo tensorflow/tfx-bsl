@@ -1,3 +1,4 @@
+"""Initialization logic for package tfx_bsl.cc."""
 # Copyright 2019 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,3 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# The python extension module under this package has a binary dependency (
+# DT_NEEDED) on shared libraries provided by `pyarrow`. The dynamic loader does
+# not know where to find those libraries in the file system. Importing pyarrow
+# will cause those libraries to be loaded, and the loader won't need to search
+# in the fs any more.
+import pyarrow as _

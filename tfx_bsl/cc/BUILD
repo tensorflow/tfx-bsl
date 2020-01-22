@@ -27,6 +27,7 @@ tf_pybind_extension(
 # for import.
 py_library(
     name = "tfx_bsl_extension_lib",
+    srcs = ["__init__.py"],
     visibility = ["//tfx_bsl:__subpackages__"],
     deps = [":tfx_bsl_extension"],
 )
