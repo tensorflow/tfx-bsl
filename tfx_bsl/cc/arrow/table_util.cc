@@ -17,12 +17,12 @@
 #include <cstddef>
 #include <memory>
 
-#include "arrow/array/concatenate.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
+#include "arrow/array/concatenate.h"
 #include "arrow/visitor_inline.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
