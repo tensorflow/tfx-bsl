@@ -143,7 +143,7 @@ class TFExampleRecord(_TFExampleRecordBase):
     """Returns a PTransform that produces PCollection[bytes]."""
     return beam.io.ReadFromTFRecord(self._file_pattern, validate=self._validate)
 
-  def Project(self, tensor_names: List[Text]) -> tfxio.TFXIO:
+  def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     return TFExampleRecord(
         self._file_pattern, validate=self._validate, schema=projected_schema)

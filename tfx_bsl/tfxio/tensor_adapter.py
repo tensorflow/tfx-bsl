@@ -32,13 +32,26 @@ from typing import Any, Dict, List, Text, Optional, Tuple, Union
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 TensorRepresentations = Dict[Text, schema_pb2.TensorRepresentation]
-# TODO(zhuo): Use typing.NamedCollections once python2 support is dropped.
-TensorAdapterConfig = collections.namedtuple(
+
+
+class TensorAdapterConfig(collections.namedtuple(
     "TensorAdapterConfig",
     [
-        "arrow_schema",  # type is pa.Schema
-        "tensor_representations",  # type is TensorRepresentations
-    ])
+        "arrow_schema",
+        "tensor_representations",
+        "original_type_specs",
+    ])):
+  """Config to a TensorAdapter.
+
+  Contains all the information needed to create a TensorAdapter.
+  """
+
+  def __new__(cls,
+              arrow_schema: pa.Schema,
+              tensor_representations: TensorRepresentations,
+              original_type_specs: Optional[Dict[Text, tf.TypeSpec]] = None):
+    return super(TensorAdapterConfig, cls).__new__(
+        cls, arrow_schema, tensor_representations, original_type_specs)
 
 
 class TensorAdapter(object):
@@ -62,7 +75,8 @@ class TensorAdapter(object):
       self.ToBatchedTensors(...)[tensor_name])
   """
 
-  __slots__ = ["_arrow_schema", "_type_handlers", "_type_specs"]
+  __slots__ = ["_arrow_schema", "_type_handlers", "_type_specs",
+               "_original_type_specs"]
 
   def __init__(self, config: TensorAdapterConfig):
 
@@ -73,6 +87,31 @@ class TensorAdapter(object):
         tensor_name: handler.type_spec
         for tensor_name, handler in self._type_handlers
     }
+
+    self._original_type_specs = (
+        self._type_specs
+        if config.original_type_specs is None else config.original_type_specs)
+
+    for tensor_name, type_spec in self._type_specs.items():
+      original_type_spec = self._original_type_specs.get(tensor_name, None)
+      if original_type_spec is None or original_type_spec != type_spec:
+        raise ValueError(
+            "original_type_specs must be a superset of type_specs derived from "
+            "TensorRepresentations. But for tensor {}, got {} vs {}".format(
+                tensor_name, original_type_spec, type_spec))
+
+  def OriginalTypeSpecs(self) -> Dict[Text, tf.TypeSpec]:
+    """Returns the origin's type specs.
+
+    A TFXIO 'Y' may be a result of projection of another TFXIO 'X', in which
+    case then 'X' is the origin of 'Y'. And this method returns what
+    X.TensorAdapter().TypeSpecs() would return.
+
+    May equal to `self.TypeSpecs()`.
+
+    Returns: a mapping from tensor names to `tf.TypeSpec`s.
+    """
+    return self._original_type_specs
 
   def TypeSpecs(self) -> Dict[Text, tf.TypeSpec]:
     """Returns the TypeSpec for each tensor."""

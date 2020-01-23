@@ -34,7 +34,7 @@ import pyarrow as pa
 import six
 import tensorflow as tf
 from tfx_bsl.tfxio import tensor_adapter
-from typing import List, Text
+from typing import List, Optional, Text
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -42,7 +42,7 @@ class TFXIO(object):
   """Abstract basic class of all TFXIO API implementations."""
 
   @abc.abstractmethod
-  def BeamSource(self) -> beam.PTransform:
+  def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
     """Returns a beam `PTransform` that produces `PCollection[pa.RecordBatch]`.
 
     May NOT raise an error if the TFMD schema was not provided at construction
@@ -53,6 +53,10 @@ class TFXIO(object):
     returned by `self.ArrowSchema`. If a TFMD schema was not provided, the
     `pa.RecordBatch`es might not be of the same schema (they may contain
     different numbers of columns).
+
+    Args:
+      batch_size: if not None, the `pa.RecordBatch` produced will be of the
+        specified size. Otherwise it's automatically tuned by Beam.
     """
 
   @abc.abstractmethod
@@ -81,10 +85,10 @@ class TFXIO(object):
     """
 
   @abc.abstractmethod
-  def Project(self, tensor_names: List[Text]) -> "TFXIO":
-    """Projects the dataset represented by this TFXIO.
+  def _ProjectImpl(self, tensor_names: List[Text]) -> "TFXIO":
+    """Sub-classes should implement this interface to perform projections.
 
-    Returns a `TFXIO` instance that is the same as `self` except that:
+    It should return a `TFXIO` instance that is the same as `self` except that:
       - Only columns needed for given tensor_names are guaranteed to be
         produced by `self.BeamSource()`
       - `self.TensorAdapterConfig()` and `self.TensorFlowDataset()` are trimmed
@@ -95,6 +99,37 @@ class TFXIO(object):
     Args:
       tensor_names: a set of tensor names.
     """
+
+  # final
+  def Project(self, tensor_names: List[Text]) -> "TFXIO":
+    """Projects the dataset represented by this TFXIO.
+
+    A Projected TFXIO:
+    - Only columns needed for given tensor_names are guaranteed to be
+      produced by `self.BeamSource()`
+    - `self.TensorAdapterConfig()` and `self.TensorFlowDataset()` are trimmed
+      to contain only those tensors.
+    - It retains a reference to the very original TFXIO, so its TensorAdapter
+      knows about the specs of the tensors that would be produced by the
+      original TensorAdapter. Also see `TensorAdapter.OriginalTensorSpec()`.
+
+    May raise an error if the TFMD schema was not provided at construction time.
+
+    Args:
+      tensor_names: a set of tensor names.
+
+    Returns:
+      A `TFXIO` instance that is the same as `self` except that:
+      - Only columns needed for given tensor_names are guaranteed to be
+        produced by `self.BeamSource()`
+      - `self.TensorAdapterConfig()` and `self.TensorFlowDataset()` are trimmed
+        to contain only those tensors.
+    """
+    if isinstance(self, _ProjectedTFXIO):
+      # pylint: disable=protected-access
+      return _ProjectedTFXIO(self.origin,
+                             self.projected._ProjectImpl(tensor_names))
+    return _ProjectedTFXIO(self, self._ProjectImpl(tensor_names))
 
   # final
   def TensorAdapterConfig(self) -> tensor_adapter.TensorAdapterConfig:
@@ -114,3 +149,40 @@ class TFXIO(object):
     May raise an error if the TFMD schema was not provided at construction time.
     """
     return tensor_adapter.TensorAdapter(self.TensorAdapterConfig())
+
+
+class _ProjectedTFXIO(TFXIO):
+  """A wrapper of a projected TFXIO to track its origin."""
+
+  def __init__(self, origin: TFXIO, projected: TFXIO):
+    self._origin = origin
+    self._projected = projected
+
+  @property
+  def origin(self) -> TFXIO:
+    return self._origin
+
+  @property
+  def projected(self) -> TFXIO:
+    return self._projected
+
+  def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
+    return self.projected.BeamSource(batch_size)
+
+  def ArrowSchema(self) -> pa.Schema:
+    return self.projected.ArrowSchema()
+
+  def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
+    return self.projected.TensorRepresentations()
+
+  def TensorFlowDataset(self) -> tf.data.Dataset:
+    return self.projected.TensorFlowDataset()
+
+  def _ProjectImpl(self, unused_tensor_names: List[Text]) -> "TFXIO":
+    raise ValueError("This should never be called.")
+
+  def TensorAdapterConfig(self) -> tensor_adapter.TensorAdapterConfig:
+    return tensor_adapter.TensorAdapterConfig(
+        self.projected.ArrowSchema(),
+        self.projected.TensorRepresentations(),
+        original_type_specs=self.origin.TensorAdapter().TypeSpecs())

@@ -723,6 +723,50 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
               pa.schema([pa.field(k, v) for k, v in arrow_schema.items()]),
               {"tensor": tensor_representation}))
 
+  def testOriginalTypeSpecs(self):
+    arrow_schema = pa.schema([pa.field("column1", pa.list_(pa.int32()))])
+    tensor_representations = {
+        "column1":
+            text_format.Parse(
+                """
+                dense_tensor {
+                  column_name: "column1"
+                  shape {
+                    dim {
+                      size: 1
+                    }
+                  }
+                }""", schema_pb2.TensorRepresentation())
+    }
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(arrow_schema,
+                                           tensor_representations))
+    self.assertLen(adapter.TypeSpecs(), 1)
+    self.assertEqual(adapter.TypeSpecs(), adapter.OriginalTypeSpecs())
+
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(
+            arrow_schema,
+            tensor_representations,
+            original_type_specs={
+                "column1": tf.TensorSpec(dtype=tf.int32, shape=[None, 1]),
+                "column2": tf.TensorSpec(dtype=tf.int32, shape=[None, 1])
+            }))
+    self.assertLen(adapter.TypeSpecs(), 1)
+    self.assertLen(adapter.OriginalTypeSpecs(), 2)
+
+    with self.assertRaisesRegexp(ValueError,
+                                 "original_type_specs must be a superset"):
+      adapter = tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(
+              arrow_schema,
+              tensor_representations,
+              original_type_specs={
+                  # mismatch spec of column1
+                  "column1": tf.TensorSpec(dtype=tf.int64, shape=[None, 1]),
+                  "column2": tf.TensorSpec(dtype=tf.int32, shape=[None, 1])
+              }))
+
 
 if __name__ == "__main__":
   absltest.main()
