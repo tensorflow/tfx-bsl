@@ -102,6 +102,18 @@ std::shared_ptr<Table> SliceTable(const Table& table, int64_t offset,
 
 #endif
 
+// Returns an empty table that has the same schema as `table`.
+Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
+  std::vector<std::shared_ptr<Array>> empty_arrays;
+  for (const auto& f : table.schema()->fields()) {
+    empty_arrays.emplace_back();
+    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
+        arrow::MakeArrayOfNull(f->type(), /*length=*/0, &empty_arrays.back())));
+  }
+  *result = Table::Make(table.schema(), empty_arrays, 0);
+  return Status::OK();
+}
+
 // Makes arrays of nulls of various types.
 class ArrayOfNullsMaker {
  public:
@@ -383,8 +395,7 @@ Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
       row_indices_int32_array->raw_values(), row_indices_int32_array->length());
 
   if (row_indices_span.empty()) {
-    return FromArrowStatus(
-        Table::FromRecordBatches(table->schema(), {}, result));
+    return GetEmptyTableLike(*table, result);
   }
 
   if (row_indices_span.back() >= table->num_rows()) {
@@ -407,6 +418,16 @@ Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
     table_slices.push_back(
         SliceTable(*table, row_indices_span[begin], end - begin));
     begin = end;
+  }
+
+  // Make sure to never return a table with non-zero offset (that is a slice of
+  // another table). This is needed because Array.flatten() is buggy and does
+  // not handle offsets correctly.
+  // TODO(zhuo): Remove once https://github.com/apache/arrow/pull/6006 is
+  // available.
+  if (table_slices.size() == 1) {
+    table_slices.emplace_back();
+    TFX_BSL_RETURN_IF_ERROR(GetEmptyTableLike(*table, &table_slices.back()));
   }
 
   std::shared_ptr<Table> concatenated;

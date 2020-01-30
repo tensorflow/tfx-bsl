@@ -360,6 +360,15 @@ class SliceTableByRowIndicesTest(parameterized.TestCase):
       table_util.SliceTableByRowIndices(
           pa.Table.from_arrays([pa.array([1])], ["f1"]), row_indices)
 
+  def test_always_make_a_copy(self):
+    table = pa.Table.from_arrays([
+        pa.array([[1], [2], [3]], type=pa.list_(pa.int64()))
+    ], ["f1"])
+    sliced = table_util.SliceTableByRowIndices(
+        table, pa.array([1, 2], type=pa.int32()))
+    self.assertEqual(1, sliced.columns[0].data.num_chunks)
+    self.assertEqual(0, sliced.columns[0].data.chunk(0).offset)
+
 
 if __name__ == "__main__":
   absltest.main()
