@@ -14,6 +14,14 @@
 """Arrow Array utilities."""
 # pytype: disable=import-error
 # pylint: disable=wildcard-import
-from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import *
+# pylint: disable=g-import-not-at-top
+# See b/148667210 for why the ImportError is ignored.
+try:
+  from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import *
+except ImportError:
+  import sys
+  sys.stderr.write("Error importing tfx_bsl_extension.arrow.array_util. "
+                   "Some tfx_bsl functionalities are not available")
 # pytype: enable=import-error
 # pylint: enable=wildcard-import
+# pylint: enable=g-import-not-at-top
