@@ -29,78 +29,14 @@
 
 namespace tfx_bsl {
 namespace {
-using ::arrow::AllocateEmptyBitmap;
 using ::arrow::Array;
-using ::arrow::ArrayData;
 using ::arrow::ArrayVector;
-using ::arrow::Buffer;
 using ::arrow::ChunkedArray;
 using ::arrow::Concatenate;
-using ::arrow::DataType;
 using ::arrow::Field;
 using ::arrow::Schema;
 using ::arrow::Table;
 using ::arrow::Type;
-
-// arrow::Column has been removed since 0.15.
-#if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR <= 14)
-// If a column contains multiple chunks, concatenates those chunks into one and
-// makes a new column out of it.
-Status CompactColumn(const arrow::Column& column,
-                     std::shared_ptr<arrow::Column>* compacted) {
-  std::shared_ptr<Array> merged_data_array;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-      Concatenate(column.data()->chunks(), arrow::default_memory_pool(),
-                  &merged_data_array)));
-  *compacted =
-      std::make_shared<arrow::Column>(column.field(), merged_data_array);
-  return Status::OK();
-}
-
-Status CompactTable(const Table& table, std::shared_ptr<Table>* compacted) {
-  std::vector<std::shared_ptr<arrow::Column>> compacted_columns;
-  for (int i = 0; i < table.num_columns(); ++i) {
-    std::shared_ptr<arrow::Column> compacted_column;
-    TFX_BSL_RETURN_IF_ERROR(CompactColumn(*table.column(i), &compacted_column));
-    compacted_columns.push_back(std::move(compacted_column));
-  }
-  *compacted = Table::Make(table.schema(), compacted_columns);
-  return Status::OK();
-}
-
-std::shared_ptr<ChunkedArray> GetChunkedArrayFromColumn(
-    const std::shared_ptr<arrow::Column>& column) {
-  return column->data();
-}
-
-std::shared_ptr<Table> SliceTable(const Table& table, int64_t offset,
-                                  int64_t length) {
-  const int num_columns = table.num_columns();
-  std::vector<std::shared_ptr<arrow::Column>> sliced_columns(num_columns);
-  for (int i = 0; i < num_columns; ++i) {
-    sliced_columns[i] = table.column(i)->Slice(offset, length);
-  }
-  return Table::Make(table.schema(), sliced_columns, length);
-}
-
-#else
-
-Status CompactTable(const Table& table, std::shared_ptr<Table>* compacted) {
-  return FromArrowStatus(
-      table.CombineChunks(arrow::default_memory_pool(), compacted));
-}
-
-std::shared_ptr<ChunkedArray> GetChunkedArrayFromColumn(
-    const std::shared_ptr<ChunkedArray>& column) {
-  return column;
-}
-
-std::shared_ptr<Table> SliceTable(const Table& table, int64_t offset,
-                                  int64_t length) {
-  return table.Slice(offset, length);
-}
-
-#endif
 
 // Returns an empty table that has the same schema as `table`.
 Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
@@ -111,148 +47,6 @@ Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
         arrow::MakeArrayOfNull(f->type(), /*length=*/0, &empty_arrays.back())));
   }
   *result = Table::Make(table.schema(), empty_arrays, 0);
-  return Status::OK();
-}
-
-// Makes arrays of nulls of various types.
-class ArrayOfNullsMaker {
- public:
-  ArrayOfNullsMaker(const std::shared_ptr<DataType>& type,
-                    const int64_t num_nulls) {
-    out_ = std::make_shared<ArrayData>(type, num_nulls, num_nulls);
-  }
-
-  arrow::Status Make(std::shared_ptr<ArrayData>* out) {
-    RETURN_NOT_OK(arrow::VisitTypeInline(*out_->type, this));
-    *out = std::move(out_);
-    return arrow::Status::OK();
-  }
-
-  arrow::Status Visit(const arrow::NullType&) { return arrow::Status::OK(); }
-
-  arrow::Status Visit(const arrow::BooleanType&) {
-    std::shared_ptr<Buffer> bitmap;
-    RETURN_NOT_OK(AllocateNullBitmap(&bitmap));
-    out_->buffers = {bitmap, bitmap};
-    return arrow::Status::OK();
-  }
-
-  arrow::Status Visit(const arrow::FixedWidthType& fixed) {
-    if (fixed.bit_width() % 8 != 0) {
-      return arrow::Status::Invalid(
-          "Invalid bit width. Expected single byte entries");
-    }
-    std::shared_ptr<Buffer> null_bitmap;
-    RETURN_NOT_OK(AllocateNullBitmap(&null_bitmap));
-    std::shared_ptr<Buffer> data;
-    RETURN_NOT_OK(
-        AllocateBuffer(out_->null_count * fixed.bit_width() / 8, &data));
-    out_->buffers = {null_bitmap, data};
-    return arrow::Status::OK();
-  }
-
-  arrow::Status Visit(const arrow::BinaryType&) {
-    return SetArrayDataForListAlike(/*type_has_data_buffer=*/true);
-  }
-
-  arrow::Status Visit(const arrow::ListType& l) {
-    RETURN_NOT_OK(SetArrayDataForListAlike(/*type_has_data_buffer=*/false));
-    out_->child_data.emplace_back();
-    RETURN_NOT_OK(
-        ArrayOfNullsMaker(l.value_type(), 0).Make(&out_->child_data.back()));
-    return arrow::Status::OK();
-  }
-
-#if (ARROW_VERSION_MAJOR > 0) || (ARROW_VERSION_MINOR >= 14)
-  arrow::Status Visit(const arrow::FixedSizeListType& l) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", l.ToString()));
-  }
-#endif
-
-#if (ARROW_VERSION_MAJOR > 0) || (ARROW_VERSION_MINOR >= 15)
-  arrow::Status Visit(const arrow::LargeStringType& l) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", l.ToString()));
-  }
-  arrow::Status Visit(const arrow::LargeBinaryType& l) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", l.ToString()));
-  }
-  arrow::Status Visit(const arrow::LargeListType& l) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", l.ToString()));
-  }
-#endif
-
-  arrow::Status Visit(const arrow::StructType& s) {
-    std::shared_ptr<Buffer> null_bitmap;
-    RETURN_NOT_OK(AllocateNullBitmap(&null_bitmap));
-    out_->buffers = {null_bitmap};
-    for (int i = 0; i < s.num_children(); ++i) {
-      std::shared_ptr<ArrayData> child_data;
-      RETURN_NOT_OK(ArrayOfNullsMaker(s.child(i)->type(), out_->null_count)
-                        .Make(&child_data));
-      out_->child_data.push_back(std::move(child_data));
-    }
-    return arrow::Status::OK();
-  }
-
-  arrow::Status Visit(const arrow::DictionaryType& d) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", d.ToString()));
-  }
-
-  arrow::Status Visit(const arrow::UnionType& u) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", u.ToString()));
-  }
-
-  arrow::Status Visit(const arrow::ExtensionType& e) {
-    return arrow::Status::NotImplemented(
-        absl::StrCat("Make array of nulls: ", e.ToString()));
-  }
-
- private:
-  arrow::Status AllocateNullBitmap(std::shared_ptr<Buffer>* buf) const {
-    RETURN_NOT_OK(AllocateEmptyBitmap(arrow::default_memory_pool(),
-                                      out_->null_count, buf));
-    return arrow::Status::OK();
-  }
-
-  arrow::Status AllocateNullOffsets(std::shared_ptr<Buffer>* buf) const {
-    RETURN_NOT_OK(AllocateBuffer(arrow::default_memory_pool(),
-                                 (out_->null_count + 1) * sizeof(int32_t),
-                                 buf));
-    // The offsets of an array of nulls are all 0.
-    memset((*buf)->mutable_data(), 0, static_cast<size_t>((*buf)->size()));
-    return arrow::Status::OK();
-  }
-
-  arrow::Status SetArrayDataForListAlike(const bool type_has_data_buffer) {
-    std::shared_ptr<Buffer> null_bitmap;
-    RETURN_NOT_OK(AllocateNullBitmap(&null_bitmap));
-    std::shared_ptr<Buffer> offsets;
-    RETURN_NOT_OK(AllocateNullOffsets(&offsets));
-    out_->buffers = {null_bitmap, offsets};
-    if (type_has_data_buffer) {
-      out_->buffers.push_back(nullptr);
-    }
-    return arrow::Status::OK();
-  }
-
-  std::shared_ptr<ArrayData> out_;
-};
-
-// Makes an Array of `type` and `length` which contains all nulls.
-// Only supports ListArray for now.
-// TODO(zhuo): this can be replaced by arrow::MakeArrayOfNull when 0.15 comes.
-Status MakeArrayOfNulls(const std::shared_ptr<DataType>& type, int64_t length,
-                        std::shared_ptr<Array>* result) {
-  std::shared_ptr<ArrayData> array_data;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(ArrayOfNullsMaker(type, length).Make(&array_data)));
-  *result = arrow::MakeArray(array_data);
   return Status::OK();
 }
 
@@ -320,8 +114,8 @@ class FieldRep {
       for (const auto& array_or_num_nulls : arrays_or_nulls_) {
         std::shared_ptr<Array> array;
         if (absl::holds_alternative<int64_t>(array_or_num_nulls)) {
-          TFX_BSL_RETURN_IF_ERROR(MakeArrayOfNulls(
-              field_->type(), absl::get<int64_t>(array_or_num_nulls), &array));
+          TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::MakeArrayOfNull(
+              field_->type(), absl::get<int64_t>(array_or_num_nulls), &array)));
         } else {
           array = absl::get<std::shared_ptr<Array>>(array_or_num_nulls);
         }
@@ -339,6 +133,8 @@ class FieldRep {
 
 }  // namespace
 
+// TODO(zhuo): This can be replaced by Table::ConcatenateTables with
+// promote_null_type = true in Arrow post 0.15. There is also a Python API.
 Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
                    std::shared_ptr<Table>* result) {
   absl::flat_hash_map<std::string, int> field_index_by_field_name;
@@ -358,8 +154,7 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
       }
       field_seen_by_field_index[iter->second] = true;
       FieldRep& field_rep = field_rep_by_field_index[iter->second];
-      TFX_BSL_RETURN_IF_ERROR(
-          field_rep.AppendColumn(*GetChunkedArrayFromColumn(t->column(i))));
+      TFX_BSL_RETURN_IF_ERROR(field_rep.AppendColumn(*t->column(i)));
     }
     for (int i = 0; i < field_seen_by_field_index.size(); ++i) {
       if (!field_seen_by_field_index[i]) {
@@ -415,8 +210,7 @@ Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
         row_indices_span[begin] >= row_indices_span[end]) {
       return errors::InvalidArgument("Row indices are not sorted.");
     }
-    table_slices.push_back(
-        SliceTable(*table, row_indices_span[begin], end - begin));
+    table_slices.push_back(table->Slice(row_indices_span[begin], end - begin));
     begin = end;
   }
 
@@ -433,7 +227,9 @@ Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
   std::shared_ptr<Table> concatenated;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(arrow::ConcatenateTables(table_slices, &concatenated)));
-  return CompactTable(*concatenated, result);
+
+  return FromArrowStatus(
+      concatenated->CombineChunks(arrow::default_memory_pool(), result));
 }
 
 }  // namespace tfx_bsl
