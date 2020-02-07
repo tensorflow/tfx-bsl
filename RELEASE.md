@@ -6,6 +6,16 @@
 
 ## Bug Fixes and Other Changes
 
+*   Utilities in `tfx_bsl.arrow.array_util` that:
+
+    *   previously takes `ListArray` now can also accept `LargeListArray`.
+    *   previously takes StringArray/BinaryArray now can also accept
+        LargeStringArray and LargeBinaryArray.
+
+    As a result: `GetElementLengths` now returns an `Int64Array`.
+    `GetFlattenedArrayParentIndices` may return an `Int64Array` or an
+    `Int32Array` depending on the input type.
+
 ## Breaking Changes
 
 ## Deprecations

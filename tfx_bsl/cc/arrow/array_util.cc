@@ -14,8 +14,10 @@
 #include "tfx_bsl/cc/arrow/array_util.h"
 
 #include "arrow/array/concatenate.h"
+#include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
+#include "absl/types/variant.h"
 #include "arrow/api.h"
 #include "arrow/compute/api.h"
 #include "tfx_bsl/cc/util/status.h"
@@ -24,46 +26,41 @@
 namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
+using ::arrow::LargeListArray;
 using ::arrow::ListArray;
 using ::arrow::Int32Builder;
+using ::arrow::Int64Builder;
 
-Status GetListArray(const Array& array, const ListArray** list_array) {
-  if (array.type()->id() != arrow::Type::LIST) {
-    return errors::InvalidArgument(absl::StrCat(
-        "Expected ListArray but got type id: ", array.type()->ToString()));
-  }
-  *list_array = static_cast<const ListArray*>(&array);
-  return Status::OK();
+std::unique_ptr<Int32Builder> GetOffsetsBuilder(const arrow::ListArray&) {
+  return absl::make_unique<Int32Builder>();
 }
-
-// Makes a ListArray that contains the given one element (sub-list).
-Status MakeSingletonListArray(const std::shared_ptr<Array>& element,
-                              std::shared_ptr<Array>* list_array) {
-  Int32Builder offsets_builder;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(offsets_builder.Reserve(2)));
-  offsets_builder.UnsafeAppend(0);
-  offsets_builder.UnsafeAppend(element->length());
-  std::shared_ptr<Array> offsets_array;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(offsets_builder.Finish(&offsets_array)));
-
-  return FromArrowStatus(ListArray::FromArrays(
-      *offsets_array, *element, arrow::default_memory_pool(), list_array));
+std::unique_ptr<Int64Builder> GetOffsetsBuilder(const arrow::LargeListArray&) {
+  return absl::make_unique<Int64Builder>();
 }
 
 class ElementLengthsVisitor : public arrow::ArrayVisitor {
  public:
-  ElementLengthsVisitor() {}
-  ~ElementLengthsVisitor() override {}
+  ElementLengthsVisitor() = default;
   std::shared_ptr<Array> result() const { return result_; }
   arrow::Status Visit(const arrow::StringArray& string_array) override {
     return VisitInternal(string_array);
   }
+  arrow::Status Visit(
+      const arrow::LargeStringArray& large_string_array) override {
+    return VisitInternal(large_string_array);
+  }
   arrow::Status Visit(const arrow::BinaryArray& binary_array) override {
     return VisitInternal(binary_array);
   }
+  arrow::Status Visit(
+      const arrow::LargeBinaryArray& large_binary_array) override {
+    return VisitInternal(large_binary_array);
+  }
   arrow::Status Visit(const arrow::ListArray& list_array) override {
     return VisitInternal(list_array);
+  }
+  arrow::Status Visit(const arrow::LargeListArray& large_list_array) override {
+    return VisitInternal(large_list_array);
   }
 
  private:
@@ -71,7 +68,7 @@ class ElementLengthsVisitor : public arrow::ArrayVisitor {
 
   template <class ListLikeArray>
   arrow::Status VisitInternal(const ListLikeArray& array) {
-    Int32Builder lengths_builder;
+    Int64Builder lengths_builder;
     ARROW_RETURN_NOT_OK(lengths_builder.Reserve(array.length()));
     for (int i = 0; i < array.length(); ++i) {
       lengths_builder.UnsafeAppend(array.value_length(i));
@@ -80,6 +77,143 @@ class ElementLengthsVisitor : public arrow::ArrayVisitor {
   }
 };
 
+class GetFlattenedArrayParentIndicesVisitor : public arrow::ArrayVisitor {
+ public:
+  GetFlattenedArrayParentIndicesVisitor() = default;
+  arrow::Status Visit(const arrow::ListArray& list_array) override {
+    return VisitInternal(list_array);
+  }
+  arrow::Status Visit(const arrow::LargeListArray& large_list_array) override {
+    return VisitInternal(large_list_array);
+  }
+
+  std::shared_ptr<Array> result() const { return result_; }
+
+ private:
+  template <class ListLikeArray>
+  arrow::Status VisitInternal(const ListLikeArray& array) {
+    auto lengths_builder = GetOffsetsBuilder(array);
+    ARROW_RETURN_NOT_OK(lengths_builder->Reserve(array.length()));
+    for (size_t i = 0; i < array.length(); ++i) {
+      const auto range_begin = array.value_offset(i);
+      const auto range_end = array.value_offset(i+1);
+      for (size_t j = range_begin; j < range_end; ++j) {
+        lengths_builder->UnsafeAppend(i);
+      }
+    }
+    return lengths_builder->Finish(&result_);
+  }
+  std::shared_ptr<Array> result_;
+};
+
+class FillNullListsVisitor : public arrow::ArrayVisitor {
+ public:
+  FillNullListsVisitor(const Array& fill_with) : fill_with_(fill_with) {}
+
+  arrow::Status Visit(const arrow::ListArray& list_array) override {
+    return VisitInternal(list_array);
+  }
+  arrow::Status Visit(const arrow::LargeListArray& large_list_array) override {
+    return VisitInternal(large_list_array);
+  }
+
+  std::shared_ptr<Array> result() const { return result_; }
+
+ private:
+  template <class ListLikeArray>
+  arrow::Status MakeSingletonListArray(const ListLikeArray& list_array,
+                                       const Array& element,
+                                       std::shared_ptr<Array>* result) {
+    auto offsets_builder = GetOffsetsBuilder(list_array);
+    ARROW_RETURN_NOT_OK(offsets_builder->Reserve(2));
+    offsets_builder->UnsafeAppend(0);
+    offsets_builder->UnsafeAppend(element.length());
+    std::shared_ptr<Array> offsets_array;
+    ARROW_RETURN_NOT_OK(offsets_builder->Finish(&offsets_array));
+
+    return ListLikeArray::FromArrays(*offsets_array, element,
+                                     arrow::default_memory_pool(), result);
+  }
+
+  template <class ListLikeArray>
+  arrow::Status VisitInternal(const ListLikeArray& array) {
+    std::shared_ptr<arrow::DataType> value_type = array.value_type();
+    if (!value_type->Equals(fill_with_.type())) {
+      return arrow::Status::Invalid(absl::StrCat(
+          "Expected a `fill_with` to be of the same type as "
+          "`list_array`'s value_type, ",
+          value_type->ToString(), " but got: ", fill_with_.type()->ToString()));
+    }
+
+    std::shared_ptr<Array> singleton_list;
+    std::vector<std::shared_ptr<Array>> array_fragments;
+    int64_t begin = 0, end = 0;
+    while (end < array.length()) {
+      if (array.IsNull(end)) {
+        if (!singleton_list) {
+          ARROW_RETURN_NOT_OK(
+              MakeSingletonListArray(array, fill_with_, &singleton_list));
+        }
+        if (begin != end) {
+          array_fragments.push_back(array.Slice(begin, end - begin));
+        }
+        array_fragments.push_back(singleton_list);
+        ++end;
+        begin = end;
+      } else {
+        ++end;
+      }
+    }
+
+    // If the array does not contain nulls, then signal that no filling is done
+    // and no new array is produced.
+    const bool filled = singleton_list != nullptr;
+    if (!filled) {
+      result_ = nullptr;
+      return arrow::Status::OK();
+    }
+
+    if (begin != end) {
+      array_fragments.push_back(array.Slice(begin, end - begin));
+    }
+    return arrow::Concatenate(array_fragments, arrow::default_memory_pool(),
+                              &result_);
+  }
+
+  const Array& fill_with_;
+  std::shared_ptr<Array> result_;
+};
+
+class GetBinaryArrayTotalByteSizeVisitor : public arrow::ArrayVisitor {
+ public:
+  GetBinaryArrayTotalByteSizeVisitor() = default;
+
+  arrow::Status Visit(const arrow::BinaryArray& binary_array) {
+    return VisitInternal(binary_array);
+  }
+  arrow::Status Visit(const arrow::LargeBinaryArray& large_binary_array) {
+    return VisitInternal(large_binary_array);
+  }
+  arrow::Status Visit(const arrow::StringArray& string_array) {
+    return VisitInternal(string_array);
+  }
+  arrow::Status Visit(const arrow::LargeStringArray& large_string_array) {
+    return VisitInternal(large_string_array);
+  }
+
+  size_t get_result() const {
+    return result_;
+  }
+
+ private:
+  template<typename BinaryLikeArray>
+  arrow::Status VisitInternal(const BinaryLikeArray& array) {
+    result_ = array.value_offset(array.length()) - array.value_offset(0);
+    return arrow::Status::OK();
+  }
+
+  size_t result_ = 0;
+};
 }  // namespace
 
 Status GetElementLengths(
@@ -93,22 +227,11 @@ Status GetElementLengths(
 }
 
 Status GetFlattenedArrayParentIndices(
-    const Array& array,
-    std::shared_ptr<Array>* parent_indices_array) {
-  const ListArray* list_array;
-  TFX_BSL_RETURN_IF_ERROR(GetListArray(array, &list_array));
-  arrow::Int32Builder indices_builder;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-      indices_builder.Reserve(list_array->value_offset(list_array->length()) -
-                              list_array->value_offset(0))));
-  for (int i = 0; i < list_array->length(); ++i) {
-    const int range_begin = list_array->value_offset(i);
-    const int range_end = list_array->value_offset(i + 1);
-    for (int j = range_begin; j < range_end; ++j) {
-      indices_builder.UnsafeAppend(i);
-    }
-  }
-  return FromArrowStatus(indices_builder.Finish(parent_indices_array));
+    const Array& array, std::shared_ptr<Array>* parent_indices_array) {
+  GetFlattenedArrayParentIndicesVisitor v;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
+  *parent_indices_array = v.result();
+  return Status::OK();
 }
 
 Status GetArrayNullBitmapAsByteArray(
@@ -134,17 +257,9 @@ Status GetArrayNullBitmapAsByteArray(
 
 Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
                                    size_t* total_byte_size) {
-  // StringArray is a subclass of BinaryArray.
-  if (!(array.type_id() == arrow::Type::BINARY ||
-        array.type_id() == arrow::Type::STRING)) {
-    return errors::InvalidArgument(
-        absl::StrCat("Expected BinaryArray (or StringArray) but got: ",
-                     array.type()->ToString()));
-  }
-  const arrow::BinaryArray* binary_array =
-      static_cast<const arrow::BinaryArray*>(&array);
-  *total_byte_size = binary_array->value_offset(binary_array->length()) -
-         binary_array->value_offset(0);
+  GetBinaryArrayTotalByteSizeVisitor v;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
+  *total_byte_size = v.get_result();
   return Status::OK();
 }
 
@@ -157,6 +272,7 @@ Status ValueCounts(const std::shared_ptr<arrow::Array>& array,
   return Status::OK();
 }
 
+// TODO(zhuo): Make this return LargeListArray once consumers can handle it.
 Status MakeListArrayFromParentIndicesAndValues(
     const size_t num_parents,
     const std::shared_ptr<arrow::Array>& parent_indices,
@@ -215,6 +331,104 @@ Status MakeListArrayFromParentIndicesAndValues(
   return Status::OK();
 }
 
+namespace {
+// A helper class used by CooFromListArray. It's needed because the offsets of
+// the (nested) list arrays considered could be either int64 or int32 because
+// we want to support a mixture of LargeListArray and ListArray (for example,
+// a ListArray<LargeListArray<int32>>, is a valid input). This class offers a
+// uniform view to either a span of int32 or int64 numbers.
+class RowSplitsRep {
+ public:
+  RowSplitsRep(absl::Span<const int32_t> s) : rep_(s) {}
+  RowSplitsRep(const ListArray& list_array)
+      : rep_(absl::MakeSpan(list_array.raw_value_offsets(),
+                            list_array.length() + 1)) {}
+  RowSplitsRep(const LargeListArray& large_list_array)
+      : rep_(absl::MakeSpan(large_list_array.raw_value_offsets(),
+                            large_list_array.length() + 1)) {}
+
+  // Copying is cheap.
+  RowSplitsRep(const RowSplitsRep&) = default;
+  RowSplitsRep& operator=(const RowSplitsRep&) = default;
+
+  size_t front() const {
+    if (is_int32()) {
+      return get<int32_t>().front();
+    }
+    return get<int64_t>().front();
+  }
+
+  size_t back() const {
+    if (is_int32()) {
+      return get<int32_t>().back();
+    }
+    return get<int64_t>().back();
+  }
+
+  // Increments *idx until
+  // offset_row_splits[*idx] <= v < offset_row_splits[*idx + 1].
+  // returns row_split (with offset applied) at *idx. row_splits should not be
+  // empty.
+  int64_t LookupAndUpdate(const int64_t v, size_t* idx) const {
+    if (is_int32()) {
+      return LookupAndUpdateInternal<int32_t>(v, idx);
+    }
+    return LookupAndUpdateInternal<int64_t>(v, idx);
+  }
+
+  // Returns the maximum length of the sub-lists represented by the contained
+  // offsets.
+  size_t MaxLength() const {
+    if (is_int32()) {
+      return MaxLengthInternal<int32_t>();
+    }
+    return MaxLengthInternal<int64_t>();
+  }
+
+ private:
+  bool is_int32() const {
+    return absl::holds_alternative<absl::Span<const int32_t>>(rep_);
+  }
+
+  template <typename PayloadT>
+  absl::Span<const PayloadT> get() const {
+    static_assert(std::is_same<PayloadT, int64_t>::value ||
+                      std::is_same<PayloadT, int32_t>::value,
+                  "Must be either Span<const int64_t> or Span<const int32_t>");
+    return absl::get<absl::Span<const PayloadT>>(rep_);
+  }
+
+  template<typename PayloadT>
+  size_t MaxLengthInternal() const {
+    auto row_splits = this->get<PayloadT>();
+    size_t max_length = 0;
+    for (int i = 0; i < row_splits.size() - 1; ++i) {
+      size_t length = row_splits[i + 1] - row_splits[i];
+      max_length = std::max(max_length, length);
+    }
+    return max_length;
+  }
+
+  template<typename PayloadT>
+  int64_t LookupAndUpdateInternal(const int64_t v, size_t* idx) const {
+    auto row_splits = this->get<PayloadT>();
+    // Note that row_splits does not always start with 0, as the ListArray
+    // can be sliced (which causes the row_splits to also be sliced). In that
+    // case, the slicing offset is row_splits[0].
+    const int64_t row_split_offset = row_splits[0];
+    while (*idx < row_splits.size() - 1) {
+      const int64_t begin = row_splits[*idx] - row_split_offset;
+      const int64_t end = row_splits[*idx + 1] - row_split_offset;
+      if (v >= begin && v < end) break;
+      ++(*idx);
+    }
+    return row_splits[*idx] - row_split_offset;
+  }
+
+  absl::variant<absl::Span<const int32_t>, absl::Span<const int64_t>> rep_;
+};
+}  // namespace
+
 Status CooFromListArray(
     const std::shared_ptr<arrow::Array>& list_array,
     std::shared_ptr<arrow::Array>* coo_array,
@@ -229,23 +443,44 @@ Status CooFromListArray(
   // and a (k-1)-Nested ListArray (or a primitive array if k==0). A 1-nested
   // ListArray is a ListArray<primitive>.
 
-  std::vector<absl::Span<const int32_t>> nested_row_splits;
+  std::vector<RowSplitsRep> nested_row_splits;
   std::array<int32_t, 2> dummy_outermost_row_splits = {
       0, static_cast<int32_t>(list_array->length())};
-  nested_row_splits.push_back(absl::MakeSpan(dummy_outermost_row_splits));
+  nested_row_splits.push_back(
+      RowSplitsRep(absl::MakeSpan(dummy_outermost_row_splits)));
 
   // Strip `list_array` and populate `nested_row_splits` with row_splits of
   // each level.
   std::shared_ptr<arrow::Array> values = list_array;
-  while (values->type()->id() == arrow::Type::LIST) {
-    ListArray* list_array = static_cast<ListArray*>(values.get());
-    absl::Span<const int32_t> row_splits = absl::MakeSpan(
-        list_array->raw_value_offsets(), list_array->length() + 1);
-    nested_row_splits.emplace_back(row_splits);
-    // Note that the values array is not sliced even if `list_array` is, so
-    // we slice it here.
-    values = list_array->values()->Slice(
-        row_splits.front(), row_splits.back() - row_splits.front());
+  while (true) {
+    bool is_list_array = true;
+    switch (values->type()->id()) {
+      case arrow::Type::LIST:  {
+        ListArray* list_array = static_cast<ListArray*>(values.get());
+        RowSplitsRep row_splits(*list_array);
+        nested_row_splits.push_back(row_splits);
+        // Note that the values array is not sliced even if `list_array` is, so
+        // we slice it here.
+        values = list_array->values()->Slice(
+            row_splits.front(), row_splits.back() - row_splits.front());
+        break;
+      }
+      case arrow::Type::LARGE_LIST: {
+        LargeListArray* list_array = static_cast<LargeListArray*>(values.get());
+        RowSplitsRep row_splits(*list_array);
+        nested_row_splits.push_back(row_splits);
+        // Note that the values array is not sliced even if `list_array` is, so
+        // we slice it here.
+        values = list_array->values()->Slice(
+            row_splits.front(), row_splits.back() - row_splits.front());
+        break;
+      }
+      default: {
+        is_list_array = false;
+        break;
+      }
+    }
+    if (!is_list_array) break;
   }
 
   // Allocate a buffer for the coordinates. A k-nested ListArray will be
@@ -259,26 +494,6 @@ Status CooFromListArray(
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::AllocateBuffer(
       arrow::default_memory_pool(), coo_buffer_size, &coo_buffer)));
   int64_t* coo_flat = reinterpret_cast<int64_t*>(coo_buffer->mutable_data());
-
-  // Increments *idx until
-  // offset_row_splits[*idx] <= v < offset_row_splits[*idx + 1].
-  // returns row_split (with offset applied) at *idx. row_splits should not be
-  // empty.
-  const auto lookup_and_update = [](const int32_t v,
-                                    const absl::Span<const int32_t> row_splits,
-                                    size_t* idx) -> int32_t {
-    // Note that row_splits does not always start with 0, as the ListArray
-    // can be sliced (which causes the row_splits to also be sliced). In that
-    // case, the slicing offset is row_splits[0].
-    const int32_t row_split_offset = row_splits[0];
-    while (*idx < row_splits.size() - 1) {
-      const int32_t begin = row_splits[*idx] - row_split_offset;
-      const int32_t end = row_splits[*idx + 1] - row_split_offset;
-      if (v >= begin && v < end) break;
-      ++(*idx);
-    }
-    return row_splits[*idx] - row_split_offset;
-  };
 
   // COO for the `values`[i] is [x, ..., y, z] if `values`[i] is the z-th
   // element in its belonging sub-list, which is the y-th element in its
@@ -300,13 +515,12 @@ Status CooFromListArray(
       nested_row_splits.size(), 0);
   for (size_t i = 0; i < values->length(); ++i) {
     int64_t* current_coo = coo_flat + i * coo_length;
-    int32_t current_idx = i;
+    int64_t current_idx = i;
     // The inner loop looks for the index in the belonging sub-list at each
     // level.
     for (int j = nested_row_splits.size() - 1; j >= 0; --j) {
-      const int32_t row_split_begin = lookup_and_update(
-          current_idx, nested_row_splits[j],
-          &current_owning_sublist_indices[j]);
+      const int64_t row_split_begin = nested_row_splits[j].LookupAndUpdate(
+          current_idx, &current_owning_sublist_indices[j]);
       current_coo[j] = current_idx - row_split_begin;
       current_idx = current_owning_sublist_indices[j];
     }
@@ -317,13 +531,8 @@ Status CooFromListArray(
   arrow::Int64Builder dense_shape_builder;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(dense_shape_builder.Reserve(coo_length)));
-  for (const absl::Span<const int32_t> row_splits : nested_row_splits) {
-    int32_t dimension_size = 0;
-    for (int i = 0; i < row_splits.size() - 1; ++i) {
-      dimension_size =
-          std::max(dimension_size, row_splits[i + 1] - row_splits[i]);
-    }
-    dense_shape_builder.UnsafeAppend(dimension_size);
+  for (const auto& row_splits : nested_row_splits) {
+    dense_shape_builder.UnsafeAppend(row_splits.MaxLength());
   }
 
   TFX_BSL_RETURN_IF_ERROR(
@@ -337,47 +546,17 @@ Status CooFromListArray(
 Status FillNullLists(const std::shared_ptr<Array>& list_array,
                      const std::shared_ptr<Array>& fill_with,
                      std::shared_ptr<Array>* filled) {
-  std::shared_ptr<arrow::DataType> type = list_array->type();
-  if (type->id() != arrow::Type::LIST) {
-    return errors::InvalidArgument(absl::StrCat(
-        "Expected a ListArray but got: ", type->ToString()));
-  }
-  std::shared_ptr<arrow::DataType> value_type =
-      static_cast<arrow::ListType*>(type.get())->value_type();
-  if (!value_type->Equals(fill_with->type())) {
-    return errors::InvalidArgument(absl::StrCat(
-        "Expected a `fill_with` to be of the same type as "
-        "`list_array`'s value_type, ",
-        value_type->ToString(), " but got: ", fill_with->type()->ToString()));
-  }
-
-  std::shared_ptr<Array> singleton_list;
-  TFX_BSL_RETURN_IF_ERROR(MakeSingletonListArray(fill_with, &singleton_list));
-  std::vector<std::shared_ptr<Array>> array_fragments;
-  int64_t begin = 0, end = 0;
-  while (end < list_array->length()) {
-    if (list_array->IsNull(end)) {
-      if (begin != end) {
-        array_fragments.push_back(list_array->Slice(begin, end - begin));
-      }
-      array_fragments.push_back(singleton_list);
-      ++end;
-      begin = end;
-    } else {
-      ++end;
-    }
-  }
-  if (begin != end) {
-    array_fragments.push_back(list_array->Slice(begin, end - begin));
-  }
-
-  if (array_fragments.empty()) {
+  FillNullListsVisitor v(*fill_with);
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(list_array->Accept(&v)));
+  auto visit_result = v.result();
+  if (visit_result) {
+    *filled = std::move(visit_result);
+  } else {
+    // Visitor producing a nullptr means that no filling needs to be done. The
+    // result equals to the input.
     *filled = list_array;
-    return Status::OK();
   }
-
-  return FromArrowStatus(arrow::Concatenate(
-      array_fragments, arrow::default_memory_pool(), filled));
+  return Status::OK();
 }
 
 }  // namespace tfx_bsl

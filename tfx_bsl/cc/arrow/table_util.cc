@@ -131,6 +131,54 @@ class FieldRep {
   std::vector<absl::variant<std::shared_ptr<Array>, int64_t>> arrays_or_nulls_;
 };
 
+template <typename RowIndicesT>
+Status SliceTableByRowIndicesInternal(
+    const std::shared_ptr<Table>& table,
+    const absl::Span<const RowIndicesT> row_indices_span,
+    std::shared_ptr<Table>* result) {
+  if (row_indices_span.empty()) {
+    return GetEmptyTableLike(*table, result);
+  }
+
+  if (row_indices_span.back() >= table->num_rows()) {
+    return errors::InvalidArgument("Row indices out of range.");
+  }
+
+  std::vector<std::shared_ptr<Table>> table_slices;
+  // The following loop essentially turns consecutive indices into
+  // ranges, and slice `table` by those ranges.
+  for (int64_t begin = 0, end = 1; end <= row_indices_span.size(); ++end) {
+    while (end < row_indices_span.size() &&
+           row_indices_span[end] == row_indices_span[end - 1] + 1) {
+      ++end;
+    }
+    // Verify that the row indices are sorted.
+    if (end < row_indices_span.size() &&
+        row_indices_span[begin] >= row_indices_span[end]) {
+      return errors::InvalidArgument("Row indices are not sorted.");
+    }
+    table_slices.push_back(table->Slice(row_indices_span[begin], end - begin));
+    begin = end;
+  }
+
+  // Make sure to never return a table with non-zero offset (that is a slice
+  // of another table). This is needed because Array.flatten() is buggy and
+  // does not handle offsets correctly.
+  // TODO(zhuo): Remove once https://github.com/apache/arrow/pull/6006 is
+  // available.
+  if (table_slices.size() == 1) {
+    table_slices.emplace_back();
+    TFX_BSL_RETURN_IF_ERROR(GetEmptyTableLike(*table, &table_slices.back()));
+  }
+
+  std::shared_ptr<Table> concatenated;
+  TFX_BSL_RETURN_IF_ERROR(
+      FromArrowStatus(arrow::ConcatenateTables(table_slices, &concatenated)));
+
+  return FromArrowStatus(
+      concatenated->CombineChunks(arrow::default_memory_pool(), result));
+}
+
 }  // namespace
 
 // TODO(zhuo): This can be replaced by Table::ConcatenateTables with
@@ -181,55 +229,22 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
 Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
                               const std::shared_ptr<Array>& row_indices,
                               std::shared_ptr<Table>* result) {
-  if (row_indices->type()->id() != arrow::Type::INT32) {
-    return errors::InvalidArgument("Expected row_indices to be a Int32Array");
+  if (row_indices->type()->id() == arrow::Type::INT32) {
+    const arrow::Int32Array* row_indices_array =
+        static_cast<const arrow::Int32Array*>(row_indices.get());
+    absl::Span<const int32_t> row_indices_span(
+        row_indices_array->raw_values(), row_indices_array->length());
+    return SliceTableByRowIndicesInternal(table, row_indices_span, result);
+  } else if (row_indices->type()->id() == arrow::Type::INT64) {
+    const arrow::Int64Array* row_indices_array =
+        static_cast<const arrow::Int64Array*>(row_indices.get());
+    absl::Span<const int64_t> row_indices_span(row_indices_array->raw_values(),
+                                               row_indices_array->length());
+    return SliceTableByRowIndicesInternal(table, row_indices_span, result);
+  } else {
+    return errors::InvalidArgument(
+        "Expected row_indices to be an Int32Array or an Int64Array");
   }
-  const arrow::Int32Array* row_indices_int32_array =
-      static_cast<const arrow::Int32Array*>(row_indices.get());
-  absl::Span<const int32_t> row_indices_span(
-      row_indices_int32_array->raw_values(), row_indices_int32_array->length());
-
-  if (row_indices_span.empty()) {
-    return GetEmptyTableLike(*table, result);
-  }
-
-  if (row_indices_span.back() >= table->num_rows()) {
-    return errors::InvalidArgument("Row indices out of range.");
-  }
-
-  std::vector<std::shared_ptr<Table>> table_slices;
-  // The following loop essentially turns consecutive indices into
-  // ranges, and slice `table` by those ranges.
-  for (int64_t begin = 0, end = 1; end <= row_indices_span.size(); ++end) {
-    while (end < row_indices_span.size() &&
-           row_indices_span[end] == row_indices_span[end - 1] + 1) {
-      ++end;
-    }
-    // Verify that the row indices are sorted.
-    if (end < row_indices_span.size() &&
-        row_indices_span[begin] >= row_indices_span[end]) {
-      return errors::InvalidArgument("Row indices are not sorted.");
-    }
-    table_slices.push_back(table->Slice(row_indices_span[begin], end - begin));
-    begin = end;
-  }
-
-  // Make sure to never return a table with non-zero offset (that is a slice of
-  // another table). This is needed because Array.flatten() is buggy and does
-  // not handle offsets correctly.
-  // TODO(zhuo): Remove once https://github.com/apache/arrow/pull/6006 is
-  // available.
-  if (table_slices.size() == 1) {
-    table_slices.emplace_back();
-    TFX_BSL_RETURN_IF_ERROR(GetEmptyTableLike(*table, &table_slices.back()));
-  }
-
-  std::shared_ptr<Table> concatenated;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(arrow::ConcatenateTables(table_slices, &concatenated)));
-
-  return FromArrowStatus(
-      concatenated->CombineChunks(arrow::default_memory_pool(), result));
 }
 
 }  // namespace tfx_bsl

@@ -29,7 +29,13 @@ from absl.testing import absltest
 from absl.testing import parameterized
 
 
-class ArrayUtilTest(absltest.TestCase):
+_LIST_TYPE_PARAMETERS = [
+    dict(testcase_name="list", list_type_factory=pa.list_),
+    dict(testcase_name="large_list", list_type_factory=pa.large_list),
+]
+
+
+class ArrayUtilTest(parameterized.TestCase):
 
   def test_invalid_input_type(self):
 
@@ -46,45 +52,51 @@ class ArrayUtilTest(absltest.TestCase):
         f(1)
 
     for f in functions_expecting_list_array:
-      with self.assertRaisesRegex(RuntimeError, "Expected ListArray but got"):
+      with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
         f(pa.array([1, 2, 3]))
 
     for f in functions_expecting_binary_array:
-      with self.assertRaisesRegex(RuntimeError, "Expected BinaryArray"):
+      with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
         f(pa.array([[1, 2, 3]]))
 
-  def test_list_lengths(self):
+  @parameterized.named_parameters(*_LIST_TYPE_PARAMETERS)
+  def test_list_lengths(self, list_type_factory):
     list_lengths = array_util.ListLengthsFromListArray(
-        pa.array([], type=pa.list_(pa.int64())))
-    self.assertTrue(list_lengths.equals(pa.array([], type=pa.int32())))
+        pa.array([], type=list_type_factory(pa.int64())))
+    self.assertTrue(list_lengths.equals(pa.array([], type=pa.int64())))
     list_lengths = array_util.ListLengthsFromListArray(
-        pa.array([[1., 2.], [], [3.]]))
-    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+        pa.array([[1., 2.], [], [3.]], type=list_type_factory(pa.float32())))
+    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int64())))
     list_lengths = array_util.ListLengthsFromListArray(
-        pa.array([[1., 2.], None, [3.]]))
-    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+        pa.array([[1., 2.], None, [3.]], type=list_type_factory(pa.float64())))
+    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int64())))
 
-  def test_element_lengths(self):
+  @parameterized.named_parameters(*_LIST_TYPE_PARAMETERS)
+  def test_element_lengths_list_array(self, list_type_factory):
     list_lengths = array_util.GetElementLengths(
-        pa.array([], type=pa.list_(pa.int64())))
-    self.assertTrue(list_lengths.equals(pa.array([], type=pa.int32())))
+        pa.array([], type=list_type_factory(pa.int64())))
+    self.assertTrue(list_lengths.equals(pa.array([], type=pa.int64())))
     list_lengths = array_util.GetElementLengths(
-        pa.array([[1., 2.], [], [3.]]))
-    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+        pa.array([[1., 2.], [], [3.]], list_type_factory(pa.float32())))
+    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int64())))
     list_lengths = array_util.GetElementLengths(
-        pa.array([[1., 2.], None, [3.]]))
-    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int32())))
+        pa.array([[1., 2.], None, [3.]], list_type_factory(pa.float64())))
+    self.assertTrue(list_lengths.equals(pa.array([2, 0, 1], type=pa.int64())))
+
+  @parameterized.named_parameters(*[
+      dict(testcase_name="binary", binary_like_type=pa.binary()),
+      dict(testcase_name="string", binary_like_type=pa.string()),
+      dict(testcase_name="large_binary", binary_like_type=pa.large_binary()),
+      dict(testcase_name="large_string", binary_like_type=pa.large_string()),
+  ])
+  def test_element_lengths_binary_like(self, binary_like_type):
 
     list_lengths = array_util.GetElementLengths(
-        pa.array([b"a", b"bb", None, b"", b"ccc"], type=pa.binary()))
+        pa.array([b"a", b"bb", None, b"", b"ccc"], type=binary_like_type))
     self.assertTrue(list_lengths.equals(pa.array([1, 2, 0, 0, 3],
-                                                 type=pa.int32())))
+                                                 type=pa.int64())))
 
-    list_lengths = array_util.GetElementLengths(
-        pa.array([u"a", u"bb", None, u"", u"ccc"], type=pa.string()))
-    self.assertTrue(list_lengths.equals(pa.array([1, 2, 0, 0, 3],
-                                                 type=pa.int32())))
-
+  def test_element_lengths_unsupported_type(self):
     with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
       array_util.GetElementLengths(pa.array([1, 2, 3], type=pa.int32()))
 
@@ -110,27 +122,49 @@ class ArrayUtilTest(absltest.TestCase):
     np.testing.assert_equal(
         np.array([True, True, True]), null_masks.to_numpy().view(np.bool))
 
-  def test_get_flattened_array_parent_indices(self):
+  @parameterized.named_parameters(*[
+      dict(
+          testcase_name="list",
+          list_type_factory=pa.list_,
+          parent_indices_type=pa.int32()),
+      dict(
+          testcase_name="large_list",
+          list_type_factory=pa.large_list,
+          parent_indices_type=pa.int64()),
+  ])
+  def test_get_flattened_array_parent_indices(self, list_type_factory,
+                                              parent_indices_type):
     indices = array_util.GetFlattenedArrayParentIndices(
-        pa.array([], type=pa.list_(pa.int32())))
-    self.assertTrue(indices.equals(pa.array([], type=pa.int32())))
+        pa.array([], type=list_type_factory(pa.int32())))
+    self.assertTrue(indices.equals(pa.array([], type=parent_indices_type)))
 
     indices = array_util.GetFlattenedArrayParentIndices(
-        pa.array([[1.], [2.], [], [3.]]))
-    self.assertTrue(indices.equals(pa.array([0, 1, 3], type=pa.int32())))
+        pa.array([[1.], [2.], [], [3., 4.]],
+                 type=list_type_factory(pa.float32())))
+    self.assertTrue(
+        indices.equals(pa.array([0, 1, 3, 3], type=parent_indices_type)))
 
-  def test_get_binary_array_total_byte_size(self):
-    binary_array = pa.array([b"abc", None, b"def", b"", b"ghi"])
-    self.assertEqual(9, array_util.GetBinaryArrayTotalByteSize(binary_array))
-    sliced_1_2 = binary_array.slice(1, 2)
+    indices = array_util.GetFlattenedArrayParentIndices(
+        pa.array([[1.], [2.], [], [3., 4.]],
+                 type=list_type_factory(pa.float32())).slice(1))
+    self.assertTrue(
+        indices.equals(pa.array([0, 2, 2], type=parent_indices_type)))
+
+  @parameterized.named_parameters(*[
+      dict(testcase_name="binary", binary_like_type=pa.binary()),
+      dict(testcase_name="string", binary_like_type=pa.string()),
+      dict(testcase_name="large_binary", binary_like_type=pa.large_binary()),
+      dict(testcase_name="large_string", binary_like_type=pa.large_string()),
+  ])
+  def test_get_binary_array_total_byte_size(self, binary_like_type):
+    array = pa.array([b"abc", None, b"def", b"", b"ghi"], type=binary_like_type)
+    self.assertEqual(9, array_util.GetBinaryArrayTotalByteSize(array))
+    sliced_1_2 = array.slice(1, 2)
     self.assertEqual(3, array_util.GetBinaryArrayTotalByteSize(sliced_1_2))
-    sliced_2 = binary_array.slice(2)
+    sliced_2 = array.slice(2)
     self.assertEqual(6, array_util.GetBinaryArrayTotalByteSize(sliced_2))
 
-    unicode_array = pa.array([u"abc"])
-    self.assertEqual(3, array_util.GetBinaryArrayTotalByteSize(unicode_array))
-
-    empty_array = pa.array([], type=pa.binary())
+    empty_array = pa.array([], type=binary_like_type)
     self.assertEqual(0, array_util.GetBinaryArrayTotalByteSize(empty_array))
 
   def _value_counts_struct_array_to_dict(self, value_counts):
@@ -242,38 +276,40 @@ _COO_FROM_LIST_ARRAY_TEST_CASES = [
         list_array=[1, 2, 3, 4],
         expected_coo=[0, 1, 2, 3],
         expected_dense_shape=[4],
+        array_types=[pa.int32()],
     ),
     dict(
         testcase_name="empty_array",
         list_array=[],
         expected_coo=[],
         expected_dense_shape=[0],
+        array_types=[pa.int64()],
     ),
     dict(
         testcase_name="empty_2d_array",
         list_array=[[]],
         expected_coo=[],
         expected_dense_shape=[1, 0],
-    ),
+        array_types=[pa.list_(pa.int64()),
+                     pa.large_list(pa.string())]),
     dict(
         testcase_name="2d_ragged",
         list_array=[["a", "b"], ["c"], [], ["d", "e"]],
-        expected_coo=[0, 0,
-                      0, 1,
-                      1, 0,
-                      3, 0,
-                      3, 1],
+        expected_coo=[0, 0, 0, 1, 1, 0, 3, 0, 3, 1],
         expected_dense_shape=[4, 2],
-    ),
+        array_types=[pa.list_(pa.string()),
+                     pa.large_list(pa.large_binary())]),
     dict(
         testcase_name="3d_ragged",
         list_array=[[["a", "b"], ["c"]], [[], ["d", "e"]]],
-        expected_coo=[0, 0, 0,
-                      0, 0, 1,
-                      0, 1, 0,
-                      1, 1, 0,
-                      1, 1, 1],
+        expected_coo=[0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1],
         expected_dense_shape=[2, 2, 2],
+        array_types=[
+            pa.list_(pa.list_(pa.binary())),
+            pa.large_list(pa.large_list(pa.binary())),
+            pa.large_list(pa.list_(pa.binary())),
+            pa.list_(pa.large_list(pa.binary())),
+        ],
     ),
 ]
 
@@ -282,67 +318,106 @@ class CooFromListArrayTest(parameterized.TestCase):
 
   @parameterized.named_parameters(*_COO_FROM_LIST_ARRAY_TEST_CASES)
   def testCooFromListArray(
-      self, list_array, expected_coo, expected_dense_shape):
+      self, list_array, expected_coo, expected_dense_shape, array_types):
 
-    for input_array in [
-        pa.array(list_array),
-        # it should work for sliced arrays.
-        pa.array(list_array + list_array).slice(0, len(list_array)),
-        pa.array(list_array + list_array).slice(len(list_array)),
-    ]:
-      coo, dense_shape = array_util.CooFromListArray(input_array)
-      self.assertTrue(coo.type.equals(pa.int64()))
-      self.assertTrue(dense_shape.type.equals(pa.int64()))
+    for array_type in array_types:
+      for input_array in [
+          pa.array(list_array, type=array_type),
+          # it should work for sliced arrays.
+          pa.array(list_array + list_array,
+                   type=array_type).slice(0, len(list_array)),
+          pa.array(list_array + list_array,
+                   type=array_type).slice(len(list_array)),
+      ]:
+        coo, dense_shape = array_util.CooFromListArray(input_array)
+        self.assertTrue(coo.type.equals(pa.int64()))
+        self.assertTrue(dense_shape.type.equals(pa.int64()))
 
-      self.assertEqual(expected_coo, coo.to_pylist())
-      self.assertEqual(expected_dense_shape, dense_shape.to_pylist())
+        self.assertEqual(expected_coo, coo.to_pylist())
+        self.assertEqual(expected_dense_shape, dense_shape.to_pylist())
 
 
 _FILL_NULL_LISTS_TEST_CASES = [
     dict(
+        testcase_name="empty_array",
+        list_array=[],
+        value_type=pa.int32(),
+        fill_with=[0],
+        expected=[],
+    ),
+    dict(
+        testcase_name="only_one_null",
+        list_array=[None],
+        value_type=pa.int64(),
+        fill_with=[0, 1],
+        expected=[[0, 1]],
+    ),
+    dict(
         testcase_name="no_nulls",
-        list_array=pa.array([[1], [2], [3]]),
-        fill_with=pa.array([0]),
-        expected=pa.array([[1], [2], [3]]),
+        list_array=[[1], [2], [3]],
+        value_type=pa.int64(),
+        fill_with=[0],
+        expected=[[1], [2], [3]],
     ),
     dict(
         testcase_name="all_nulls",
-        list_array=pa.array([None, None, None], type=pa.list_(pa.int64())),
-        fill_with=pa.array([0, 1]),
-        expected=pa.array([[0, 1], [0, 1], [0, 1]]),
+        list_array=[None, None, None],
+        value_type=pa.int64(),
+        fill_with=[0, 1],
+        expected=[[0, 1], [0, 1], [0, 1]],
     ),
     dict(
         testcase_name="nulls_at_end",
-        list_array=pa.array([[1], [2], None]),
-        fill_with=pa.array([0, 1]),
-        expected=pa.array([[1], [2], [0, 1]]),
+        list_array=[[1], [2], None],
+        value_type=pa.int64(),
+        fill_with=[0, 1],
+        expected=[[1], [2], [0, 1]],
     ),
     dict(
         testcase_name="nulls_at_beginning",
-        list_array=pa.array([None, None, [1]]),
-        fill_with=pa.array([], type=pa.int64()),
-        expected=pa.array([[], [], [1]]),
+        list_array=[None, None, [1]],
+        value_type=pa.int64(),
+        fill_with=[],
+        expected=[[], [], [1]],
     ),
     dict(
         testcase_name="nulls_scattered",
-        list_array=pa.array([["a"], ["b"], ["c"], None, ["d"], None, ["e"]]),
-        fill_with=pa.array(["x", "x"]),
-        expected=pa.array([["a"], ["b"], ["c"], ["x", "x"], ["d"], ["x", "x"],
-                           ["e"]]),
+        list_array=[["a"], ["b"], ["c"], None, ["d"], None, ["e"]],
+        value_type=pa.large_binary(),
+        fill_with=["x", "x"],
+        expected=[["a"], ["b"], ["c"], ["x", "x"], ["d"], ["x", "x"], ["e"]],
     )
 ]
 
 
+def _cross_named_parameters(*named_parameters_dicts):
+  result = []
+  for product in itertools.product(*named_parameters_dicts):
+    crossed = dict(product[0])
+    testcase_name = crossed["testcase_name"]
+    for d in product[1:]:
+      testcase_name += "_" + d["testcase_name"]
+      crossed.update(d)
+    crossed["testcase_name"] = testcase_name
+    result.append(crossed)
+  return result
+
+
 class FillNullListsTest(parameterized.TestCase):
 
-  @parameterized.named_parameters(*_FILL_NULL_LISTS_TEST_CASES)
-  def testFillNullLists(self, list_array, fill_with, expected):
-    actual = array_util.FillNullLists(list_array, fill_with)
+  @parameterized.named_parameters(*_cross_named_parameters(
+      _FILL_NULL_LISTS_TEST_CASES, _LIST_TYPE_PARAMETERS))
+  def testFillNullLists(
+      self, list_array, value_type, fill_with, expected, list_type_factory):
+    actual = array_util.FillNullLists(
+        pa.array(list_array, type=list_type_factory(value_type)),
+        pa.array(fill_with, type=value_type))
     self.assertTrue(
-        actual.equals(expected), "{} vs {}".format(actual, expected))
+        actual.equals(pa.array(expected, type=list_type_factory(value_type))),
+        "{} vs {}".format(actual, expected))
 
   def testNonListArray(self):
-    with self.assertRaisesRegex(RuntimeError, "Expected a ListArray"):
+    with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
       array_util.FillNullLists(pa.array([1, 2, 3]), pa.array([4]))
 
   def testValueTypeDoesNotEqualFillType(self):

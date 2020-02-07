@@ -26,7 +26,7 @@ class Array;
 namespace tfx_bsl {
 
 // Get lengths of elements from list-alike `array` (including binary arrays and
-// string arrays) in an int32 array.
+// string arrays) in an int64 array.
 // Note that null and empty elements both are of length 0 and the returned array
 // does not have any null. For example
 // [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]
@@ -34,9 +34,11 @@ Status GetElementLengths(
     const arrow::Array& array,
     std::shared_ptr<arrow::Array>* list_lengths_array);
 
-// Makes a int32 array of the same length as flattened `list_array`.
+// Makes a int32 or int64 array of the same length as flattened `list_array`.
 // returned_array[i] == j means i-th element in flattened `list_array`
 // came from j-th list in `list_array`.
+// Returns an Int32Array if the input is a ListArray, or Int64Array if the input
+// is a LargeListArray.
 // For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3]
 Status GetFlattenedArrayParentIndices(
     const arrow::Array& array,
@@ -79,9 +81,9 @@ Status MakeListArrayFromParentIndicesAndValues(
     std::shared_ptr<arrow::Array>* output_list_array);
 
 // Converts a ListArray to a COO (coordinate list) represented sparse tensor.
-// `list_array` should be a ListArray<InnerArray> where InnerArray is
-// ListArray<InnerArray> or any primitive array or binary array (i.e. nested
-// lists are supported). Two arrays are produced:
+// `list_array` should be a (Large)ListArray<InnerArray> where InnerArray is
+// (Large)ListArray<InnerArray> or any primitive array or binary array (
+// i.e. nested lists are supported). Two arrays are produced:
 // `coo_array` is an Int64Array that contains the coordinates of flattened
 // values of `list_array`. If `list_array` is N-nested (ListArray<primitive> is
 // 1-nested), each coordinate will contain N + 1 numbers.
@@ -98,8 +100,9 @@ Status CooFromListArray(
     std::shared_ptr<arrow::Array>* coo_array,
     std::shared_ptr<arrow::Array>* dense_shape_array);
 
-// Fills nulls in a `list_array` with `fill_with`. the type of `fill_with` must
-// equal to the value type of `list_array`.
+// Fills nulls in a `list_array` (ListArray or LargeListArray)
+// with `fill_with`. the type of `fill_with` must equal to the value type of
+// `list_array`.
 Status FillNullLists(const std::shared_ptr<arrow::Array>& list_array,
                      const std::shared_ptr<arrow::Array>& fill_with,
                      std::shared_ptr<arrow::Array>* filled);

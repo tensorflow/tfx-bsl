@@ -43,8 +43,8 @@ Status MergeTables(const std::vector<std::shared_ptr<arrow::Table>>& tables,
 
 // Collects rows in `row_indices` from `table` and form a new Table.
 // The new Table is guaranteed to contain only one chunk.
-// `row_indices` must be an arrow::Int32Array. And the indices in it
-// must be sorted in ascending order.
+// `row_indices` must be an arrow::Int32Array or Int64Array. And the indices in
+// it must be sorted in ascending order.
 // TODO(zhuo): Investigate arrow::compute::Take.
 Status SliceTableByRowIndices(const std::shared_ptr<arrow::Table>& table,
                               const std::shared_ptr<arrow::Array>& row_indices,

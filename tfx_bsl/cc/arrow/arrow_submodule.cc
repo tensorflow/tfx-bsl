@@ -44,12 +44,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
   m.def(
       "ListLengthsFromListArray",
       WrapUnaryArrayFunction(&GetElementLengths),
-      py::doc(
-          "DEPRECATED. Use GetElementLengths instead.\n"
-          "Get lengths of lists in `list_array` in an int32 array. "
-          "Note that null and empty list both are of length 0 and the returned "
-          "array does not have any null element.\n"
-          "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]."),
+      py::doc("DEPRECATED. Use GetElementLengths instead."),
       py::call_guard<py::gil_scoped_release>());
 
   m.def(
@@ -57,21 +52,21 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       WrapUnaryArrayFunction(&GetElementLengths),
       py::doc(
           "Get lengths of elements from a list-alike `array` (including binary "
-          "and string arrays) in an int32 array. \n"
+          "and string arrays) in an int64 array. \n"
           "Note that null and empty elements both are of length 0 and the "
           "returned array does not have any null.\n"
           "For example [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]."),
       py::call_guard<py::gil_scoped_release>());
 
-  m.def(
-      "GetFlattenedArrayParentIndices",
-      WrapUnaryArrayFunction(&GetFlattenedArrayParentIndices),
-      py::doc(
-          "Makes a int32 array of the same length as flattened `list_array`. "
-          "returned_array[i] == j means i-th element in flattened `list_array`"
-          "came from j-th list in `list_array`.\n"
-          "For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3]."),
-      py::call_guard<py::gil_scoped_release>());
+  m.def("GetFlattenedArrayParentIndices",
+        WrapUnaryArrayFunction(&GetFlattenedArrayParentIndices),
+        py::doc("Makes a int32 or int64 array of the same length as flattened "
+                "`list_array`. returned_array[i] == j means i-th element in "
+                "flattened `list_array` came from j-th list in `list_array`.\n"
+                "Returns an Int32Array if the input is a ListArray, or "
+                "Int64Array if the input is a LargeListArray. \n"
+                "For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3]."),
+        py::call_guard<py::gil_scoped_release>());
 
   m.def(
       "GetArrayNullBitmapAsByteArray",
@@ -154,9 +149,9 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       py::doc(
           "Converts a ListArray to a COO (coordinate list) represented sparse "
           "tensor.\n"
-          "`list_array` should be a ListArray<InnerArray> where InnerArray is "
-          "a ListArray<InnerArray> or any primitive array or binary array "
-          "(i.e. nested lists are supported). \n"
+          "`list_array` should be a (Large)ListArray<InnerArray> where "
+          "InnerArray is a (Large)ListArray<InnerArray> or any primitive array "
+          "or binary array (i.e. nested lists are supported). \n"
           "Two arrays are produced: `coo_array` is an Int64Array that contains "
           "the coordinates of flattened values of `list_array`. If "
           "`list_array` is N-nested (ListArray<primitive> is 1-nested), each "
@@ -214,9 +209,9 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
       },
       py::doc(
           "Collects rows in `row_indices` from `table` and form a new Table."
-          "The new Table is guaranteed to contain only one chunk."
-          "`row_indices` must be an arrow::Int32Array. And the indices in it"
-          "must be sorted in ascending order."),
+          "The new Table is guaranteed to contain only one chunk.\n"
+          "`row_indices` must be an Int32Array or Int64Array. And the indices "
+          "in it must be sorted in ascending order."),
       py::call_guard<py::gil_scoped_release>());
 }
 
