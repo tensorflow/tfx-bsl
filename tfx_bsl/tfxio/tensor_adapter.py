@@ -27,7 +27,7 @@ import six
 import tensorflow as tf
 from tfx_bsl.arrow import array_util
 import typing
-from typing import Any, Dict, List, Text, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -218,7 +218,8 @@ class _TypeHandler(object):
 class _BaseDenseTensorHandler(_TypeHandler):
   """Base class of DenseTensorHandlers."""
 
-  __slots__ = ["_column_index", "_dtype", "_shape", "_unbatched_flat_len"]
+  __slots__ = ["_column_index", "_dtype", "_shape", "_unbatched_flat_len",
+               "_convert_to_binary_fn"]
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
@@ -229,6 +230,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
     self._column_index = arrow_schema.get_field_index(column_name)
     _, value_type = _GetNestDepthAndValueType(arrow_schema[self._column_index])
     self._dtype = _ArrowTypeToTfDtype(value_type)
+    self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
     unbatched_shape = [
         d.size for d in tensor_representation.dense_tensor.shape.dim
     ]
@@ -252,11 +254,10 @@ class _BaseDenseTensorHandler(_TypeHandler):
           "Unable to convert ListArray {} to {}: size mismatch. expected {} "
           "elements but got {}".format(
               list_array, self.type_spec, expected_num_elements, len(values)))
-    # TODO(zhuo): Cast StringArrays to BinaryArrays before calling np.asarray()
-    # to avoid generating unicode objects which are wasteful to feed to
-    # TensorFlow, once pyarrow requirement is bumped to >=0.15.
     actual_shape = list(self._shape)
     actual_shape[0] = batch_size
+    if self._convert_to_binary_fn is not None:
+      values = self._convert_to_binary_fn(values)
     values_np = np.asarray(values).reshape(actual_shape)
     if produce_eager_tensors:
       return tf.convert_to_tensor(values_np)
@@ -324,7 +325,7 @@ class _DefaultFillingDenseTensorHandler(_BaseDenseTensorHandler):
 class _VarLenSparseTensorHandler(_TypeHandler):
   """Handles conversion to varlen sparse."""
 
-  __slots__ = ["_column_index", "_dtype"]
+  __slots__ = ["_column_index", "_dtype", "_convert_to_binary_fn"]
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
@@ -334,6 +335,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     self._column_index = arrow_schema.get_field_index(column_name)
     _, value_type = _GetNestDepthAndValueType(arrow_schema[self._column_index])
     self._dtype = _ArrowTypeToTfDtype(value_type)
+    self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
   def type_spec(self) -> tf.TypeSpec:
@@ -345,7 +347,10 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     array = record_batch.column(self._column_index)
     coo_array, dense_shape_array = array_util.CooFromListArray(array)
     dense_shape_np = dense_shape_array.to_numpy()
-    values_np = np.asarray(array.flatten())
+    values_array = array.flatten()
+    if self._convert_to_binary_fn is not None:
+      values_array = self._convert_to_binary_fn(values_array)
+    values_np = np.asarray(values_array)
     coo_np = coo_array.to_numpy().reshape(values_np.size, 2)
 
     if produce_eager_tensors:
@@ -371,7 +376,7 @@ class _SparseTensorHandler(_TypeHandler):
   """Handles conversion to SparseTensors."""
 
   __slots__ = ["_index_column_indices", "_value_column_index", "_shape",
-               "_dtype", "_coo_size"]
+               "_dtype", "_coo_size", "_convert_to_binary_fn"]
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
@@ -388,6 +393,7 @@ class _SparseTensorHandler(_TypeHandler):
         arrow_schema[self._value_column_index])
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._coo_size = len(self._shape) + 1
+    self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
   def type_spec(self) -> tf.TypeSpec:
@@ -404,7 +410,10 @@ class _SparseTensorHandler(_TypeHandler):
     for index_column_index in self._index_column_indices:
       indices_arrays.append(
           np.asarray(record_batch.column(index_column_index).flatten()))
-    values_np = np.asarray(values_array.flatten())
+    flat_values_array = values_array.flatten()
+    if self._convert_to_binary_fn is not None:
+      flat_values_array = self._convert_to_binary_fn(flat_values_array)
+    values_np = np.asarray(flat_values_array)
     coo_np = np.empty(shape=(len(values_np), self._coo_size), dtype=np.int64)
     try:
       np.stack(indices_arrays, axis=1, out=coo_np)
@@ -487,24 +496,31 @@ def _GetNestDepthAndValueType(
   """Returns the depth of a nest list and its innermost value type."""
   arrow_type = arrow_field.type
   depth = 0
-  while pa.types.is_list(arrow_type):
+  while pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
     depth += 1
     arrow_type = arrow_type.value_type
 
   return depth, arrow_type
 
 
+def _IsBinaryLike(arrow_type: pa.DataType) -> bool:
+  return (pa.types.is_binary(arrow_type) or
+          pa.types.is_large_binary(arrow_type) or
+          pa.types.is_string(arrow_type) or
+          pa.types.is_large_string(arrow_type))
+
+
 def _IsSupportedArrowValueType(arrow_type: pa.DataType) -> bool:
-  # TODO(zhuo): Also support StringArrays, once pyarrow requirements
-  # is >=0.15 which allows to cast a StringArray to BinaryArray copy-free.
-  # TODO(zhuo): Support LargeListArray, LargeBinaryArray, LargeStringArray
-  # once pyarrow requirements is >=0.15.
   return (pa.types.is_integer(arrow_type) or
           pa.types.is_floating(arrow_type) or
-          pa.types.is_binary(arrow_type))
+          _IsBinaryLike(arrow_type))
 
 
 def _ArrowTypeToTfDtype(arrow_type: pa.DataType) -> tf.DType:
+  # TODO(zhuo): Remove the special handling for LargeString/Binary when
+  # to_pandas_dtype() can handle them.
+  if _IsBinaryLike(arrow_type):
+    return tf.string
   return tf.dtypes.as_dtype(arrow_type.to_pandas_dtype())
 
 
@@ -524,7 +540,7 @@ def _GetAllowedDefaultValue(
                        "{} column".format(value, value_type))
   elif kind == "float_value" and pa.types.is_floating(value_type):
     return default_value_proto.float_value
-  elif kind == "bytes_value" and pa.types.is_binary(value_type):
+  elif kind == "bytes_value" and _IsBinaryLike(value_type):
     return default_value_proto.bytes_value
 
   raise ValueError(
@@ -542,3 +558,14 @@ def _GetDefaultFill(
   return pa.array([
       _GetAllowedDefaultValue(value_type, default_value_proto)] * size,
                   type=value_type)
+
+
+def _GetConvertToBinaryFn(
+    array_type: pa.DataType) -> Optional[Callable[[pa.Array], pa.Array]]:
+  """Returns a function that converts a StringArray to BinaryArray."""
+
+  if pa.types.is_string(array_type):
+    return lambda array: array.view(pa.binary())
+  if pa.types.is_large_string(array_type):
+    return lambda array: array.view(pa.large_binary())
+  return None

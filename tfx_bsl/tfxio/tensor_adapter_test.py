@@ -35,7 +35,8 @@ _ALL_SUPPORTED_INT_VALUE_TYPES = [
     pa.uint8(), pa.uint16(), pa.uint32(), pa.uint64(),
 ]
 _ALL_SUPPORTED_FLOATING_VALUE_TYPES = [pa.float32(), pa.float64()]
-_ALL_SUPPORTED_STRING_VALUE_TYPES = [pa.binary()]
+_ALL_SUPPORTED_STRING_VALUE_TYPES = [
+    pa.binary(), pa.large_binary(), pa.string(), pa.large_string()]
 _ALL_SUPPORTED_VALUE_TYPES = (
     _ALL_SUPPORTED_INT_VALUE_TYPES + _ALL_SUPPORTED_FLOATING_VALUE_TYPES +
     _ALL_SUPPORTED_STRING_VALUE_TYPES)
@@ -51,6 +52,9 @@ _ARROW_TYPE_TO_TF_TYPE = {
     pa.float32(): tf.float32,
     pa.float64(): tf.float64,
     pa.binary(): tf.string,
+    pa.large_binary(): tf.string,
+    pa.string(): tf.string,
+    pa.large_string(): tf.string,
 }
 _ARROW_TYPE_TO_NP_TYPE = {
     pa.int8(): np.dtype("int8"),
@@ -64,6 +68,9 @@ _ARROW_TYPE_TO_NP_TYPE = {
     pa.float32(): np.dtype("float32"),
     pa.float64(): np.dtype("float64"),
     pa.binary(): np.dtype("object"),
+    pa.large_binary(): np.dtype("object"),
+    pa.string(): np.dtype("object"),
+    pa.large_string(): np.dtype("object"),
 }
 
 
@@ -81,45 +88,48 @@ def _Make1DSparseTensorTestCases():
   }
   """
   for t in _ALL_SUPPORTED_VALUE_TYPES:
-    expected_type_spec = tf.SparseTensorSpec([None, 100],
-                                             _ARROW_TYPE_TO_TF_TYPE[t])
-    if pa.types.is_integer(t):
-      values = [[1, 2], None, [], [3]]
-      expected_values = [1, 2, 3]
-    elif pa.types.is_floating(t):
-      values = [[1.0, 2.0], None, [], [3.0]]
-      expected_values = [1.0, 2.0, 3.0]
-    else:
-      values = [[b"a", b"b"], None, [], [b"c"]]
-      expected_values = [b"a", b"b", b"c"]
-    indices = [[0, 99], None, [], [8]]
+    for list_type_factory in (("list", pa.list_),
+                              ("large_list", pa.large_list)):
+      expected_type_spec = tf.SparseTensorSpec([None, 100],
+                                               _ARROW_TYPE_TO_TF_TYPE[t])
+      if pa.types.is_integer(t):
+        values = [[1, 2], None, [], [3]]
+        expected_values = [1, 2, 3]
+      elif pa.types.is_floating(t):
+        values = [[1.0, 2.0], None, [], [3.0]]
+        expected_values = [1.0, 2.0, 3.0]
+      else:
+        values = [[b"a", b"b"], None, [], [b"c"]]
+        expected_values = [b"a", b"b", b"c"]
+      indices = [[0, 99], None, [], [8]]
 
-    if tf.executing_eagerly():
-      expected_output = tf.sparse.SparseTensor(
-          indices=[[0, 0], [0, 99], [3, 8]],
-          values=tf.constant(expected_values, dtype=_ARROW_TYPE_TO_TF_TYPE[t]),
-          dense_shape=(4, 100))
-    else:
-      expected_output = tf.compat.v1.SparseTensorValue(
-          indices=[[0, 0], [0, 99], [3, 8]],
-          values=np.array(expected_values, _ARROW_TYPE_TO_NP_TYPE[t]),
-          dense_shape=(4, 100))
+      if tf.executing_eagerly():
+        expected_output = tf.sparse.SparseTensor(
+            indices=[[0, 0], [0, 99], [3, 8]],
+            values=tf.constant(
+                expected_values, dtype=_ARROW_TYPE_TO_TF_TYPE[t]),
+            dense_shape=(4, 100))
+      else:
+        expected_output = tf.compat.v1.SparseTensorValue(
+            indices=[[0, 0], [0, 99], [3, 8]],
+            values=np.array(expected_values, _ARROW_TYPE_TO_NP_TYPE[t]),
+            dense_shape=(4, 100))
 
-    result.append({
-        "testcase_name":
-            "1dsparse_tensor_{}".format(t),
-        "tensor_representation_textpb":
-            tensor_representation_textpb,
-        "record_batch":
-            pa.RecordBatch.from_arrays([
-                pa.array(indices, type=pa.list_(pa.int64())),
-                pa.array(values, type=pa.list_(t))
-            ], ["key", "value"]),
-        "expected_output":
-            expected_output,
-        "expected_type_spec":
-            expected_type_spec,
-    })
+      result.append({
+          "testcase_name":
+              "1dsparse_tensor_{}_{}".format(t, list_type_factory[0]),
+          "tensor_representation_textpb":
+              tensor_representation_textpb,
+          "record_batch":
+              pa.RecordBatch.from_arrays([
+                  pa.array(indices, type=list_type_factory[1](pa.int64())),
+                  pa.array(values, type=list_type_factory[1](t))
+              ], ["key", "value"]),
+          "expected_output":
+              expected_output,
+          "expected_type_spec":
+              expected_type_spec,
+      })
 
   return result
 
@@ -137,28 +147,35 @@ def _MakeDenseTensorFromListArrayTestCases():
   }
   """
   for t in _ALL_SUPPORTED_VALUE_TYPES:
-    expected_type_spec = tf.TensorSpec([None, 4], _ARROW_TYPE_TO_TF_TYPE[t])
+    for list_type_factory in (("list", pa.list_),
+                              ("large_list", pa.large_list)):
+      expected_type_spec = tf.TensorSpec([None, 4], _ARROW_TYPE_TO_TF_TYPE[t])
 
-    if pa.types.is_integer(t):
-      values = [[1, 2, 3, 4], [5, 6, 7, 8]]
-    elif pa.types.is_floating(t):
-      values = [[1.0, 2.0, 4.0, 8.0], [-1.0, -2.0, -4.0, -8.0]]
-    else:
-      values = [[b"a", b"b", b"c", b"d"], [b"e", b"f", b"g", b"h"]]
+      if pa.types.is_integer(t):
+        values = [[1, 2, 3, 4], [5, 6, 7, 8]]
+      elif pa.types.is_floating(t):
+        values = [[1.0, 2.0, 4.0, 8.0], [-1.0, -2.0, -4.0, -8.0]]
+      else:
+        values = [[b"a", b"b", b"c", b"d"], [b"e", b"f", b"g", b"h"]]
 
-    arrow_array = pa.array(values, type=pa.list_(t))
-    if tf.executing_eagerly():
-      expected_output = tf.constant(values, dtype=_ARROW_TYPE_TO_TF_TYPE[t])
-    else:
-      expected_output = np.array(values, dtype=_ARROW_TYPE_TO_NP_TYPE[t])
+      arrow_array = pa.array(values, type=list_type_factory[1](t))
+      if tf.executing_eagerly():
+        expected_output = tf.constant(values, dtype=_ARROW_TYPE_TO_TF_TYPE[t])
+      else:
+        expected_output = np.array(values, dtype=_ARROW_TYPE_TO_NP_TYPE[t])
 
-    result.append({
-        "testcase_name": "dense_from_list_array_{}".format(t),
-        "tensor_representation_textpb": tensor_representation_textpb,
-        "arrow_array": arrow_array,
-        "expected_output": expected_output,
-        "expected_type_spec": expected_type_spec,
-    })
+      result.append({
+          "testcase_name":
+              "dense_from_{}_array_{}".format(list_type_factory[0], t),
+          "tensor_representation_textpb":
+              tensor_representation_textpb,
+          "arrow_array":
+              arrow_array,
+          "expected_output":
+              expected_output,
+          "expected_type_spec":
+              expected_type_spec,
+      })
 
   return result
 
@@ -182,24 +199,28 @@ def _MakeIntDefaultFilledDenseTensorFromListArrayTestCases():
   """
   result = []
   for t in _ALL_SUPPORTED_INT_VALUE_TYPES:
-    arrow_array = pa.array([None, [1, 2, 3, 4], None], type=pa.list_(t))
-    if tf.executing_eagerly():
-      expected_output = tf.constant(
-          [[2, 2, 2, 2], [1, 2, 3, 4], [2, 2, 2, 2]],
-          dtype=_ARROW_TYPE_TO_TF_TYPE[t],
-          shape=(3, 2, 2))
-    else:
-      expected_output = np.array(
-          [2, 2, 2, 2, 1, 2, 3, 4, 2, 2, 2, 2],
-          dtype=_ARROW_TYPE_TO_NP_TYPE[t]).reshape((3, 2, 2))
-    result.append({
-        "testcase_name": "default_filled_dense_from_list_array_{}".format(t),
-        "tensor_representation_textpb": tensor_representation_textpb,
-        "arrow_array": arrow_array,
-        "expected_output": expected_output,
-        "expected_type_spec": tf.TensorSpec([None, 2, 2],
-                                            _ARROW_TYPE_TO_TF_TYPE[t])
-    })
+    for list_type_factory in (("list", pa.list_),
+                              ("large_list", pa.large_list)):
+      arrow_array = pa.array([None, [1, 2, 3, 4], None],
+                             type=list_type_factory[1](t))
+      if tf.executing_eagerly():
+        expected_output = tf.constant(
+            [[2, 2, 2, 2], [1, 2, 3, 4], [2, 2, 2, 2]],
+            dtype=_ARROW_TYPE_TO_TF_TYPE[t],
+            shape=(3, 2, 2))
+      else:
+        expected_output = np.array(
+            [2, 2, 2, 2, 1, 2, 3, 4, 2, 2, 2, 2],
+            dtype=_ARROW_TYPE_TO_NP_TYPE[t]).reshape((3, 2, 2))
+      result.append({
+          "testcase_name": "default_filled_dense_from_{}_array_{}".format(
+              list_type_factory[0], t),
+          "tensor_representation_textpb": tensor_representation_textpb,
+          "arrow_array": arrow_array,
+          "expected_output": expected_output,
+          "expected_type_spec": tf.TensorSpec([None, 2, 2],
+                                              _ARROW_TYPE_TO_TF_TYPE[t])
+      })
   return result
 
 
@@ -549,12 +570,12 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
   @test_util.run_in_graph_and_eager_modes
   def testMultipleColumns(self):
     record_batch = pa.RecordBatch.from_arrays([
-        pa.array([[1], [], [2, 3], None], type=pa.list_(pa.int64())),
+        pa.array([[1], [], [2, 3], None], type=pa.large_list(pa.int64())),
         pa.array([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0], [4.0, 5.0]],
                  type=pa.list_(pa.float32())),
         pa.array([None, [b"a", b"b"], [b"c", b"d"], None],
-                 type=pa.list_(pa.binary())),
-        pa.array([[b"w"], [b"x"], [b"y"], [b"z"]], type=pa.list_(pa.binary())),
+                 type=pa.list_(pa.large_binary())),
+        pa.array([[b"w"], [b"x"], [b"y"], [b"z"]], type=pa.list_(pa.string())),
     ], [
         "int64_ragged",
         "float_dense",
