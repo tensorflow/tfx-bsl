@@ -103,6 +103,10 @@ _EXAMPLES = [
 """,
 ]
 
+
+_SERIALIZED_EXAMPLES = [text_format.Parse(
+    pbtxt, tf.train.Example()).SerializeToString() for pbtxt in _EXAMPLES]
+
 _EXPECTED_COLUMN_VALUES = {
     "int_feature":
         pa.array([[1], [2], [3]], type=pa.list_(pa.int64())),
@@ -116,8 +120,8 @@ _EXPECTED_COLUMN_VALUES = {
 
 def _WriteInputs(filename):
   with tf.io.TFRecordWriter(filename, "GZIP") as w:
-    for pbtxt in _EXAMPLES:
-      w.write(text_format.Parse(pbtxt, tf.train.Example()).SerializeToString())
+    for s in _SERIALIZED_EXAMPLES:
+      w.write(s)
 
 
 class TfExampleRecordTest(absltest.TestCase):
@@ -130,18 +134,27 @@ class TfExampleRecordTest(absltest.TestCase):
     tf.io.gfile.makedirs(os.path.dirname(cls._example_file))
     _WriteInputs(cls._example_file)
 
-  def _MakeTFXIO(self, schema):
-    return tf_example_record.TFExampleRecord(self._example_file, schema=schema)
+  def _MakeTFXIO(self, schema, raw_record_column_name=None):
+    return tf_example_record.TFExampleRecord(
+        self._example_file, schema=schema,
+        raw_record_column_name=raw_record_column_name)
 
-  def ValidateRecordBatch(self, record_batch):
+  def _ValidateRecordBatch(self, record_batch, raw_record_column_name=None):
     self.assertIsInstance(record_batch, pa.RecordBatch)
     self.assertEqual(record_batch.num_rows, 3)
     for i, field in enumerate(record_batch.schema):
+      if field.name == raw_record_column_name:
+        continue
       self.assertTrue(record_batch.column(i).equals(
           _EXPECTED_COLUMN_VALUES[field.name]),
                       "Column {} did not match ({} vs {})."
                       .format(field.name, record_batch.column(i),
                               _EXPECTED_COLUMN_VALUES[field.name]))
+
+    if raw_record_column_name is not None:
+      self.assertEqual(record_batch.schema.names[-1], raw_record_column_name)
+      self.assertEqual(record_batch.columns[-1].flatten().to_pylist(),
+                       _SERIALIZED_EXAMPLES)
 
   def testImplicitTensorRepresentations(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
@@ -167,7 +180,7 @@ class TfExampleRecordTest(absltest.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self.ValidateRecordBatch(record_batch)
+      self._ValidateRecordBatch(record_batch)
       self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
       tensor_adapter = tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
@@ -242,7 +255,7 @@ class TfExampleRecordTest(absltest.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self.ValidateRecordBatch(record_batch)
+      self._ValidateRecordBatch(record_batch)
       expected_schema = projected_tfxio.ArrowSchema()
       self.assertTrue(
           record_batch.schema.equals(expected_schema),
@@ -259,6 +272,31 @@ class TfExampleRecordTest(absltest.TestCase):
       # Setting the betch_size to make sure only one batch is generated.
       record_batch_pcoll = p | projected_tfxio.BeamSource(
           batch_size=len(_EXAMPLES))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+  def testAttachRawRecordColumn(self):
+    raw_example_column_name = "raw_records"
+    tfxio = self._MakeTFXIO(_SCHEMA, raw_example_column_name)
+    expected_schema = pa.schema([
+        pa.field("int_feature", pa.list_(pa.int64())),
+        pa.field("float_feature", pa.list_(pa.float32())),
+        pa.field("string_feature", pa.list_(pa.binary())),
+        pa.field(raw_example_column_name, pa.list_(pa.binary())),
+    ])
+    actual_schema = tfxio.ArrowSchema()
+    self.assertTrue(
+        actual_schema.equals(expected_schema),
+        "Expected: {} ; got {}".format(expected_schema, actual_schema))
+
+    def _AssertFn(record_batch_list):
+      self.assertLen(record_batch_list, 1)
+      record_batch = record_batch_list[0]
+      self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
+      self._ValidateRecordBatch(record_batch, raw_example_column_name)
+
+    with beam.Pipeline() as p:
+      # Setting the batch_size to make sure only one batch is generated.
+      record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
 

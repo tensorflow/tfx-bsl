@@ -3,6 +3,8 @@
 # Current version (not yet released; still in development)
 
 ## Major Features and Improvements
+*   Defined an abstract subclass of `TFXIO`, `RecordBasedTFXIO` to model record
+    based file formats.
 
 ## Bug Fixes and Other Changes
 

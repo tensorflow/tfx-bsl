@@ -22,7 +22,9 @@ import abc
 
 import apache_beam as beam
 import pyarrow as pa
+import six
 from tfx_bsl.coders import example_coder
+from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
 from tfx_bsl.tfxio import tfxio
@@ -38,30 +40,46 @@ _FEATURE_TYPE_TO_ARROW_TYPE = {
 }
 
 
-class _TFExampleRecordBase(tfxio.TFXIO):
+@six.add_metaclass(abc.ABCMeta)
+class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   """Base class for TFXIO implementations for record based tf.Examples."""
 
   def __init__(self,
-               schema: Optional[schema_pb2.Schema] = None):
+               schema: Optional[schema_pb2.Schema] = None,
+               raw_record_column_name: Optional[Text] = None):
+    super(_TFExampleRecordBase, self).__init__(raw_record_column_name)
     self._schema = schema
 
-  def BeamSource(
-      self, batch_size: Optional[int] = None) -> beam.PTransform:
+  def SupportAttachingRawRecords(self) -> bool:
+    return True
+
+  # TODO(zhuo): change all the derived classes to implement
+  # RawRecordBeamSource(), and remove this interface.
+  @abc.abstractmethod
+  def _SerializedExamplesSource(self) -> beam.PTransform:
+    """Returns a PTransform that produces PCollection[bytes]."""
+
+  def RawRecordBeamSource(self) -> beam.PTransform:
+    return self._SerializedExamplesSource()
+
+  def RawRecordToRecordBatch(self,
+                             batch_size: Optional[int] = None
+                            ) -> beam.PTransform:
     @beam.ptransform_fn
-    @beam.typehints.with_input_types(beam.Pipeline)
+    @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
-    def _ptransform_fn(pipeline: beam.pvalue.PCollection):
-      # TODO(zhuo): collect telemetry from RecordBatches.
-      return (pipeline
-              | "ReadExamples" >> self._SerializedExamplesSource()
-              | "Batch" >> beam.BatchElements(**_GetBatchElementsKwargs(
-                  batch_size))
-              | "Decode" >> beam.ParDo(
-                  _DecodeBatchExamplesDoFn(self._schema)))
+    def _ptransform_fn(raw_records_pcoll: beam.pvalue.PCollection):
+      return (
+          raw_records_pcoll
+          | "Batch" >> beam.BatchElements(
+              **record_based_tfxio.GetBatchElementsKwargs(batch_size))
+          | "Decode" >> beam.ParDo(
+              _DecodeBatchExamplesDoFn(self._schema,
+                                       self.raw_record_column_name)))
 
     return _ptransform_fn()  # pylint: disable=no-value-for-parameter
 
-  def ArrowSchema(self) -> pa.Schema:
+  def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
     if not self._schema:
       raise ValueError("TFMD schema not provided. Unable to derive an"
                        "Arrow schema")
@@ -86,10 +104,6 @@ class _TFExampleRecordBase(tfxio.TFXIO):
           tensor_representation_util.InferTensorRepresentationsFromSchema(
               self._schema))
     return result
-
-  @abc.abstractmethod
-  def _SerializedExamplesSource(self) -> beam.PTransform:
-    """Returns a PTransform that produces PCollection[bytes]."""
 
   def _ProjectTfmdSchema(self, tensor_names: List[Text]) -> schema_pb2.Schema:
     """Projects self._schema by the given tensor names."""
@@ -126,16 +140,20 @@ class TFExampleRecord(_TFExampleRecordBase):
   def __init__(self,
                file_pattern: Text,
                validate: bool = True,
-               schema: Optional[schema_pb2.Schema] = None):
+               schema: Optional[schema_pb2.Schema] = None,
+               raw_record_column_name: Optional[Text] = None):
     """Initializes a TFExampleRecord TFXIO.
 
     Args:
       file_pattern: A file glob pattern to read TFRecords from.
       validate: Boolean flag to verify that the files exist during the pipeline
-          creation time.
+        creation time.
       schema: A TFMD Schema describing the dataset.
+      raw_record_column_name: If not None, the generated Arrow RecordBatches
+        will contain a column of the given name that contains serialized
+        records.
     """
-    super(TFExampleRecord, self).__init__(schema)
+    super(TFExampleRecord, self).__init__(schema, raw_record_column_name)
     self._file_pattern = file_pattern
     self._validate = validate
 
@@ -146,7 +164,8 @@ class TFExampleRecord(_TFExampleRecordBase):
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     return TFExampleRecord(
-        self._file_pattern, validate=self._validate, schema=projected_schema)
+        self._file_pattern, validate=self._validate, schema=projected_schema,
+        raw_record_column_name=self.raw_record_column_name)
 
   def TensorFlowDataset(self):
     raise NotImplementedError
@@ -157,11 +176,11 @@ class TFExampleRecord(_TFExampleRecordBase):
 class _DecodeBatchExamplesDoFn(beam.DoFn):
   """Batches serialized protos bytes and decode them into an Arrow table."""
 
-  __slots__ = ["_schema", "_decoder"]
-
-  def __init__(self, schema: Optional[schema_pb2.Schema]):
+  def __init__(self, schema: Optional[schema_pb2.Schema],
+               raw_record_column_name: Optional[Text]):
     """Initializer."""
     self._schema = schema
+    self._raw_record_column_name = raw_record_column_name
     self._decoder = None
 
   def setup(self):
@@ -172,13 +191,9 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
       self._decoder = example_coder.ExamplesToRecordBatchDecoder()
 
   def process(self, examples: List[bytes]):
-    yield self._decoder.DecodeBatch(examples)
-
-
-def _GetBatchElementsKwargs(batch_size: Optional[int]):  # pylint: disable=invalid-name
-  if batch_size is None:
-    return {}
-  return {
-      "min_batch_size": batch_size,
-      "max_batch_size": batch_size,
-  }
+    decoded = self._decoder.DecodeBatch(examples)
+    if self._raw_record_column_name is None:
+      yield decoded
+    else:
+      yield record_based_tfxio.AppendRawRecordColumn(
+          decoded, self._raw_record_column_name, examples)
