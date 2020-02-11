@@ -94,6 +94,7 @@ setup(
         # release. Remove once avro has a healthy release.
         'avro-python3>=1.8.1,!=1.9.2.*,!=<2.0.0; python_version>="3.0"',
         'apache-beam[gcp]>=2.17,<3',
+        'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
         'protobuf>=3.7,<4',
         'six>=1.12,<2',
