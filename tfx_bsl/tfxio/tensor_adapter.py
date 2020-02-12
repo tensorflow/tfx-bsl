@@ -269,8 +269,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
       arrow_schema: pa.Schema,
       tensor_representation: schema_pb2.TensorRepresentation) -> bool:
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema.field_by_name(
-            tensor_representation.dense_tensor.column_name))
+        arrow_schema.field(tensor_representation.dense_tensor.column_name))
     # Can only handle 1-nested lists.
     return depth == 1 and _IsSupportedArrowValueType(value_type)
 
@@ -365,7 +364,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
   def CanHandle(arrow_schema: pa.Schema,
                 tensor_representation: schema_pb2.TensorRepresentation) -> bool:
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema.field_by_name(
+        arrow_schema.field(
             tensor_representation.varlen_sparse_tensor.column_name))
     # Currently can only handle 1-nested lists, but can easily support
     # arbitrarily nested ListArrays.
@@ -449,12 +448,12 @@ class _SparseTensorHandler(_TypeHandler):
     # All the index columns must be of integral types.
     for index_column in sparse_representation.index_column_names:
       depth, value_type = _GetNestDepthAndValueType(
-          arrow_schema.field_by_name(index_column))
+          arrow_schema.field(index_column))
       if depth != 1 or not pa.types.is_integer(value_type):
         return False
 
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema.field_by_name(sparse_representation.value_column_name))
+        arrow_schema.field(sparse_representation.value_column_name))
     return depth == 1 and _IsSupportedArrowValueType(value_type)
 
 # Mapping from TensorRepresentation's "kind" oneof field name to TypeHandler
