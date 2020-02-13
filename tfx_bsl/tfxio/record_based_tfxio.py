@@ -154,10 +154,17 @@ def AppendRawRecordColumn(
       list(schema.names) + [column_name])
 
 
+# Beam might grow the batch size too large for Arrow BinaryArray / ListArray
+# to hold the contents (e.g. if the sum of the length of a string feature in
+# a batch exceeds 2GB). Before the decoder can produce LargeBinaryArray /
+# LargeListArray, we have to cap the batch size.
+_BATCH_SIZE_CAP = 1000
+
+
 def GetBatchElementsKwargs(batch_size: Optional[int]):
   """Returns the kwargs to pass to beam.BatchElements()."""
   if batch_size is None:
-    return {}
+    return {"max_batch_size": _BATCH_SIZE_CAP}
   return {
       "min_batch_size": batch_size,
       "max_batch_size": batch_size,
