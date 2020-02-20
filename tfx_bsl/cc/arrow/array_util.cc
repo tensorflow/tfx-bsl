@@ -93,10 +93,17 @@ class GetFlattenedArrayParentIndicesVisitor : public arrow::ArrayVisitor {
   template <class ListLikeArray>
   arrow::Status VisitInternal(const ListLikeArray& array) {
     auto lengths_builder = GetOffsetsBuilder(array);
-    ARROW_RETURN_NOT_OK(lengths_builder->Reserve(array.length()));
+    const size_t num_parent_indices =
+        array.value_offset(array.length()) - array.value_offset(0);
+    ARROW_RETURN_NOT_OK(lengths_builder->Reserve(num_parent_indices));
     for (size_t i = 0; i < array.length(); ++i) {
       const auto range_begin = array.value_offset(i);
-      const auto range_end = array.value_offset(i+1);
+      const auto range_end = array.value_offset(i + 1);
+      if (range_begin > range_end) {
+        return arrow::Status::Invalid(
+            "Out-of-order ListArray offsets encountered at index ", i,
+            ". This should never happen!");
+      }
       for (size_t j = range_begin; j < range_end; ++j) {
         lengths_builder->UnsafeAppend(i);
       }

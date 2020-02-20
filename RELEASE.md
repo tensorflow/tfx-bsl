@@ -5,6 +5,8 @@
 ## Major Features and Improvements
 
 ## Bug Fixes and Other Changes
+*  Fixed a bug in tfx_bsl.arrow.array_util.GetFlattenedArrayParentIndices that
+   could cause memory corruption.
 
 ## Breaking Changes
 

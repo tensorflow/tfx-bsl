@@ -150,6 +150,12 @@ class ArrayUtilTest(parameterized.TestCase):
     self.assertTrue(
         indices.equals(pa.array([0, 2, 2], type=parent_indices_type)))
 
+    indices = array_util.GetFlattenedArrayParentIndices(
+        pa.array([list(range(1024))],
+                 type=list_type_factory(pa.int64())))
+    self.assertTrue(
+        indices.equals(pa.array([0] * 1024, type=parent_indices_type)))
+
   @parameterized.named_parameters(*[
       dict(testcase_name="binary", binary_like_type=pa.binary()),
       dict(testcase_name="string", binary_like_type=pa.string()),
