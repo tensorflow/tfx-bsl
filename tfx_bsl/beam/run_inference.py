@@ -89,6 +89,12 @@ def RunInference(  # pylint: disable=invalid-name
 ) -> beam.pvalue.PCollection:
   """Run inference with a model.
 
+   There are two types of inference you can perform using this PTransform:
+   1. Offline inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_endpoint`.
+   2. Remote inference by using a service endpoint. Used when
+     `model_endpoint_spec` field is set in `inference_endpoint`.
+
   TODO(b/131873699): Add support for the following features:
   1. Bytes as Input.
   2. PTable input.
@@ -251,15 +257,16 @@ class _BaseDoFn(beam.DoFn):
 @beam.typehints.with_input_types(List[Union[tf.train.Example,
                                             tf.train.SequenceExample]])
 class _RemotePredictDoFn(_BaseDoFn):
-  """A DoFn that performs predictions from a cloud-hosted model.
+  """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
 
   Supports both batch and streaming processing modes.
   NOTE: Does not work on DirectRunner for streaming jobs [BEAM-7885].
 
   In order to request predictions, you must deploy your trained model to AI
-  Platform Prediction. See
-  https://cloud.google.com/ai-platform/prediction/docs/online-predict for more
-  details.
+  Platform Prediction in the TensorFlow SavedModel format. See
+  [Exporting a SavedModel for prediction]
+  (https://cloud.google.com/ai-platform/prediction/docs/exporting-savedmodel-for-prediction)
+  for more details.
   """
   def __init__(self, inference_endpoint: model_spec_pb2.InferenceEndpoint):
     super(_RemotePredictDoFn, self).__init__()
@@ -902,9 +909,7 @@ def _signature_pre_process_regress(
 
 def _using_offline_inference(inference_endpoint:
   model_spec_pb2.InferenceEndpoint) -> bool:
-  return isinstance(getattr(inference_endpoint,
-                            inference_endpoint.WhichOneof('type')),
-                    model_spec_pb2.SavedModelSpec)
+  return inference_endpoint.WhichOneof('type') == 'saved_model_spec'
 
 
 def _get_signatures(model_path: Text, signatures: Sequence[Text],
