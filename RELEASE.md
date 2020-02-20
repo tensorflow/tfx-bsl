@@ -1,6 +1,6 @@
 # `tfx_bsl` release notes
 
-# Current version (not yet released; still in development)
+# Release 0.21.1
 
 ## Major Features and Improvements
 *   Defined an abstract subclass of `TFXIO`, `RecordBasedTFXIO` to model record
