@@ -62,12 +62,6 @@ class RunInferenceFixture(tf.test.TestCase):
                 feature { key: "input1" value { float_list { value: 0 }}}
               }
               """, tf.train.Example()),
-        text_format.Parse(
-            """
-              features {
-                feature { key: "input1" value { float_list { value: 1 }}}
-              }
-              """, tf.train.Example()),
     ]
 
   def _get_output_data_dir(self, sub_dir=None):
@@ -90,6 +84,20 @@ class RunInferenceFixture(tf.test.TestCase):
 class RunOfflineInferenceTest(RunInferenceFixture):
   def setUp(self):
     super(RunOfflineInferenceTest, self).setUp()
+    self._predict_examples = [
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example()),
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 1 }}}
+              }
+              """, tf.train.Example()),
+    ]
     self._multihead_examples = [
         text_format.Parse(
             """
@@ -473,18 +481,22 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       response_dict = {'error': content}
     return json.dumps(response_dict)
 
-  @staticmethod
-  def _run_inference_with_beam(example_path, inference_endpoint):
-    with beam.Pipeline() as pipeline:
-      result = (
-          pipeline
-          | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-          | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-          | 'RunInference' >> run_inference.RunInference(inference_endpoint))
-      return result
+  def _set_up_pipeline(self, inference_endpoint):
+    self.pipeline = beam.Pipeline()
+    self.pcoll = (
+        self.pipeline
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
+        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
+        | 'RunInference' >> run_inference.RunInference(inference_endpoint))
 
-  def test_request_is_json_serializable(self):
-    predictions = [0.901]
+  def _run_inference_with_beam(self):
+    self.pipeline_result = self.pipeline.run()
+    self.pipeline_result.wait_until_finish()
+
+  def test_model_predict(self):
+    predictions = [
+      {'output_1': [0.901], 'output_2': [0.997]}
+    ]
     with mock.patch('tfx_bsl.beam.run_inference._RemotePredictDoFn.'
                     '_get_api_client') as response_mock:
       response_mock.side_effect = self._make_api_client_mock(
@@ -497,9 +509,9 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         )
       )
 
-      result = self._run_inference_with_beam(self.example_path,
-                                             inference_endpoint)
-      assert_that(result, equal_to(predictions))
+      self._set_up_pipeline(inference_endpoint)
+      assert_that(self.pcoll, equal_to(predictions))
+      self._run_inference_with_beam()
 
   def test_exception_raised_when_response_body_contains_error_entry(self):
     error_msg = 'Base64 decode failed.'
@@ -516,7 +528,8 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       )
 
       try:
-        self._run_inference_with_beam(self.example_path, inference_endpoint)
+        self._set_up_pipeline(inference_endpoint)
+        self._run_inference_with_beam()
       except ValueError as exc:
         actual_error_msg = str(exc)
         self.assertTrue(actual_error_msg.startswith(error_msg))
@@ -531,7 +544,8 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     )
 
     with self.assertRaises(ValueError):
-      self._run_inference_with_beam(self.example_path, inference_endpoint)
+      self._set_up_pipeline(inference_endpoint)
+      self._run_inference_with_beam()
 
 
 if __name__ == '__main__':
