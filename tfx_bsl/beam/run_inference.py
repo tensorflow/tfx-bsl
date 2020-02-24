@@ -85,6 +85,7 @@ class OperationType(object):
 @beam.ptransform_fn
 @beam.typehints.with_input_types(Union[tf.train.Example,
                                        tf.train.SequenceExample])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInference(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_endpoint: model_spec_pb2.InferenceEndpoint
@@ -242,9 +243,12 @@ class _BaseDoFn(beam.DoFn):
   def finish_bundle(self):
     self._metrics_collector.update_metrics_with_cache()
 
-  def process(self, elements: list) -> Any:
+  def process(
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
+  ) -> Iterable[Any]:
     batch_start_time = self._clock.get_current_time_in_microseconds()
-    result = self.run_inference(elements)
+    outputs = self.run_inference(elements)
+    result = self._post_process(elements, outputs)
     self._metrics_collector.update(
         elements,
         self._clock.get_current_time_in_microseconds() - batch_start_time)
@@ -252,12 +256,19 @@ class _BaseDoFn(beam.DoFn):
 
   def run_inference(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
-  ) -> list:
+  ) -> Union[Mapping[Text, np.ndarray], Sequence[Mapping[Text, Any]]]:
+    raise NotImplementedError
+
+  def _post_process(
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
+      outputs: Any
+  ) -> Iterable[Any]:
     raise NotImplementedError
 
 
 @beam.typehints.with_input_types(List[Union[tf.train.Example,
                                             tf.train.SequenceExample]])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 class _RemotePredictDoFn(_BaseDoFn):
   """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
 
@@ -372,6 +383,24 @@ class _RemotePredictDoFn(_BaseDoFn):
       raise ValueError(error_msg)
     except KeyError:
       return response['predictions']
+
+  def _post_process(
+      self,  elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
+      outputs: Sequence[Mapping[Text, Any]]
+  ) -> Iterable[prediction_log_pb2.PredictLog]:
+    result = []
+    for output in outputs:
+      predict_log = prediction_log_pb2.PredictLog()
+
+      for output_alias, values in output.items():
+        values = np.array(values)
+        tensor_proto = tf.make_tensor_proto(
+          values=values,
+          dtype=tf.as_dtype(values.dtype).as_datatype_enum,
+          shape=np.expand_dims(values, axis=0).shape)
+        predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
+      result.append(predict_log)
+    return result
 
 
 # TODO(b/131873699): Add typehints once
@@ -490,8 +519,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
   ) -> Mapping[Text, np.ndarray]:
     self._check_elements(elements)
     outputs = self._run_tf_operations(elements)
-    result = self._post_process(elements, outputs)
-    return result
+    return outputs
 
   def _run_tf_operations(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
@@ -505,12 +533,6 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     if len(result) != len(self._io_tensor_spec.output_alias_tensor_names):
       raise RuntimeError('Output length does not match fetches')
     return result
-
-  def _post_process(self, elements: Any,
-                    outputs: Mapping[Text, np.ndarray]) -> Iterable[Any]:
-    """Unimplemented."""
-
-    raise NotImplementedError
 
   def _check_elements(
       self, elements: List[Union[tf.train.Example,

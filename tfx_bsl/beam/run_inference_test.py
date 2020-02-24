@@ -509,8 +509,14 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         )
       )
 
+      predict_log = prediction_log_pb2.PredictLog()
+      predict_log.response.outputs['output_1'].CopyFrom(
+        tf.make_tensor_proto(values=[0.901], dtype=tf.double, shape=(1, 1)))
+      predict_log.response.outputs['output_2'].CopyFrom(
+        tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
+
       self._set_up_pipeline(inference_endpoint)
-      assert_that(self.pcoll, equal_to(predictions))
+      assert_that(self.pcoll, equal_to([predict_log]))
       self._run_inference_with_beam()
 
   def test_exception_raised_when_response_body_contains_error_entry(self):
