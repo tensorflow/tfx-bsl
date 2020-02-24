@@ -18,6 +18,7 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+import base64
 import collections
 import os
 import platform
@@ -36,7 +37,8 @@ from googleapiclient import http
 import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.proto import model_spec_pb2
-from typing import Any, Iterable, List, Mapping, Sequence, Text, Tuple, Union
+from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
+                   Tuple, Union
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
 # pylint: disable=g-import-not-at-top
@@ -302,17 +304,66 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _make_request(self, model_name: str, body: dict) -> http.HttpRequest:
     return self._api_client.projects().predict(name=model_name, body=body)
 
+  @classmethod
+  def _prepare_instances(cls,
+    elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
+  ) -> Generator[Mapping[Text, Any], None, None]:
+    for example in elements:
+      # TODO: support tf.train.SequenceExample
+      if not isinstance(example, tf.train.Example):
+        raise ValueError('Remote prediction only supports tf.train.Example')
+
+      instance = {}
+      for input_name, feature in example.features.feature.items():
+        attr_name = feature.WhichOneof('kind')
+        attr = getattr(feature, attr_name)
+        values = cls._parse_feature_content(attr.value, attr_name,
+                                            cls._sending_as_binary(input_name))
+        values = cls._maybe_flatten(values)
+        instance[input_name] = values
+      yield instance
+
+  @staticmethod
+  def _sending_as_binary(input_name: Text) -> bool:
+    """Whether data should be sent as binary."""
+    return input_name.endswith('_bytes')
+
+  @staticmethod
+  def _parse_feature_content(
+      values: Iterable[Any], attr_name: Text, as_binary: bool
+  ) -> Sequence[Any]:
+    """Parse the content of tf.train.Feature object.
+
+    If bytes_list, parse a list of bytes-like objects to a list of strings so
+    that it would be JSON serializable.
+
+    If float_list or int64_list, do nothing.
+
+    If data should be sent as binary, mark it as binary by replacing it with
+    a single attribute named 'b64'.
+    """
+    if as_binary:
+      values = [{'b64': base64.b64encode(x).decode()} for x in values]
+    elif attr_name == 'bytes_list':
+      values = [x.decode() for x in values]
+    else:
+      values = [x for x in values]
+    return values
+
+  @staticmethod
+  def _maybe_flatten(values: Sequence[Any]) -> Union[Sequence[Any], Any]:
+    """Flatten a sequence if its length is 1."""
+    if len(values) == 1:
+      result = values[0]
+    else:
+      result = values
+    return result
+
   def run_inference(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
-  ) -> list:
-    # To send binary data, we must mark it as binary by replacing it with
-    # a single attribute named 'b64'.
-    base64_encoded_elements = [
-      {'b64': tf.io.encode_base64(x.SerializeToString()).numpy().decode()}
-      for x in elements
-    ]
+  ) -> Sequence[Mapping[Text, Any]]:
     body = {
-      'instances': base64_encoded_elements
+      'instances': list(self._prepare_instances(elements))
     }
     response = self._execute_request(self._make_request(self.full_model_name,
                                                         body))

@@ -547,6 +547,23 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       self._set_up_pipeline(inference_endpoint)
       self._run_inference_with_beam()
 
+  def test_request_body_with_binary_data(self):
+    example = text_format.Parse(
+      """
+      features {
+        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+        feature { key: "y" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.Example())
+    result = list(
+      run_inference._RemotePredictDoFn._prepare_instances([example]))
+    self.assertEqual([{
+      'x_bytes': {'b64': 'QVNhOGFzZGY='},
+      'x': 'JLK7ljk3',
+      'y': [1, 2]},
+    ], result)
+
 
 if __name__ == '__main__':
   tf.test.main()
