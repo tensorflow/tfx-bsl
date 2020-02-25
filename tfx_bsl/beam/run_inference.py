@@ -280,6 +280,9 @@ class _RemotePredictDoFn(_BaseDoFn):
   [Exporting a SavedModel for prediction]
   (https://cloud.google.com/ai-platform/prediction/docs/exporting-savedmodel-for-prediction)
   for more details.
+
+  To send binary data, you have to make sure that the name of an input ends in
+  `_bytes`.
   """
   def __init__(self, inference_endpoint: model_spec_pb2.InferenceEndpoint):
     super(_RemotePredictDoFn, self).__init__()
@@ -317,8 +320,8 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   @classmethod
   def _prepare_instances(cls,
-    elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
-  ) -> Generator[Mapping[Text, Any], None, None]:
+    elements: List[tf.train.Example]
+) -> Generator[Mapping[Text, Any], None, None]:
     for example in elements:
       # TODO: support tf.train.SequenceExample
       if not isinstance(example, tf.train.Example):
@@ -378,14 +381,13 @@ class _RemotePredictDoFn(_BaseDoFn):
     }
     response = self._execute_request(self._make_request(self.full_model_name,
                                                         body))
-    try:
-      error_msg = response['error']
-      raise ValueError(error_msg)
-    except KeyError:
+    if 'error' in response:
+      raise ValueError(response['error'])
+    else:
       return response['predictions']
 
   def _post_process(
-      self,  elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
       outputs: Sequence[Mapping[Text, Any]]
   ) -> Iterable[prediction_log_pb2.PredictLog]:
     result = []
