@@ -18,10 +18,15 @@
 namespace tfx_bsl {
 // For now, all arrow errors are converted to InternalError.
 Status FromArrowStatus(::arrow::Status arrow_status) {
-  return arrow_status.ok() ? Status::OK()
-                           : errors::Internal(absl::StrCat(
-                                 "Arrow error ", arrow_status.CodeAsString(),
-                                 " : ", arrow_status.message()));
+  if (arrow_status.ok()) return Status::OK();
+
+  if (arrow_status.IsNotImplemented()) {
+    return errors::Unimplemented(arrow_status.message());
+  }
+
+  return errors::Internal(absl::StrCat("Arrow error ",
+                                       arrow_status.CodeAsString(), " : ",
+                                       arrow_status.message()));
 }
 
 }  // namespace tfx_bsl

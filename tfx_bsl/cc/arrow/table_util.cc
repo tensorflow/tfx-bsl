@@ -24,6 +24,7 @@
 #include "arrow/api.h"
 #include "arrow/array/concatenate.h"
 #include "arrow/visitor_inline.h"
+#include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 
@@ -34,6 +35,7 @@ using ::arrow::ArrayVector;
 using ::arrow::ChunkedArray;
 using ::arrow::Concatenate;
 using ::arrow::Field;
+using ::arrow::RecordBatch;
 using ::arrow::Schema;
 using ::arrow::Table;
 using ::arrow::Type;
@@ -245,6 +247,39 @@ Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
     return errors::InvalidArgument(
         "Expected row_indices to be an Int32Array or an Int64Array");
   }
+}
+
+Status TotalByteSize(const Table& table, const bool ignore_unsupported,
+                     size_t* result) {
+  *result = 0;
+  for (int i = 0; i < table.num_columns(); ++i) {
+    auto chunked_array = table.column(i);
+    for (int j = 0; j < chunked_array->num_chunks(); ++j) {
+      size_t array_size;
+      auto status = GetByteSize(*chunked_array->chunk(j), &array_size);
+      if (ignore_unsupported && status.code() == error::UNIMPLEMENTED) {
+        continue;
+      }
+      TFX_BSL_RETURN_IF_ERROR(status);
+      *result += array_size;
+    }
+  }
+  return Status::OK();
+}
+
+Status TotalByteSize(const RecordBatch& record_batch,
+                     const bool ignore_unsupported, size_t* result) {
+  *result = 0;
+  for (int i = 0; i < record_batch.num_columns(); ++i) {
+    size_t array_size;
+    auto status = GetByteSize(*record_batch.column(i), &array_size);
+    if (ignore_unsupported && status.code() == error::UNIMPLEMENTED) {
+      continue;
+    }
+    TFX_BSL_RETURN_IF_ERROR(status);
+    *result += array_size;
+  }
+  return Status::OK();
 }
 
 }  // namespace tfx_bsl

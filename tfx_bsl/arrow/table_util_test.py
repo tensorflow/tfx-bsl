@@ -370,5 +370,32 @@ class SliceTableByRowIndicesTest(parameterized.TestCase):
     self.assertEqual(0, sliced.columns[0].chunk(0).offset)
 
 
+_GET_TOTAL_BYTE_SIZE_TEST_NAMED_PARAMS = [
+    dict(testcase_name="table", factory=pa.Table.from_arrays),
+    dict(testcase_name="record_batch", factory=pa.RecordBatch.from_arrays),
+]
+
+
+class GetTotalByteSizeTest(parameterized.TestCase):
+
+  @parameterized.named_parameters(*_GET_TOTAL_BYTE_SIZE_TEST_NAMED_PARAMS)
+  def test_simple(self, factory):
+    # 3 int64 values
+    # 4 int32 offsets
+    # 1 null bitmap byte for outer ListArray
+    # 1 null bitmap byte for inner Int64Array
+    # 42 bytes in total.
+    list_array = pa.array([[1, 2], [3], None], type=pa.list_(pa.int64()))
+
+    # 1 null bitmap byte for outer StructArray.
+    # 1 null bitmap byte for inner Int64Array.
+    # 3 int64 values.
+    # 26 bytes in total
+    struct_array = pa.array([{"a": 1}, {"a": 2}, {"a": 3}],
+                            type=pa.struct([pa.field("a", pa.int64())]))
+    entity = factory([list_array, struct_array], ["a1", "a2"])
+
+    self.assertEqual(42 + 26, table_util.TotalByteSize(entity))
+
 if __name__ == "__main__":
   absltest.main()

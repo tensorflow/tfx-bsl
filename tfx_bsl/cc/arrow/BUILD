@@ -25,6 +25,7 @@ cc_library(
     srcs = ["table_util.cc"],
     hdrs = ["table_util.h"],
     deps = [
+        ":array_util",
         "//tfx_bsl/cc/util:status",
         "//tfx_bsl/cc/util:status_util",
         "@arrow",

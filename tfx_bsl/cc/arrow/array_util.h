@@ -107,5 +107,9 @@ Status FillNullLists(const std::shared_ptr<arrow::Array>& list_array,
                      const std::shared_ptr<arrow::Array>& fill_with,
                      std::shared_ptr<arrow::Array>* filled);
 
+// Returns the byte size of the contents of `array`. Note that this is different
+// from the byte size of the buffers that `array` consists of, because of
+// slicing offsets and buffer reservation (buffer_size != buffer_capacity).
+Status GetByteSize(const arrow::Array& array, size_t* result);
 }  // namespace tfx_bsl
 #endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

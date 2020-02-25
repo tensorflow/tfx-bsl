@@ -434,6 +434,126 @@ class RowSplitsRep {
 
   absl::variant<absl::Span<const int32_t>, absl::Span<const int64_t>> rep_;
 };
+
+class GetByteSizeVisitor : public arrow::ArrayVisitor {
+ public:
+  GetByteSizeVisitor() : GetByteSizeVisitor(/*offset=*/0, /*length=*/-1) {}
+
+  size_t result() const { return result_; }
+
+#define VISIT_TYPE_WITH(TYPE, VISIT_FUNC)                       \
+  arrow::Status Visit(const TYPE& array) override { \
+    return VISIT_FUNC(array);                 \
+  }
+
+  VISIT_TYPE_WITH(arrow::Int8Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::Int16Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::Int32Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::Int64Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::UInt8Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::UInt16Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::UInt32Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::UInt64Array, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::FloatArray, NumericArrayImpl)
+  VISIT_TYPE_WITH(arrow::DoubleArray, NumericArrayImpl)
+
+  VISIT_TYPE_WITH(arrow::BinaryArray, BinaryLikeImpl)
+  VISIT_TYPE_WITH(arrow::StringArray, BinaryLikeImpl)
+  VISIT_TYPE_WITH(arrow::LargeBinaryArray, BinaryLikeImpl)
+  VISIT_TYPE_WITH(arrow::LargeStringArray, BinaryLikeImpl)
+
+  VISIT_TYPE_WITH(arrow::ListArray, ListLikeImpl)
+  VISIT_TYPE_WITH(arrow::LargeListArray, ListLikeImpl)
+#undef VISIT_TYPE_WITH
+
+  arrow::Status Visit(const arrow::NullArray& array) {
+    // a NullArray does not have any buffer allocated.
+    result_ = 0;
+    return arrow::Status::OK();
+  }
+
+  arrow::Status Visit(const arrow::StructArray& array) {
+    result_ += GetNullBitmapByteSize(array);
+    const int num_children = array.struct_type()->num_children();
+    for (int i = 0; i < num_children; ++i) {
+      // We don't need to pass on the offsets and lengths to the child
+      // visitor because StructArray::field() handles it.
+      GetByteSizeVisitor v;
+      ARROW_RETURN_NOT_OK(array.field(i)->Accept(&v));
+      result_ += v.result();
+    }
+    return arrow::Status::OK();
+  }
+
+  arrow::Status Visit(const arrow::BooleanArray& array) {
+    result_ += GetNullBitmapByteSize(array);
+    result_ += (GetArrayLength(array) + 7) / 8;
+    return arrow::Status::OK();
+  }
+
+ private:
+  // if `length` < 0, array.length() will be used.
+  GetByteSizeVisitor(int64_t offset, int64_t length)
+      : offset_(offset), length_(length), result_(0) {}
+
+  int64_t GetArrayLength(const Array& array) const {
+    if (length_ >= 0) return length_;
+    return array.length();
+  }
+
+  size_t GetNullBitmapByteSize(const Array& array) const {
+    if (!array.null_bitmap_data()) {
+      return 0;
+    }
+    // Round to the next byte.
+    return (GetArrayLength(array) + 7) / 8;
+  }
+
+  template<typename ListLikeT>
+  arrow::Status ListLikeImpl(const ListLikeT& array) {
+    const size_t length = GetArrayLength(array);
+    // Size of the offsets.
+    result_ +=
+        (length + 1) * sizeof(typename ListLikeT::TypeClass::offset_type);
+    result_ += GetNullBitmapByteSize(array);
+    // Size of the child array. We delegate to another GetByteSizeVisitor.
+    // Note that `array.values()` does not take the offsets into consideration.
+    // We have to get the right offset and length from the offsets of `array`.
+    const auto* value_offsets = array.raw_value_offsets();
+    const int64_t child_offset = value_offsets[offset_];
+    const int64_t child_length = value_offsets[offset_ + length] - child_offset;
+    GetByteSizeVisitor child_visitor(child_offset, child_length);
+    ARROW_RETURN_NOT_OK(array.values()->Accept(&child_visitor));
+    result_ += child_visitor.result();
+    return arrow::Status::OK();
+  }
+
+  template<typename BinaryLikeT>
+  arrow::Status BinaryLikeImpl(const BinaryLikeT& array) {
+    const size_t length = GetArrayLength(array);
+    const auto* offsets = array.raw_value_offsets();
+    // size of the offsets.
+    result_ +=
+        (length + 1) * sizeof(typename BinaryLikeT::TypeClass::offset_type);
+    // size of the contents.
+    result_ += offsets[offset_ + length] - offsets[offset_];
+
+    result_ += GetNullBitmapByteSize(array);
+    return arrow::Status::OK();
+  }
+
+  arrow::Status NumericArrayImpl(const arrow::PrimitiveArray& array) {
+    auto type = array.type();
+    auto primitive_type = static_cast<const arrow::PrimitiveCType*>(type.get());
+    result_ += GetArrayLength(array) * (primitive_type->bit_width() / 8);
+    result_ += GetNullBitmapByteSize(array);
+    return arrow::Status::OK();
+  }
+
+  const int64_t offset_;
+  const int64_t length_;
+  size_t result_;
+};
 }  // namespace
 
 Status CooFromListArray(
@@ -566,4 +686,10 @@ Status FillNullLists(const std::shared_ptr<Array>& list_array,
   return Status::OK();
 }
 
+Status GetByteSize(const Array& array, size_t* result) {
+  GetByteSizeVisitor v;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
+  *result = v.result();
+  return Status::OK();
+}
 }  // namespace tfx_bsl

@@ -52,11 +52,11 @@ class ArrayUtilTest(parameterized.TestCase):
         f(1)
 
     for f in functions_expecting_list_array:
-      with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
+      with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
         f(pa.array([1, 2, 3]))
 
     for f in functions_expecting_binary_array:
-      with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
+      with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
         f(pa.array([[1, 2, 3]]))
 
   @parameterized.named_parameters(*_LIST_TYPE_PARAMETERS)
@@ -97,7 +97,7 @@ class ArrayUtilTest(parameterized.TestCase):
                                                  type=pa.int64())))
 
   def test_element_lengths_unsupported_type(self):
-    with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
+    with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
       array_util.GetElementLengths(pa.array([1, 2, 3], type=pa.int32()))
 
   def test_get_array_null_bitmap_as_byte_array(self):
@@ -423,12 +423,174 @@ class FillNullListsTest(parameterized.TestCase):
         "{} vs {}".format(actual, expected))
 
   def testNonListArray(self):
-    with self.assertRaisesRegex(RuntimeError, "NotImplemented"):
+    with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
       array_util.FillNullLists(pa.array([1, 2, 3]), pa.array([4]))
 
   def testValueTypeDoesNotEqualFillType(self):
     with self.assertRaisesRegex(RuntimeError, "to be of the same type"):
       array_util.FillNullLists(pa.array([[1]]), pa.array(["a"]))
+
+
+def _get_numeric_byte_size_test_cases():
+  result = []
+  for array_type, sizeof in [
+      (pa.int8(), 1),
+      (pa.uint8(), 1),
+      (pa.int16(), 2),
+      (pa.uint16(), 2),
+      (pa.int32(), 4),
+      (pa.uint32(), 4),
+      (pa.int64(), 8),
+      (pa.uint64(), 8),
+      (pa.float32(), 4),
+      (pa.float64(), 8),
+  ]:
+    result.append(
+        dict(
+            testcase_name=str(array_type),
+            array=pa.array(range(9), type=array_type),
+            slice_offset=2,
+            slice_length=3,
+            expected_size=(2 + sizeof * 9),
+            expected_sliced_size=(1 + sizeof * 3)))
+  return result
+
+
+def _get_binary_like_byte_size_test_cases():
+  result = []
+  for array_type, sizeof_offsets in [
+      (pa.binary(), 4),
+      (pa.string(), 4),
+      (pa.large_binary(), 8),
+      (pa.large_string(), 8),
+  ]:
+    result.append(
+        dict(
+            testcase_name=str(array_type),
+            array=pa.array([
+                "a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg",
+                "hhhhhhhh", "iiiiiiiii"
+            ], type=array_type),
+            slice_offset=1,
+            slice_length=3,
+            # contents: 45
+            # offsets: 10 * sizeof_offsets
+            # null bitmap: 2
+            expected_size=(45 + sizeof_offsets * 10 + 2),
+            # contents: 9
+            # offsets: 4 * sizeof_offsets
+            # null bitmap: 1
+            expected_sliced_size=(9 + sizeof_offsets * 4 + 1)))
+  return result
+
+
+_GET_BYTE_SIZE_TEST_CASES = (
+    _get_numeric_byte_size_test_cases() +
+    _get_binary_like_byte_size_test_cases() + [
+        dict(
+            testcase_name="bool",
+            array=pa.array([False] * 9, type=pa.bool_()),
+            slice_offset=7,
+            slice_length=1,
+            # contents: 2
+            # null bitmap: 2
+            expected_size=(2 + 2),
+            # contents: 1
+            # null bitmap: 1
+            expected_sliced_size=(1 + 1)),
+        dict(
+            testcase_name="list",
+            array=pa.array([[1], [1, 1], [1, 1, 1], [1, 1, 1, 1]],
+                           type=pa.list_(pa.int64())),
+            slice_offset=1,
+            slice_length=2,
+            # offsets: 5 * 4
+            # null bitmap: 1
+            # contents:
+            #   null bitmap: 2
+            #   contents: 10 * 8
+            expected_size=(5 * 4 + 1 + 2 + 10 * 8),
+            # offsets: 3 * 4
+            # null bitmap: 1
+            # contents:
+            #   null bitmap: 1
+            #   contents: 5 * 8
+            expected_sliced_size=(3 * 4 + 1 + 1 + 5 * 8)),
+        dict(
+            testcase_name="large_list",
+            array=pa.array([[1], [1, 1], [1, 1, 1], [1, 1, 1, 1]],
+                           type=pa.large_list(pa.int64())),
+            slice_offset=1,
+            slice_length=2,
+            # offsets: 5 * 8
+            # null bitmap: 1
+            # contents:
+            #   null bitmap: 2
+            #   contents: 10 * 8
+            expected_size=(5 * 8 + 1 + 2 + 10 * 8),
+            # offsets: 3 * 8
+            # null bitmap: 1
+            # contents:
+            #   null bitmap: 1
+            #   contents: 5 * 8
+            expected_sliced_size=(3 * 8 + 1 + 1 + 5 * 8)),
+        dict(
+            testcase_name="deeply_nested_list",
+            array=pa.array([[["aaa"], ["bb", ""], None],
+                            None,
+                            [["c"], [], ["def", "g"]],
+                            [["h"]]],
+                           type=pa.list_(pa.list_(pa.binary()))),
+            slice_offset=1,
+            slice_length=2,
+            # innermost binary array: 1 + 11 + 8 * 4
+            # mid list array: 1 + 8 * 4
+            # outmost list array: 1 + 5 * 4
+            expected_size=98,
+            # innermost binary array (["c", "def", "g"]): 1 + 5 + 4 * 4
+            # mid list array: ([["c"], [], ["def, "g]]): 1 + 4 * 4
+            # outmost list array: 1 + 3 * 4
+            expected_sliced_size=52),
+        dict(
+            testcase_name="null",
+            array=pa.array([None] * 1000),
+            slice_offset=4,
+            slice_length=100,
+            expected_size=0,
+            expected_sliced_size=0),
+        dict(
+            testcase_name="struct",
+            array=pa.array(
+                [{
+                    "a": 1,
+                    "b": 2
+                }] * 10,
+                type=pa.struct(
+                    [pa.field("a", pa.int64()),
+                     pa.field("b", pa.int64())])),
+            slice_offset=2,
+            slice_length=1,
+            expected_size=(2 + (2 + 10 * 8) * 2),
+            expected_sliced_size=(1 + (1 + 8) * 2))
+    ])
+
+
+class GetByteSizeTest(parameterized.TestCase):
+
+  @parameterized.named_parameters(*_GET_BYTE_SIZE_TEST_CASES)
+  def testGetByteSize(self, array, slice_offset, slice_length, expected_size,
+                      expected_sliced_size):
+    # make sure the empty array case does not crash.
+    array_util.GetByteSize(pa.array([], array.type))
+
+    self.assertEqual(array_util.GetByteSize(array), expected_size)
+
+    sliced = array.slice(slice_offset, slice_length)
+    self.assertEqual(array_util.GetByteSize(sliced), expected_sliced_size)
+
+  def testUnsupported(self):
+    with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
+      array_util.GetByteSize(pa.array([], type=pa.timestamp("s")))
 
 
 if __name__ == "__main__":

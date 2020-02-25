@@ -25,6 +25,7 @@
 namespace arrow {
 class Array;
 class Table;
+class RecordBatch;
 }  // namespace arrow
 
 namespace tfx_bsl {
@@ -50,6 +51,17 @@ Status SliceTableByRowIndices(const std::shared_ptr<arrow::Table>& table,
                               const std::shared_ptr<arrow::Array>& row_indices,
                               std::shared_ptr<arrow::Table>* result);
 
+// Returns the total byte size of all the Arrays a table or a record batch
+// consists of. Slicing offsets are taken consideration, but buffer sharing
+// is not. So this number could be larger than the actual number of bytes the
+// table or record batch occupies in RAM.
+// If `ignore_unsupported` is true, these functions will not return an error
+// when encountering unsupported columns and the result won't include
+// the size of them, otherwise an error will be returned.
+Status TotalByteSize(const arrow::Table& table, bool ignore_unsupported,
+                     size_t* result);
+Status TotalByteSize(const arrow::RecordBatch& record_batch,
+                     bool ignore_unsupported, size_t* result);
 }  // namespace tfx_bsl
 
 #endif  // THIRD_PARTY_PY_TENSORFLOW_DATA_VALIDATION_ARROW_CC_MERGE_H_

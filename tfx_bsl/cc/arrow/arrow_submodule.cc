@@ -170,6 +170,14 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
     }
     return result;
   });
+  m.def("GetByteSize", [](const std::shared_ptr<arrow::Array>& array) {
+    size_t result;
+    Status s = GetByteSize(*array, &result);
+    if (!s.ok()) {
+      throw std::runtime_error(s.ToString());
+    }
+    return result;
+  });
 }
 
 void DefineTableUtilSubmodule(pybind11::module arrow_module) {
@@ -212,6 +220,40 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
           "The new Table is guaranteed to contain only one chunk.\n"
           "`row_indices` must be an Int32Array or Int64Array. And the indices "
           "in it must be sorted in ascending order."),
+      py::call_guard<py::gil_scoped_release>());
+  m.def(
+      "TotalByteSize",
+      [](const std::shared_ptr<arrow::Table>& table,
+         const bool ignore_unsupported) {
+        size_t result;
+        Status s = TotalByteSize(*table, ignore_unsupported, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      py::arg("table"), py::arg("ignore_unsupported") = false,
+      py::doc(
+          "Returns the total byte size of all the buffers a table consists "
+          "of. This value might be larger than the actual memory occupied "
+          "by those buffers because buffers might share the underlying memory"),
+      py::call_guard<py::gil_scoped_release>());
+  m.def(
+      "TotalByteSize",
+      [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
+         const bool ignore_unsupported) {
+        size_t result;
+        Status s = TotalByteSize(*record_batch, ignore_unsupported, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      py::arg("record_batch"), py::arg("ignore_unsupported") = false,
+      py::doc("Returns the total byte size of all the buffers a record batch "
+              "consists of. This value might be larger than the actual memory "
+              "occupied by those buffers because buffers might share the "
+              "underlying memory"),
       py::call_guard<py::gil_scoped_release>());
 }
 
