@@ -283,6 +283,10 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   To send binary data, you have to make sure that the name of an input ends in
   `_bytes`.
+
+  NOTE: The returned `PredictLog` instances do not have `PredictRequest` part
+  filled. The reason is that it is difficult to determine the input tensor name
+  without having access to cloud-hosted model's signatures.
   """
   def __init__(self, inference_endpoint: model_spec_pb2.InferenceEndpoint):
     super(_RemotePredictDoFn, self).__init__()
@@ -383,8 +387,7 @@ class _RemotePredictDoFn(_BaseDoFn):
                                                         body))
     if 'error' in response:
       raise ValueError(response['error'])
-    else:
-      return response['predictions']
+    return response['predictions']
 
   def _post_process(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
