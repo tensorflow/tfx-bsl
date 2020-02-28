@@ -75,6 +75,7 @@ _BulkInferResult = Union[prediction_log_pb2.PredictLog,
                                classification_pb2.Classifications]]
 
 
+# TODO: convert this into enum once we stopped supporting Python 2.7
 class OperationType(object):
   CLASSIFICATION = 'CLASSIFICATION'
   REGRESSION = 'REGRESSION'
