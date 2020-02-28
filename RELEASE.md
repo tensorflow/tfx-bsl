@@ -1,10 +1,12 @@
 # `tfx_bsl` release notes
 
-# Current version (not yet released; still in development)
+# Release 0.21.3
 
 ## Major Features and Improvements
 
 ## Bug Fixes and Other Changes
+
+*   Requires `apache-beam>=2.17,<2.18`
 
 ## Breaking Changes
 
