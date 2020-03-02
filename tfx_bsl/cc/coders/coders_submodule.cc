@@ -42,8 +42,7 @@ void DefineCodersSubmodule(py::module main_module) {
                throw std::runtime_error(s.ToString());
              }
              return result;
-           }),
-           py::call_guard<py::gil_scoped_release>())
+           }))
       .def(py::init([] {
              std::unique_ptr<ExamplesToRecordBatchDecoder> result;
              Status s =
@@ -52,8 +51,7 @@ void DefineCodersSubmodule(py::module main_module) {
                throw std::runtime_error(s.ToString());
              }
              return result;
-           }),
-           py::call_guard<py::gil_scoped_release>())
+           }))
       .def(
           "DecodeBatch",
           [](ExamplesToRecordBatchDecoder* decoder,
