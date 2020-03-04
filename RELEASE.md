@@ -6,6 +6,8 @@
 
 ## Bug Fixes and Other Changes
 
+*   Requires `apache-beam>=2.17,<3`
+
 ## Breaking Changes
 
 ## Deprecations

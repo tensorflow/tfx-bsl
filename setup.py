@@ -93,7 +93,7 @@ setup(
         # TODO(b/149841057): This is a workaround for broken avro-python3
         # release. Remove once avro has a healthy release.
         'avro-python3>=1.8.1,!=1.9.2.*,!=<2.0.0; python_version>="3.0"',
-        'apache-beam[gcp]>=2.17,<2.18',
+        'apache-beam[gcp]>=2.17,<3',
         'numpy>=1.16,<2',
         'protobuf>=3.7,<4',
         'six>=1.12,<2',
