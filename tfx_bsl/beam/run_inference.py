@@ -269,7 +269,8 @@ class _BaseDoFn(beam.DoFn):
 
 @beam.typehints.with_input_types(List[Union[tf.train.Example,
                                             tf.train.SequenceExample]])
-# Using output typehints causes an error on streaming mode on Dataflow runner.
+# Using output typehints triggers NotImplementedError('BEAM-2717)' on streaming
+# mode on Dataflow runner.
 class _RemotePredictDoFn(_BaseDoFn):
   """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
 
