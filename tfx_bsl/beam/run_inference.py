@@ -269,6 +269,7 @@ class _BaseDoFn(beam.DoFn):
 
 @beam.typehints.with_input_types(List[Union[tf.train.Example,
                                             tf.train.SequenceExample]])
+# @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 # Using output typehints triggers NotImplementedError('BEAM-2717)' on streaming
 # mode on Dataflow runner.
 class _RemotePredictDoFn(_BaseDoFn):
