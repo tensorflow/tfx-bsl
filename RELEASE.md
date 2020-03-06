@@ -3,6 +3,8 @@
 # Current version (not yet released; still in development)
 
 ## Major Features and Improvements
+*   Added a tfxio.telemetry.ProfileRecordBatches, a PTransform to collect
+    telemetry from Arrow RecordBatches.
 
 ## Bug Fixes and Other Changes
 
