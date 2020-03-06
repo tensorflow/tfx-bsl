@@ -9,6 +9,7 @@
 ## Bug Fixes and Other Changes
 
 *   Requires `apache-beam>=2.17,<3`
+*   Only requires `avro-python3>=1.8.1,!=1.9.2.*,<2.0.0` on Python 3.5 + MacOS
 
 ## Breaking Changes
 
