@@ -1,6 +1,6 @@
 # `tfx_bsl` release notes
 
-# Current version (not yet released; still in development)
+# Release 0.21.4
 
 ## Major Features and Improvements
 *   Added a tfxio.telemetry.ProfileRecordBatches, a PTransform to collect
