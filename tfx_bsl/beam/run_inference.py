@@ -18,9 +18,12 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+import abc
+import base64
 import collections
 import os
 import platform
+import six
 import sys
 import time
 try:
@@ -30,11 +33,21 @@ except ImportError:
 
 from absl import logging
 import apache_beam as beam
+from googleapiclient import discovery
+from googleapiclient import http
 import numpy as np
 import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.proto import model_spec_pb2
-from typing import Any, Iterable, List, Mapping, Sequence, Text, Tuple, Union
+from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
+    Tuple, Union
+
+from tensorflow.python.saved_model import loader_impl
+from tensorflow_serving.apis import classification_pb2
+from tensorflow_serving.apis import inference_pb2
+from tensorflow_serving.apis import prediction_log_pb2
+from tensorflow_serving.apis import regression_pb2
+
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
 # pylint: disable=g-import-not-at-top
@@ -71,6 +84,14 @@ _BulkInferResult = Union[prediction_log_pb2.PredictLog,
                                classification_pb2.Classifications]]
 
 
+# TODO: Converts this into enum once we stopped supporting Python 2.7
+class OperationType(object):
+  CLASSIFICATION = 'CLASSIFICATION'
+  REGRESSION = 'REGRESSION'
+  PREDICTION = 'PREDICTION'
+  MULTIHEAD = 'MULTIHEAD'
+
+
 @beam.ptransform_fn
 @beam.typehints.with_input_types(Union[tf.train.Example,
                                        tf.train.SequenceExample])
@@ -79,19 +100,18 @@ def RunInference(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_endpoint: model_spec_pb2.InferenceEndpoint
 ) -> beam.pvalue.PCollection:
-  """Run batch offline inference with a model.
+  """Run inference with a model.
 
-  Models need to have the required serving signature as mentioned in
-  [Tensorflow Serving](https://www.tensorflow.org/tfx/serving/signature_defs)
-
-  This function will check model signatures first. Then it will load and run
-  model inference in batch.
+   There are two types of inference you can perform using this PTransform:
+   1. Offline inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_endpoint`.
+   2. Remote inference by using a service endpoint. Used when
+     `model_endpoint_spec` field is set in `inference_endpoint`.
 
   TODO(b/131873699): Add support for the following features:
   1. Bytes as Input.
   2. PTable input.
   3. Models as beam side-input.
-  4. Remote inference.
 
   Args:
     examples: A PCollection containing examples.
@@ -101,56 +121,20 @@ def RunInference(  # pylint: disable=invalid-name
     A PCollection containing prediction logs.
   """
   logging.info('RunInference on model: %s', inference_endpoint)
-  if not inference_endpoint.saved_model_spec:
-    raise ValueError('SavedModelSpec need to be specified.')
-
-  signatures = _get_signatures(
-      inference_endpoint.saved_model_spec.model_path,
-      inference_endpoint.saved_model_spec.signature_name,
-      _get_tags(inference_endpoint))
-  if not signatures:
-    raise ValueError('Model does not have valid signature to use')
 
   batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
-  if len(signatures) == 1:
-    signature_def = signatures[0].signature_def
-    if signature_def.method_name == tf.saved_model.CLASSIFY_METHOD_NAME:
-      return (batched_examples
-              | 'Classify' >> beam.ParDo(
-                  _BatchClassifyDoFn(inference_endpoint, shared.Shared(),
-                                     signatures))
-              | 'BuildPredictionLogForClassifications' >> beam.ParDo(
-                  _BuildPredictionLogForClassificationsDoFn()))
-    elif signature_def.method_name == tf.saved_model.REGRESS_METHOD_NAME:
-      return (batched_examples
-              | 'Regress' >> beam.ParDo(
-                  _BatchRegressDoFn(inference_endpoint, shared.Shared(),
-                                    signatures))
-              | 'BuildPredictionLogForRegressions' >> beam.ParDo(
-                  _BuildPredictionLogForRegressionsDoFn()))
-    elif signature_def.method_name == tf.saved_model.PREDICT_METHOD_NAME:
-      return (batched_examples
-              | 'Predict' >> beam.ParDo(
-                  _BatchPredictDoFn(inference_endpoint, shared.Shared(),
-                                    signatures))
-              | 'BuildPredictionLogForPredictions' >> beam.ParDo(
-                  _BuildPredictionLogForPredictionsDoFn()))
-    else:
-      raise ValueError('Unsupported signature method_name %s' %
-                       signature_def.method_name)
+  operation = _get_operation_type(inference_endpoint)
+  if operation == OperationType.CLASSIFICATION:
+    return (batched_examples | 'Classify' >> _Classify(inference_endpoint))
+  elif operation == OperationType.REGRESSION:
+    return (batched_examples | 'Regress' >> _Regress(inference_endpoint))
+  elif operation == OperationType.PREDICTION:
+    return (batched_examples | 'Predict' >> _Predict(inference_endpoint))
+  elif operation == OperationType.MULTIHEAD:
+    return (batched_examples
+            | 'MultiInference' >> _MultiInference(inference_endpoint))
   else:
-    for signature in signatures:
-      signature_def = signature.signature_def
-      if (signature_def.method_name != tf.saved_model.CLASSIFY_METHOD_NAME and
-          signature_def.method_name != tf.saved_model.REGRESS_METHOD_NAME):
-        raise ValueError('Unsupported signature method_name for multi-head '
-                         'model inference: %s' % signature_def.method_name)
-    return (
-        batched_examples
-        | 'MultiInference' >> beam.ParDo(
-            _BatchMultiInferenceDoFn(inference_endpoint, shared.Shared(),
-                                     signatures))
-        | 'BuildMultiInferenceLog' >> beam.ParDo(_BuildMultiInferenceLogDoFn()))
+    raise ValueError('Unsupported operation %s' % operation)
 
 
 _IOTensorSpec = collections.namedtuple(
@@ -160,20 +144,60 @@ _IOTensorSpec = collections.namedtuple(
 _Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
 
 
-# TODO(b/131873699): Add typehints once
-# [BEAM-8381](https://issues.apache.org/jira/browse/BEAM-8381)
-# is fixed.
-# TODO(b/143484017): Add batch_size back off in the case there are functional
-# reasons large batch sizes cannot be handled.
-class _BaseBatchDoFn(beam.DoFn):
-  """A base DoFn that loads the model, creates session and performs prediction.
+@beam.ptransform_fn
+def _Classify(pcoll, inference_endpoint):
+  if _using_offline_inference(inference_endpoint):
+    return (pcoll
+            | beam.ParDo(
+                _BatchClassifyDoFn(inference_endpoint, shared.Shared()))
+            | 'BuildPredictionLogForClassifications' >> beam.ParDo(
+                _BuildPredictionLogForClassificationsDoFn()))
+  else:
+    raise NotImplementedError
 
-  The DoFn first loads model from a given path where meta graph data
-  are exported to. If there is only one string input tensor, it directly
-  passes the data to prediction.
 
-  It will run session and predict the interesting values for input batched data.
-  """
+@beam.ptransform_fn
+def _Regress(pcoll, inference_endpoint):
+  if _using_offline_inference(inference_endpoint):
+    return (pcoll
+            | beam.ParDo(
+                _BatchRegressDoFn(inference_endpoint, shared.Shared()))
+            | 'BuildPredictionLogForRegressions' >> beam.ParDo(
+                _BuildPredictionLogForRegressionsDoFn()))
+  else:
+    raise NotImplementedError
+
+
+@beam.ptransform_fn
+def _Predict(pcoll, inference_endpoint):
+  if _using_offline_inference(inference_endpoint):
+    return (pcoll
+            | beam.ParDo(
+                _BatchPredictDoFn(inference_endpoint, shared.Shared()))
+            | 'BuildPredictionLogForPredictions' >> beam.ParDo(
+                _BuildPredictionLogForPredictionsDoFn()))
+  else:
+    return (pcoll
+            | beam.ParDo(_RemotePredictDoFn(inference_endpoint))
+            | 'BuildPredictionLogForPredictions' >> beam.ParDo(
+                _BuildPredictionLogForPredictionsDoFn()))
+
+
+@beam.ptransform_fn
+def _MultiInference(pcoll, inference_endpoint):
+  if _using_offline_inference(inference_endpoint):
+    return (
+        pcoll
+        | beam.ParDo(
+            _BatchMultiInferenceDoFn(inference_endpoint, shared.Shared()))
+        | 'BuildMultiInferenceLog' >> beam.ParDo(_BuildMultiInferenceLogDoFn()))
+  else:
+    raise NotImplementedError
+
+
+@six.add_metaclass(abc.ABCMeta)
+class _BaseDoFn(beam.DoFn):
+  """Base DoFn that performs bulk inference."""
 
   class _MetricsCollector(object):
     """A collector for beam metrics."""
@@ -221,17 +245,214 @@ class _BaseBatchDoFn(beam.DoFn):
       self._inference_request_batch_byte_size.update(
           sum(element.ByteSize() for element in elements))
 
+  def __init__(self):
+    super(_BaseDoFn, self).__init__()
+    self._clock = None
+    self._metrics_collector = self._MetricsCollector()
+
+  def setup(self):
+    self._clock = _ClockFactory.make_clock()
+
+  def finish_bundle(self):
+    self._metrics_collector.update_metrics_with_cache()
+
+  def process(
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
+  ) -> Iterable[Any]:
+    batch_start_time = self._clock.get_current_time_in_microseconds()
+    outputs = self.run_inference(elements)
+    result = self._post_process(elements, outputs)
+    self._metrics_collector.update(
+        elements,
+        self._clock.get_current_time_in_microseconds() - batch_start_time)
+    return result
+
+  @abc.abstractmethod
+  def run_inference(
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
+  ) -> Union[Mapping[Text, np.ndarray], Sequence[Mapping[Text, Any]]]:
+    raise NotImplementedError
+
+  @abc.abstractmethod
+  def _post_process(self, elements: List[Union[tf.train.Example,
+                                               tf.train.SequenceExample]],
+                    outputs: Any) -> Iterable[Any]:
+    raise NotImplementedError
+
+
+@beam.typehints.with_input_types(List[Union[tf.train.Example,
+                                            tf.train.SequenceExample]])
+# Using output typehints triggers NotImplementedError('BEAM-2717)' on
+# streaming mode on Dataflow runner.
+# @beam.typehints.with_output_types(prediction_log_pb2.PredictLog)
+class _RemotePredictDoFn(_BaseDoFn):
+  """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
+
+  Supports both batch and streaming processing modes.
+  NOTE: Does not work on DirectRunner for streaming jobs [BEAM-7885].
+
+  In order to request predictions, you must deploy your trained model to AI
+  Platform Prediction in the TensorFlow SavedModel format. See
+  [Exporting a SavedModel for prediction]
+  (https://cloud.google.com/ai-platform/prediction/docs/exporting-savedmodel-for-prediction)
+  for more details.
+
+  To send binary data, you have to make sure that the name of an input ends in
+  `_bytes`.
+
+  NOTE: The returned `PredictLog` instances do not have `PredictRequest` part
+  filled. The reason is that it is difficult to determine the input tensor name
+  without having access to cloud-hosted model's signatures.
+  """
+
+  def __init__(self, inference_endpoint: model_spec_pb2.InferenceEndpoint):
+    super(_RemotePredictDoFn, self).__init__()
+    self._api_client = None
+    project_id = inference_endpoint.model_endpoint_spec.project_id
+    if not project_id:
+      raise ValueError('A non-empty project id must be provided.')
+
+    model_name = inference_endpoint.model_endpoint_spec.model_name
+    if not model_name:
+      raise ValueError('A non-empty model name must be provided.')
+
+    version_name = inference_endpoint.model_endpoint_spec.version_name
+    name_spec = 'projects/{}/models/{}'
+    # If version is not specified, the default version for a model is used.
+    if version_name:
+      name_spec += '/versions/{}'
+    self.full_model_name = name_spec.format(project_id, model_name,
+                                            version_name)
+
+  def setup(self):
+    super(_RemotePredictDoFn, self).setup()
+    self._api_client = self._get_api_client()
+
+  @staticmethod
+  def _get_api_client() -> discovery.Resource:
+    return discovery.build('ml', 'v1')
+
+  @staticmethod
+  def _execute_request(request: http.HttpRequest) -> dict:
+    return request.execute()
+
+  def _make_request(self, model_name: str, body: dict) -> http.HttpRequest:
+    return self._api_client.projects().predict(name=model_name, body=body)
+
+  @classmethod
+  def _prepare_instances(
+      cls, elements: List[tf.train.Example]
+  ) -> Generator[Mapping[Text, Any], None, None]:
+    for example in elements:
+      # TODO: support tf.train.SequenceExample
+      if not isinstance(example, tf.train.Example):
+        raise ValueError('Remote prediction only supports tf.train.Example')
+
+      instance = {}
+      for input_name, feature in example.features.feature.items():
+        attr_name = feature.WhichOneof('kind')
+        if attr_name is None:
+          continue
+        attr = getattr(feature, attr_name)
+        values = cls._parse_feature_content(attr.value, attr_name,
+                                            cls._sending_as_binary(input_name))
+        values = cls._maybe_flatten(values)
+        instance[input_name] = values
+      yield instance
+
+  @staticmethod
+  def _sending_as_binary(input_name: Text) -> bool:
+    """Whether data should be sent as binary."""
+    return input_name.endswith('_bytes')
+
+  @staticmethod
+  def _parse_feature_content(values: Iterable[Any], attr_name: Text,
+                             as_binary: bool) -> Sequence[Any]:
+    """Parse the content of tf.train.Feature object.
+
+    If bytes_list, parse a list of bytes-like objects to a list of strings so
+    that it would be JSON serializable.
+
+    If float_list or int64_list, do nothing.
+
+    If data should be sent as binary, mark it as binary by replacing it with
+    a single attribute named 'b64'.
+    """
+    if as_binary:
+      values = [{'b64': base64.b64encode(x).decode()} for x in values]
+    elif attr_name == 'bytes_list':
+      values = [x.decode() for x in values]
+    else:
+      values = [x for x in values]
+    return values
+
+  @staticmethod
+  def _maybe_flatten(values: Sequence[Any]) -> Union[Sequence[Any], Any]:
+    """Flatten a sequence if its length is 1."""
+    if len(values) == 1:
+      result = values[0]
+    else:
+      result = values
+    return result
+
+  def run_inference(
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
+  ) -> Sequence[Mapping[Text, Any]]:
+    body = {'instances': list(self._prepare_instances(elements))}
+    response = self._execute_request(
+        self._make_request(self.full_model_name, body))
+    if 'error' in response:
+      raise ValueError(response['error'])
+    return response['predictions']
+
+  def _post_process(
+      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
+      outputs: Sequence[Mapping[Text, Any]]
+  ) -> Iterable[prediction_log_pb2.PredictLog]:
+    result = []
+    for output in outputs:
+      predict_log = prediction_log_pb2.PredictLog()
+
+      for output_alias, values in output.items():
+        values = np.array(values)
+        tensor_proto = tf.make_tensor_proto(
+            values=values,
+            dtype=tf.as_dtype(values.dtype).as_datatype_enum,
+            shape=np.expand_dims(values, axis=0).shape)
+        predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
+      result.append(predict_log)
+    return result
+
+
+# TODO(b/131873699): Add typehints once
+# [BEAM-8381](https://issues.apache.org/jira/browse/BEAM-8381)
+# is fixed.
+# TODO(b/143484017): Add batch_size back off in the case there are functional
+# reasons large batch sizes cannot be handled.
+class _BaseBatchSavedModelDoFn(_BaseDoFn):
+  """A DoFn that runs batch offline inference with a model.
+
+    Models need to have the required serving signature as mentioned in
+    [Tensorflow Serving](https://www.tensorflow.org/tfx/serving/signature_defs)
+
+    This function will check model signatures first. Then it will load and run
+    model inference in batch.
+  """
+
   def __init__(
       self,
       inference_endpoint: model_spec_pb2.InferenceEndpoint,
       shared_model_handle: shared.Shared,
-      signatures: Sequence[_Signature],
   ):
+    super(_BaseBatchSavedModelDoFn, self).__init__()
     self._inference_endpoint = inference_endpoint
     self._shared_model_handle = shared_model_handle
     self._model_path = inference_endpoint.saved_model_spec.model_path
     self._tags = None
-    self._signatures = signatures
+    self._signatures = _get_signatures(
+        inference_endpoint.saved_model_spec.model_path,
+        inference_endpoint.saved_model_spec.signature_name,
+        _get_tags(inference_endpoint))
     self._session = None
     self._io_tensor_spec = None
     self._metrics_collector = self._MetricsCollector()
@@ -243,7 +464,7 @@ class _BaseBatchDoFn(beam.DoFn):
     to b/139207285.
     """
 
-    self._clock = _ClockFactory.make_clock()
+    super(_BaseBatchSavedModelDoFn, self).setup()
     self._tags = _get_tags(self._inference_endpoint)
     self._io_tensor_spec = self._pre_process()
 
@@ -251,9 +472,6 @@ class _BaseBatchDoFn(beam.DoFn):
       # TODO(b/131873699): Support TPU inference.
       raise ValueError('TPU inference is not supported yet.')
     self._session = self._load_model()
-
-  def finish_bundle(self):
-    self._metrics_collector.update_metrics_with_cache()
 
   def _load_model(self):
     """Load a saved model into memory.
@@ -316,19 +534,14 @@ class _BaseBatchDoFn(beam.DoFn):
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
             tf.saved_model.TPU in self._tags)
 
-  def process(
+  def run_inference(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
-  ) -> Iterable[_BulkInferResult]:
-    batch_start_time = self._clock.get_current_time_in_microseconds()
+  ) -> Mapping[Text, np.ndarray]:
     self._check_elements(elements)
-    outputs = self._run_model_inference(elements)
-    result = self._post_process(elements, outputs)
-    self._metrics_collector.update(
-        elements,
-        self._clock.get_current_time_in_microseconds() - batch_start_time)
-    return result
+    outputs = self._run_tf_operations(elements)
+    return outputs
 
-  def _run_model_inference(
+  def _run_tf_operations(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
   ) -> Mapping[Text, np.ndarray]:
     input_values = []
@@ -340,12 +553,6 @@ class _BaseBatchDoFn(beam.DoFn):
     if len(result) != len(self._io_tensor_spec.output_alias_tensor_names):
       raise RuntimeError('Output length does not match fetches')
     return result
-
-  def _post_process(self, elements: Any,
-                    outputs: Mapping[Text, np.ndarray]) -> Iterable[Any]:
-    """Unimplemented."""
-
-    raise NotImplementedError
 
   def _check_elements(
       self, elements: List[Union[tf.train.Example,
@@ -359,7 +566,7 @@ class _BaseBatchDoFn(beam.DoFn):
                                             tf.train.SequenceExample]])
 @beam.typehints.with_output_types(Tuple[tf.train.Example,
                                         classification_pb2.Classifications])
-class _BatchClassifyDoFn(_BaseBatchDoFn):
+class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on classification model."""
 
   def setup(self):
@@ -390,16 +597,10 @@ class _BatchClassifyDoFn(_BaseBatchDoFn):
                                             tf.train.SequenceExample]])
 @beam.typehints.with_output_types(Tuple[tf.train.Example,
                                         regression_pb2.Regression])
-class _BatchRegressDoFn(_BaseBatchDoFn):
+class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on regression model."""
 
   def setup(self):
-    signature_def = self._signatures[0].signature_def
-    if signature_def.method_name != tf.saved_model.REGRESS_METHOD_NAME:
-      raise ValueError(
-          'BulkInferrerRegressDoFn requires signature method '
-          'name %s, got: %s' % tf.saved_model.REGRESS_METHOD_NAME,
-          signature_def.method_name)
     super(_BatchRegressDoFn, self).setup()
 
   def _check_elements(
@@ -419,7 +620,7 @@ class _BatchRegressDoFn(_BaseBatchDoFn):
 @beam.typehints.with_input_types(List[Union[tf.train.Example,
                                             tf.train.SequenceExample]])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictLog)
-class _BatchPredictDoFn(_BaseBatchDoFn):
+class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on predict model."""
 
   def setup(self):
@@ -479,7 +680,7 @@ class _BatchPredictDoFn(_BaseBatchDoFn):
                                             tf.train.SequenceExample]])
 @beam.typehints.with_output_types(Tuple[tf.train.Example,
                                         inference_pb2.MultiInferenceResponse])
-class _BatchMultiInferenceDoFn(_BaseBatchDoFn):
+class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on multi-head model."""
 
   def _check_elements(
@@ -799,6 +1000,11 @@ def _signature_pre_process_regress(
   return input_tensor_name, output_alias_tensor_names
 
 
+def _using_offline_inference(
+    inference_endpoint: model_spec_pb2.InferenceEndpoint) -> bool:
+  return inference_endpoint.WhichOneof('type') == 'saved_model_spec'
+
+
 def _get_signatures(model_path: Text, signatures: Sequence[Text],
                     tags: Sequence[Text]) -> Sequence[_Signature]:
   """Returns a sequence of {model_signature_name: signature}."""
@@ -820,6 +1026,39 @@ def _get_signatures(model_path: Text, signatures: Sequence[Text],
       raise RuntimeError('Signature %s could not be found in SavedModel' %
                          signature_name)
   return result
+
+
+def _get_operation_type(
+    inference_endpoint: model_spec_pb2.InferenceEndpoint) -> str:
+  if _using_offline_inference(inference_endpoint):
+    signatures = _get_signatures(
+        inference_endpoint.saved_model_spec.model_path,
+        inference_endpoint.saved_model_spec.signature_name,
+        _get_tags(inference_endpoint))
+    if not signatures:
+      raise ValueError('Model does not have valid signature to use')
+
+    if len(signatures) == 1:
+      method_name = signatures[0].signature_def.method_name
+      if method_name == tf.saved_model.CLASSIFY_METHOD_NAME:
+        return OperationType.CLASSIFICATION
+      elif method_name == tf.saved_model.REGRESS_METHOD_NAME:
+        return OperationType.REGRESSION
+      elif method_name == tf.saved_model.PREDICT_METHOD_NAME:
+        return OperationType.PREDICTION
+      else:
+        raise ValueError('Unsupported signature method_name %s' % method_name)
+    else:
+      for signature in signatures:
+        method_name = signature.signature_def.method_name
+        if (method_name != tf.saved_model.CLASSIFY_METHOD_NAME and
+            method_name != tf.saved_model.REGRESS_METHOD_NAME):
+          raise ValueError('Unsupported signature method_name for multi-head '
+                           'model inference: %s' % method_name)
+      return OperationType.MULTIHEAD
+  else:
+    # Remote inference supports predictions only.
+    return OperationType.PREDICTION
 
 
 def _get_meta_graph_def(saved_model_pb: _SavedModel,

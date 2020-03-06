@@ -19,8 +19,7 @@ package tfx_bsl.model_spec;
 message InferenceEndpoint {
   oneof type {
     SavedModelSpec saved_model_spec = 1;
-    // TODO(b/131873699): Add support for model_endpoint and model_handle for
-    // remote inference.
+    ModelEndpointSpec model_endpoint_spec = 2;
   }
 }
 
@@ -40,4 +39,15 @@ message SavedModelSpec {
   // [tag_constants](https://www.tensorflow.org/api_docs/python/tf/saved_model/tag_constants)
   // for valid tags.
   repeated string tag = 3;
+}
+
+message ModelEndpointSpec {
+  // The ID of the Google Cloud project containing the model.
+  string project_id = 1;
+
+  // The name of the model.
+  string model_name = 2;
+
+  // The name of the model's version.
+  string version_name = 3;
 }

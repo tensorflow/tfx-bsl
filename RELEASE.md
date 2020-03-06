@@ -5,11 +5,13 @@
 ## Major Features and Improvements
 *   Added a tfxio.telemetry.ProfileRecordBatches, a PTransform to collect
     telemetry from Arrow RecordBatches.
+* Added remote model inference on Google Cloud Platform.
 
 ## Bug Fixes and Other Changes
 
 *   Requires `apache-beam>=2.17,<3`
 *   Only requires `avro-python3>=1.8.1,!=1.9.2.*,<2.0.0` on Python 3.5 + MacOS
+*   Requires `google-api-python-client>=1.7.11,<2`
 
 ## Breaking Changes
 

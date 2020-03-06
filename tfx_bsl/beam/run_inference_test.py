@@ -18,10 +18,21 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+import json
 import os
+import tempfile
+try:
+  import unittest.mock as mock
+except ImportError:
+  import mock
 
 import apache_beam as beam
 from apache_beam.metrics.metric import MetricsFilter
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
+from googleapiclient import discovery
+from googleapiclient import http
+from six.moves import http_client
 import tensorflow as tf
 from tfx_bsl.beam import run_inference
 from tfx_bsl.proto import model_spec_pb2
@@ -42,9 +53,39 @@ class TestKerasModel(tf.keras.Model):
     return self.serve_layer(serialized_example)
 
 
-class RunInferenceTest(tf.test.TestCase):
+class RunInferenceFixture(tf.test.TestCase):
 
   def setUp(self):
+    self._predict_examples = [
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example()),
+    ]
+
+  def _get_output_data_dir(self, sub_dir=None):
+    test_dir = self._testMethodName
+    path = os.path.join(
+        os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR', self.get_temp_dir()),
+        test_dir)
+    if not tf.io.gfile.exists(path):
+      tf.io.gfile.makedirs(path)
+    if sub_dir is not None:
+      path = os.path.join(path, sub_dir)
+    return path
+
+  def _prepare_predict_examples(self, example_path):
+    with tf.io.TFRecordWriter(example_path) as output_file:
+      for example in self._predict_examples:
+        output_file.write(example.SerializeToString())
+
+
+class RunOfflineInferenceTest(RunInferenceFixture):
+
+  def setUp(self):
+    super(RunOfflineInferenceTest, self).setUp()
     self._predict_examples = [
         text_format.Parse(
             """
@@ -59,7 +100,6 @@ class RunInferenceTest(tf.test.TestCase):
               }
               """, tf.train.Example()),
     ]
-
     self._multihead_examples = [
         text_format.Parse(
             """
@@ -77,26 +117,11 @@ class RunInferenceTest(tf.test.TestCase):
             """, tf.train.Example()),
     ]
 
-  def _prepare_predict_examples(self, example_path):
-    with tf.io.TFRecordWriter(example_path) as output_file:
-      for example in self._predict_examples:
-        output_file.write(example.SerializeToString())
 
   def _prepare_multihead_examples(self, example_path):
     with tf.io.TFRecordWriter(example_path) as output_file:
       for example in self._multihead_examples:
         output_file.write(example.SerializeToString())
-
-  def _get_output_data_dir(self, sub_dir=None):
-    test_dir = self._testMethodName
-    path = os.path.join(
-        os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR', self.get_temp_dir()),
-        test_dir)
-    if not tf.io.gfile.exists(path):
-      tf.io.gfile.makedirs(path)
-    if sub_dir is not None:
-      path = os.path.join(path, sub_dir)
-    return path
 
   def _build_predict_model(self, model_path):
     """Exports the dummy sum predict model."""
@@ -433,6 +458,126 @@ class RunInferenceTest(tf.test.TestCase):
     self.assertTrue(load_model_latency_milli_secs['distributions'])
     self.assertGreaterEqual(
         load_model_latency_milli_secs['distributions'][0].result.sum, 0)
+
+
+class RunRemoteInferenceTest(RunInferenceFixture):
+
+  def setUp(self):
+    super(RunRemoteInferenceTest, self).setUp()
+    self.example_path = self._get_output_data_dir('example')
+    self._prepare_predict_examples(self.example_path)
+
+  @staticmethod
+  def _make_api_client_mock(response_body):
+
+    def _get_api_client_mock():
+      builder = http.RequestMockBuilder(
+          {'ml.projects.predict': (None, response_body)})
+      # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
+      data_dir = os.path.join(os.path.join(
+          os.path.dirname(__file__), 'testdata'), 'ml_discovery.json')
+      return discovery.build(
+          'ml',
+          'v1',
+          http=http.HttpMock(data_dir, {'status': http_client.OK}),
+          requestBuilder=builder)
+
+    return _get_api_client_mock
+
+  @staticmethod
+  def _make_response_body(content, successful):
+    if successful:
+      response_dict = {'predictions': content}
+    else:
+      response_dict = {'error': content}
+    return json.dumps(response_dict)
+
+  def _set_up_pipeline(self, inference_endpoint):
+    self.pipeline = beam.Pipeline()
+    self.pcoll = (
+        self.pipeline
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
+        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
+        | 'RunInference' >> run_inference.RunInference(inference_endpoint))
+
+  def _run_inference_with_beam(self):
+    self.pipeline_result = self.pipeline.run()
+    self.pipeline_result.wait_until_finish()
+
+  def test_model_predict(self):
+    predictions = [{'output_1': [0.901], 'output_2': [0.997]}]
+    with mock.patch('tfx_bsl.beam.run_inference._RemotePredictDoFn.'
+                    '_get_api_client') as response_mock:
+      response_mock.side_effect = self._make_api_client_mock(
+          self._make_response_body(predictions, successful=True))
+
+      inference_endpoint = model_spec_pb2.InferenceEndpoint(
+          model_endpoint_spec=model_spec_pb2.ModelEndpointSpec(
+              project_id='test-project',
+              model_name='test-model',
+          ))
+
+      prediction_log = prediction_log_pb2.PredictionLog()
+      prediction_log.predict_log.response.outputs['output_1'].CopyFrom(
+          tf.make_tensor_proto(values=[0.901], dtype=tf.double, shape=(1, 1)))
+      prediction_log.predict_log.response.outputs['output_2'].CopyFrom(
+          tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
+
+      self._set_up_pipeline(inference_endpoint)
+      assert_that(self.pcoll, equal_to([prediction_log]))
+      self._run_inference_with_beam()
+
+  def test_exception_raised_when_response_body_contains_error_entry(self):
+    error_msg = 'Base64 decode failed.'
+    with mock.patch('tfx_bsl.beam.run_inference._RemotePredictDoFn.'
+                    '_get_api_client') as response_mock:
+      response_mock.side_effect = self._make_api_client_mock(
+          self._make_response_body(error_msg, successful=False))
+
+      inference_endpoint = model_spec_pb2.InferenceEndpoint(
+          model_endpoint_spec=model_spec_pb2.ModelEndpointSpec(
+              project_id='test-project',
+              model_name='test-model',
+          ))
+
+      try:
+        self._set_up_pipeline(inference_endpoint)
+        self._run_inference_with_beam()
+      except ValueError as exc:
+        actual_error_msg = str(exc)
+        self.assertTrue(actual_error_msg.startswith(error_msg))
+      else:
+        self.fail('Test was expected to throw ValueError exception')
+
+  def test_exception_raised_when_project_id_is_empty(self):
+    inference_endpoint = model_spec_pb2.InferenceEndpoint(
+        model_endpoint_spec=model_spec_pb2.ModelEndpointSpec(
+            model_name='test-model',))
+
+    with self.assertRaises(ValueError):
+      self._set_up_pipeline(inference_endpoint)
+      self._run_inference_with_beam()
+
+  def test_request_body_with_binary_data(self):
+    example = text_format.Parse(
+        """
+      features {
+        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+        feature { key: "y" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.Example())
+    result = list(
+        run_inference._RemotePredictDoFn._prepare_instances([example]))
+    self.assertEqual([
+        {
+            'x_bytes': {
+                'b64': 'QVNhOGFzZGY='
+            },
+            'x': 'JLK7ljk3',
+            'y': [1, 2]
+        },
+    ], result)
 
 
 if __name__ == '__main__':

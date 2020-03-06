@@ -8,14 +8,15 @@ config_setting(
 )
 
 _public_protos = ["//tfx_bsl/proto:public_protos"]
+
 _py_extension = select({
-        ":windows": [
-            "//tfx_bsl/cc:tfx_bsl_extension.pyd",
-        ],
-        "//conditions:default": [
-            "//tfx_bsl/cc:tfx_bsl_extension.so",
-        ],
-    })
+    ":windows": [
+        "//tfx_bsl/cc:tfx_bsl_extension.pyd",
+    ],
+    "//conditions:default": [
+        "//tfx_bsl/cc:tfx_bsl_extension.so",
+    ],
+})
 
 sh_binary(
     name = "build_pip_package",
