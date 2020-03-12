@@ -25,6 +25,7 @@ from apache_beam.testing import util as beam_testing_util
 import pyarrow as pa
 import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
 from tfx_bsl.tfxio import raw_tf_record
+from tfx_bsl.tfxio import telemetry_test_util
 
 from absl.testing import absltest
 
@@ -51,7 +52,10 @@ class RawTfRecordTest(absltest.TestCase):
 
   def testRecordBatchAndTensorAdapter(self):
     column_name = "raw_record"
-    tfxio = raw_tf_record.RawTfRecordTFXIO(self._raw_record_file, column_name)
+    telemetry_descriptors = ["some", "component"]
+    tfxio = raw_tf_record.RawTfRecordTFXIO(
+        self._raw_record_file, column_name,
+        telemetry_descriptors=telemetry_descriptors)
     self.assertTrue(
         tfxio.ArrowSchema(),
         pa.schema([pa.field(column_name, pa.list_(pa.binary()))]))
@@ -68,9 +72,14 @@ class RawTfRecordTest(absltest.TestCase):
       self.assertLen(tensors, 1)
       self.assertIn(column_name, tensors)
 
-    with beam.Pipeline() as p:
-      record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_RAW_RECORDS))
-      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    p = beam.Pipeline()
+    record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_RAW_RECORDS))
+    beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline_result = p.run()
+    pipeline_result.wait_until_finish()
+    telemetry_test_util.ValidateMetrics(self, pipeline_result,
+                                        telemetry_descriptors, "bytes",
+                                        "tfrecords_gzip")
 
   def testProject(self):
     column_name = "raw_record"

@@ -41,9 +41,15 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
   the tensor.
   """
 
-  def __init__(self, raw_record_column_name: Text):
+  def __init__(self, raw_record_column_name: Text,
+               telemetry_descriptors: List[Text],
+               physical_format: Text):
     assert raw_record_column_name is not None
-    super(_RawRecordTFXIO, self).__init__(raw_record_column_name)
+    super(_RawRecordTFXIO, self).__init__(
+        raw_record_column_name=raw_record_column_name,
+        telemetry_descriptors=telemetry_descriptors,
+        logical_format="bytes",
+        physical_format=physical_format)
 
   def SupportAttachingRawRecords(self) -> bool:
     return True
@@ -57,9 +63,9 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(raw_record_pcoll: beam.pvalue.PCollection):
       return (raw_record_pcoll
-              | 'Batch' >> beam.BatchElements(
+              | "Batch" >> beam.BatchElements(
                   **record_based_tfxio.GetBatchElementsKwargs(batch_size))
-              | 'ToRecordBatch' >> beam.Map(_BatchedRecordsToArrow,
+              | "ToRecordBatch" >> beam.Map(_BatchedRecordsToArrow,
                                             self.raw_record_column_name))
 
     return _PTransformFn()  # pylint: disable=no-value-for-parameter
@@ -97,8 +103,12 @@ def _BatchedRecordsToArrow(records: List[bytes],
 class RawTfRecordTFXIO(_RawRecordTFXIO):
   """Raw record TFXIO for TFRecord format."""
 
-  def __init__(self, file_pattern: Text, raw_record_column_name: Text):
-    super(RawTfRecordTFXIO, self).__init__(raw_record_column_name)
+  def __init__(self, file_pattern: Text, raw_record_column_name: Text,
+               telemetry_descriptors: Optional[List[Text]] = None):
+    super(RawTfRecordTFXIO, self).__init__(
+        telemetry_descriptors=telemetry_descriptors,
+        physical_format="tfrecords_gzip",
+        raw_record_column_name=raw_record_column_name)
     self._file_pattern = file_pattern
 
   def RawRecordBeamSource(self) -> beam.PTransform:
@@ -106,7 +116,7 @@ class RawTfRecordTFXIO(_RawRecordTFXIO):
     @beam.typehints.with_input_types(beam.Pipeline)
     @beam.typehints.with_output_types(bytes)
     def _PTransformFn(pipeline: beam.pvalue.PCollection):
-      return pipeline | 'ReadFromTFRecord' >> beam.io.ReadFromTFRecord(
+      return pipeline | "ReadFromTFRecord" >> beam.io.ReadFromTFRecord(
           self._file_pattern,
           coder=beam.coders.BytesCoder(),
           # TODO(b/114938612): Eventually remove this override.

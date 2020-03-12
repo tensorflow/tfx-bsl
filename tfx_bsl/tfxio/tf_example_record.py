@@ -46,8 +46,18 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
 
   def __init__(self,
                schema: Optional[schema_pb2.Schema] = None,
-               raw_record_column_name: Optional[Text] = None):
-    super(_TFExampleRecordBase, self).__init__(raw_record_column_name)
+               raw_record_column_name: Optional[Text] = None,
+               telemetry_descriptors: Optional[List[Text]] = None,
+               physical_format: Optional[Text] = None):
+    # TODO(zhuo): make telemetry_descriptors and physical_format required
+    # arguments, when TFT's compatibility TFXIO starts setting them.
+    if physical_format is None:
+      physical_format = "unknown"
+    super(_TFExampleRecordBase, self).__init__(
+        telemetry_descriptors=telemetry_descriptors,
+        raw_record_column_name=raw_record_column_name,
+        logical_format="tf_example",
+        physical_format=physical_format)
     self._schema = schema
 
   def SupportAttachingRawRecords(self) -> bool:
@@ -141,7 +151,8 @@ class TFExampleRecord(_TFExampleRecordBase):
                file_pattern: Text,
                validate: bool = True,
                schema: Optional[schema_pb2.Schema] = None,
-               raw_record_column_name: Optional[Text] = None):
+               raw_record_column_name: Optional[Text] = None,
+               telemetry_descriptors: Optional[List[Text]] = None):
     """Initializes a TFExampleRecord TFXIO.
 
     Args:
@@ -152,8 +163,18 @@ class TFExampleRecord(_TFExampleRecordBase):
       raw_record_column_name: If not None, the generated Arrow RecordBatches
         will contain a column of the given name that contains serialized
         records.
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
     """
-    super(TFExampleRecord, self).__init__(schema, raw_record_column_name)
+    if telemetry_descriptors is None:
+      telemetry_descriptors = ["UNKNOWN_COMPONENT"]
+    super(TFExampleRecord, self).__init__(
+        schema=schema, raw_record_column_name=raw_record_column_name,
+        telemetry_descriptors=telemetry_descriptors,
+        physical_format="tfrecords_gzip")
     self._file_pattern = file_pattern
     self._validate = validate
 

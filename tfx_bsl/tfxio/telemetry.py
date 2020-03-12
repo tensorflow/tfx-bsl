@@ -25,7 +25,7 @@ import pyarrow as pa
 from tfx_bsl.arrow import array_util
 from tfx_bsl.arrow import table_util
 from tfx_bsl.telemetry import util as telemetry_util
-from typing import Iterable, List, Text
+from typing import Iterable, Callable, List, Optional, Text
 
 
 @beam.typehints.with_input_types(pa.RecordBatch)
@@ -33,16 +33,23 @@ from typing import Iterable, List, Text
 @beam.ptransform_fn
 def ProfileRecordBatches(
     pcoll: beam.pvalue.PCollection,
-    component_descriptors: List[Text],
+    telemetry_descriptors: Optional[List[Text]],
+    logical_format: Text,
+    physical_format: Text,
     distribution_update_probability: float = 0.1) -> beam.PTransform:
   """An identity transform to profile RecordBatches and updated Beam metrics.
 
   Args:
     pcoll: a PCollection[pa.RecordBatch]
-    component_descriptors: A set of descriptors that identify the component that
+    telemetry_descriptors: a set of descriptors that identify the component that
       invokes this PTransform. These will be used to construct the namespace
       to contain the beam metrics created within this PTransform. All such
-      namespaces will be prefixed by "tfxio.".
+      namespaces will be prefixed by "tfxio.". If None, a default "unknown"
+      descriptor will be used.
+    logical_format: the logical format of the data (before parsed into
+      RecordBatches). Used to construct metric names.
+    physical_format: the physical format in which the data is stored on disk.
+      Used to construct metric names.
     distribution_update_probability: probability to update the expensive,
       per-row distributions.
 
@@ -52,8 +59,21 @@ def ProfileRecordBatches(
   assert 0 < distribution_update_probability <= 1.0, (
       "Invalid probability: {}".format(distribution_update_probability))
   return pcoll | "ProfileRecordBatches" >> beam.ParDo(
-      _ProfileRecordBatchDoFn(
-          component_descriptors, distribution_update_probability))
+      _ProfileRecordBatchDoFn(telemetry_descriptors, logical_format,
+                              physical_format, distribution_update_probability))
+
+
+@beam.typehints.with_input_types(pa.RecordBatch)
+@beam.typehints.with_output_types(pa.RecordBatch)
+@beam.ptransform_fn
+def ProfileRawRecords(
+    pcoll: beam.pvalue.PCollection,
+    telemetry_descriptors: Optional[List[Text]],
+    logical_format: Text,
+    physical_format: Text) -> beam.PTransform:
+  """An identity transform to profile raw records for record based TFXIO."""
+  return pcoll | "ProfileRawRecords" >> beam.ParDo(_ProfileRawRecordDoFn(
+      telemetry_descriptors, logical_format, physical_format))
 
 
 class _ValueType(enum.IntEnum):
@@ -62,6 +82,10 @@ class _ValueType(enum.IntEnum):
   STRING = 2
   NULL = 3  # pa.is_null()
   OTHER = 4
+
+
+_IO_TELEMETRY_DESCRIPTOR = ["io"]
+_UNKNOWN_TELEMETRY_DESCRIPTORS = ["UNKNOWN_COMPONENT"]
 
 
 class _ProfileRecordBatchDoFn(beam.DoFn):
@@ -81,25 +105,30 @@ class _ProfileRecordBatchDoFn(beam.DoFn):
       list<primitive_type>. For other columns, the slice is OTHER.
   """
 
-  def __init__(
-      self, component_descriptors: List[Text], dist_update_prob: float):
-    metric_namespace = telemetry_util.MakeTfxNamespace(
-        ["io"] + component_descriptors)
-    self._num_rows = beam.metrics.Metrics.counter(metric_namespace, "num_rows")
+  def __init__(self, telemetry_descriptors: Optional[List[Text]],
+               logical_format: Text,
+               physical_format: Text, dist_update_prob: float):
+    if telemetry_descriptors is None:
+      telemetry_descriptors = _UNKNOWN_TELEMETRY_DESCRIPTORS
+    metric_namespace = telemetry_util.MakeTfxNamespace(telemetry_descriptors +
+                                                       _IO_TELEMETRY_DESCRIPTOR)
+    namer = _GetMetricNamer(logical_format, physical_format)
+    self._num_rows = beam.metrics.Metrics.counter(metric_namespace,
+                                                  namer("num_rows"))
     self._byte_size_dist = beam.metrics.Metrics.distribution(
-        metric_namespace, "record_batch_byte_size")
+        metric_namespace, namer("record_batch_byte_size"))
     self._num_columns_dist = beam.metrics.Metrics.distribution(
-        metric_namespace, "num_columns")
+        metric_namespace, namer("num_columns"))
     self._num_feature_values_dist = beam.metrics.Metrics.distribution(
-        metric_namespace, "num_feature_values")
+        metric_namespace, namer("num_feature_values"))
     self._num_feature_values_dist_by_type = {
         t: beam.metrics.Metrics.distribution(
-            metric_namespace, "num_feature_values[{}]".format(t.name))
+            metric_namespace, namer("num_feature_values[{}]".format(t.name)))
         for t in _ValueType
     }
     self._num_cells_by_type = {
         t: beam.metrics.Metrics.counter(metric_namespace,
-                                        "num_cells[{}]".format(t.name))
+                                        namer("num_cells[{}]".format(t.name)))
         for t in _ValueType
     }
     self._dist_update_prob = dist_update_prob
@@ -210,3 +239,46 @@ def _GetValueType(data_type: pa.DataType) -> _ValueType:
   if pa.types.is_null(data_type):
     return _ValueType.NULL
   return _ValueType.OTHER
+
+
+class _ProfileRawRecordDoFn(beam.DoFn):
+  """A DoFn that profiles raw records and updates Beam counters.
+
+  The following metrics are maintained:
+
+  num_raw_records: Counter. Total number of rows.
+  raw_record_byte_size: Distribution. Byte size of the raw records.
+  """
+
+  def __init__(self, telemetry_descriptors: Optional[List[Text]],
+               logical_format: Text, physical_format: Text):
+    if telemetry_descriptors is None:
+      telemetry_descriptors = _UNKNOWN_TELEMETRY_DESCRIPTORS
+    metric_namespace = telemetry_util.MakeTfxNamespace(telemetry_descriptors +
+                                                       _IO_TELEMETRY_DESCRIPTOR)
+    namer = _GetMetricNamer(logical_format, physical_format)
+    self._num_rows = beam.metrics.Metrics.counter(
+        metric_namespace, namer("num_raw_records"))
+    self._byte_size_dist = beam.metrics.Metrics.distribution(
+        metric_namespace, namer("raw_record_byte_size"))
+
+  def process(self, raw_record: bytes) -> Iterable[bytes]:
+    self._num_rows.inc()
+    self._byte_size_dist.update(len(raw_record))
+    yield raw_record
+
+
+def _GetMetricNamer(
+    logical_format: Text, physical_format: Text) -> Callable[[Text], Text]:
+  """Returns a function to contruct beam metric names."""
+  for f in (logical_format, physical_format):
+    assert "[" not in f, "Invalid logical / physical format string: %s" % f
+    assert "]" not in f, "Invalid logical / physical format string: %s" % f
+    assert "-" not in f, "Invalid logical / physical format string: %s" % f
+
+  def _Namer(base_name: Text) -> Text:
+    assert "-" not in base_name, "Invalid metric name: %s" % base_name
+    return "LogicalFormat[%s]-PhysicalFormat[%s]-%s" % (
+        logical_format, physical_format, base_name)
+
+  return _Namer

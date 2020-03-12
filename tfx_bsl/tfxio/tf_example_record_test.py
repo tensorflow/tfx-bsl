@@ -24,6 +24,7 @@ import apache_beam as beam
 from apache_beam.testing import util as beam_testing_util
 import pyarrow as pa
 import tensorflow as tf
+from tfx_bsl.tfxio import telemetry_test_util
 from tfx_bsl.tfxio import tf_example_record
 from google.protobuf import text_format
 from absl.testing import absltest
@@ -58,6 +59,8 @@ _SCHEMA = text_format.Parse("""
     }
   }
 """, schema_pb2.Schema())
+
+_TELEMETRY_DESCRIPTORS = ["Some", "Component"]
 
 _IS_LEGACY_SCHEMA = (
     "generate_legacy_feature_spec" in
@@ -137,7 +140,8 @@ class TfExampleRecordTest(absltest.TestCase):
   def _MakeTFXIO(self, schema, raw_record_column_name=None):
     return tf_example_record.TFExampleRecord(
         self._example_file, schema=schema,
-        raw_record_column_name=raw_record_column_name)
+        raw_record_column_name=raw_record_column_name,
+        telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
 
   def _ValidateRecordBatch(self, record_batch, raw_record_column_name=None):
     self.assertIsInstance(record_batch, pa.RecordBatch)
@@ -189,10 +193,14 @@ class TfExampleRecordTest(absltest.TestCase):
       self.assertIn("float_feature", dict_of_tensors)
       self.assertIn("string_feature", dict_of_tensors)
 
-    with beam.Pipeline() as p:
-      # Setting the betch_size to make sure only one batch is generated.
-      record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_EXAMPLES))
-      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    p = beam.Pipeline()
+    record_batch_pcoll = p | tfxio.BeamSource(batch_size=1000)
+    beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline_result = p.run()
+    pipeline_result.wait_until_finish()
+    telemetry_test_util.ValidateMetrics(
+        self, pipeline_result, _TELEMETRY_DESCRIPTORS,
+        "tf_example", "tfrecords_gzip")
 
   def testExplicitTensorRepresentations(self):
     schema = schema_pb2.Schema()

@@ -27,6 +27,7 @@ import apache_beam as beam
 import numpy as np
 import pyarrow as pa
 import six
+from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
 from typing import List, Optional, Text
 
@@ -61,12 +62,18 @@ class RecordBasedTFXIO(tfxio.TFXIO):
     calling `BeamSource()` separately as redundant disk reads can be avoided.
   """
 
-  def __init__(self, raw_record_column_name: Optional[Text] = None):
+  def __init__(self, telemetry_descriptors: List[Text],
+               logical_format: Text,
+               physical_format: Text,
+               raw_record_column_name: Optional[Text] = None):
     super(RecordBasedTFXIO, self).__init__()
     if not self.SupportAttachingRawRecords():
       assert raw_record_column_name is None, (
           "{} did not support attaching raw records, but requested.".format(
               type(self)))
+    self._telemetry_descriptors = telemetry_descriptors
+    self._logical_format = logical_format
+    self._physical_format = physical_format
     self._raw_record_column_name = raw_record_column_name
 
   @property
@@ -123,11 +130,17 @@ class RecordBasedTFXIO(tfxio.TFXIO):
     @beam.typehints.with_input_types(beam.Pipeline)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(pipeline: beam.pvalue.PCollection):
+      """Converts raw records to RecordBatches."""
       return (
           pipeline
           | "ReadRawRecords" >> self.RawRecordBeamSource()
-          | "RawRecordToRecordBatch" >> self.RawRecordToRecordBatch(
-              batch_size))
+          | "CollectRawRecordTelemetry" >> telemetry.ProfileRawRecords(
+              self._telemetry_descriptors,
+              self._logical_format, self._physical_format)
+          | "RawRecordToRecordBatch" >> self.RawRecordToRecordBatch(batch_size)
+          | "CollectRecordBatcheTelemetry" >> telemetry.ProfileRecordBatches(
+              self._telemetry_descriptors,
+              self._logical_format, self._physical_format))
 
     return _PTransformFn()  # pylint: disable=no-value-for-parameter
 

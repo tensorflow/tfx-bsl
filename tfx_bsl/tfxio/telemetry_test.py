@@ -31,7 +31,16 @@ _Distribution = collections.namedtuple(
     "_Distribution", ["min", "max", "count", "sum"])
 
 
-_TEST_CASES = [
+_LOGICAL_FORMAT = "some_df"
+_PHYSICAL_FORMAT = "some_pf"
+
+
+def _GetMetricName(name):
+  return "LogicalFormat[%s]-PhysicalFormat[%s]-%s" % (_LOGICAL_FORMAT,
+                                                      _PHYSICAL_FORMAT, name)
+
+
+_PROFILE_RECORD_BATCHES_TEST_CASES = [
     dict(
         testcase_name="multi_column_mixed_type",
         record_batch=pa.RecordBatch.from_arrays([
@@ -41,46 +50,46 @@ _TEST_CASES = [
             pa.array([None, None, None, None], type=pa.null()),
         ], ["f1", "f2", "f3", "f4"]),
         expected_distributions={
-            "record_batch_byte_size":
+            _GetMetricName("record_batch_byte_size"):
                 _Distribution(min=137, max=137, count=1, sum=137),
-            "num_columns":
+            _GetMetricName("num_columns"):
                 _Distribution(min=3, max=4, count=4, sum=15),
-            "num_feature_values":
+            _GetMetricName("num_feature_values"):
                 _Distribution(sum=13, count=16, min=0, max=2),
-            "num_feature_values[INT]":
+            _GetMetricName("num_feature_values[INT]"):
                 _Distribution(sum=4, count=4, min=1, max=1),
-            "num_feature_values[FLOAT]":
+            _GetMetricName("num_feature_values[FLOAT]"):
                 _Distribution(sum=2, count=4, min=0, max=1),
-            "num_feature_values[STRING]":
+            _GetMetricName("num_feature_values[STRING]"):
                 _Distribution(sum=3, count=4, min=0, max=2),
-            "num_feature_values[NULL]":
+            _GetMetricName("num_feature_values[NULL]"):
                 _Distribution(sum=4, count=4, min=1, max=1),
         },
         expected_counters={
-            "num_rows": 4,
-            "num_cells[NULL]": 4,
-            "num_cells[STRING]": 3,
-            "num_cells[INT]": 4,
-            "num_cells[FLOAT]": 4,
+            _GetMetricName("num_rows"): 4,
+            _GetMetricName("num_cells[NULL]"): 4,
+            _GetMetricName("num_cells[STRING]"): 3,
+            _GetMetricName("num_cells[INT]"): 4,
+            _GetMetricName("num_cells[FLOAT]"): 4,
         }),
     dict(
         testcase_name="deeply_nested_list",
         record_batch=pa.RecordBatch.from_arrays(
             [pa.array([[[[1, 2, 3], [4]], [[5]]], [[None, [1]]]])], ["f1"]),
         expected_distributions={
-            "record_batch_byte_size":
+            _GetMetricName("record_batch_byte_size"):
                 _Distribution(min=104, max=104, count=1, sum=104),
-            "num_columns":
+            _GetMetricName("num_columns"):
                 _Distribution(min=1, max=1, count=2, sum=2),
             # First row: 5 values; second row: 1 value
-            "num_feature_values":
+            _GetMetricName("num_feature_values"):
                 _Distribution(sum=6, count=2, min=1, max=5),
-            "num_feature_values[INT]":
+            _GetMetricName("num_feature_values[INT]"):
                 _Distribution(sum=6, count=2, min=1, max=5),
         },
         expected_counters={
-            "num_rows": 2,
-            "num_cells[OTHER]": 2,
+            _GetMetricName("num_rows"): 2,
+            _GetMetricName("num_cells[OTHER]"): 2,
         }),
     dict(
         testcase_name="struct",
@@ -100,24 +109,24 @@ _TEST_CASES = [
             }]])
         ], ["f1"]),
         expected_distributions={
-            "record_batch_byte_size":
+            _GetMetricName("record_batch_byte_size"):
                 _Distribution(min=93, max=93, count=1, sum=93),
-            "num_columns":
+            _GetMetricName("num_columns"):
                 _Distribution(min=1, max=1, count=2, sum=2),
             # min came from the second row, number of int values.
             # max came from the first row, number of string values.
-            "num_feature_values":
+            _GetMetricName("num_feature_values"):
                 _Distribution(sum=6, count=4, min=0, max=3),
             # First row: 2 int values; second row: 1 int value.
-            "num_feature_values[INT]":
+            _GetMetricName("num_feature_values[INT]"):
                 _Distribution(sum=3, count=2, min=1, max=2),
             # First row: 3 string values; second row: 0 string value.
-            "num_feature_values[STRING]":
+            _GetMetricName("num_feature_values[STRING]"):
                 _Distribution(sum=3, count=2, min=0, max=3),
         },
         expected_counters={
-            "num_rows": 2,
-            "num_cells[OTHER]": 2,
+            _GetMetricName("num_rows"): 2,
+            _GetMetricName("num_cells[OTHER]"): 2,
         }),
 ]
 
@@ -135,20 +144,20 @@ class TelemetryTest(parameterized.TestCase):
       raise AssertionError("{}Expected: {}; got: {}".format(
           (msg + ": ") if msg else "", expected, beam_distribution_result))
 
-  @parameterized.named_parameters(*_TEST_CASES)
-  def testTelemetry(self, record_batch,
-                    expected_distributions, expected_counters):
+  @parameterized.named_parameters(*_PROFILE_RECORD_BATCHES_TEST_CASES)
+  def testProfileRecordBatches(self, record_batch, expected_distributions,
+                               expected_counters):
     p = beam.Pipeline()
     _ = (p
          | "CreateTestData" >> beam.Create([record_batch])
          | "Profile" >> telemetry.ProfileRecordBatches(
-             ["test", "component"], 1.0))
+             ["test", "component"], _LOGICAL_FORMAT, _PHYSICAL_FORMAT, 1.0))
     runner = p.run()
     runner.wait_until_finish()
     all_metrics = runner.metrics()
     maintained_metrics = all_metrics.query(
         beam.metrics.metric.MetricsFilter().with_namespace(
-            "tfx.io.test.component"))
+            "tfx.test.component.io"))
 
     counters = maintained_metrics[beam.metrics.metric.MetricResults.COUNTERS]
     self.assertLen(counters, len(expected_counters))
@@ -163,6 +172,34 @@ class TelemetryTest(parameterized.TestCase):
       self._AssertDistributionEqual(
           dist.result, expected_distributions[dist.key.metric.name],
           dist.key.metric.name)
+
+  def testProfileRawRecords(self):
+    p = beam.Pipeline()
+    _ = (p
+         | "CreateTestData" >> beam.Create([b"aaa", b"bbbb"])
+         | "Profile" >> telemetry.ProfileRawRecords(
+             ["test", "component"], _LOGICAL_FORMAT, _PHYSICAL_FORMAT))
+    runner = p.run()
+    runner.wait_until_finish()
+    all_metrics = runner.metrics()
+    maintained_metrics = all_metrics.query(
+        beam.metrics.metric.MetricsFilter().with_namespace(
+            "tfx.test.component.io"))
+    counters = maintained_metrics[beam.metrics.metric.MetricResults.COUNTERS]
+    self.assertLen(counters, 1)
+    num_records_counter = counters[0]
+    self.assertEqual(_GetMetricName("num_raw_records"),
+                     num_records_counter.key.metric.name)
+    self.assertEqual(2, num_records_counter.result)
+
+    distributions = maintained_metrics[
+        beam.metrics.metric.MetricResults.DISTRIBUTIONS]
+    self.assertLen(distributions, 1)
+    byte_size_distribution = distributions[0]
+    self.assertEqual(_GetMetricName("raw_record_byte_size"),
+                     byte_size_distribution.key.metric.name)
+    self._AssertDistributionEqual(byte_size_distribution.result,
+                                  _Distribution(min=3, max=4, count=2, sum=7))
 
 
 if __name__ == "__main__":
