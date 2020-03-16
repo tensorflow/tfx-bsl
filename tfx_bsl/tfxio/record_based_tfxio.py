@@ -62,7 +62,7 @@ class RecordBasedTFXIO(tfxio.TFXIO):
     calling `BeamSource()` separately as redundant disk reads can be avoided.
   """
 
-  def __init__(self, telemetry_descriptors: List[Text],
+  def __init__(self, telemetry_descriptors: Optional[List[Text]],
                logical_format: Text,
                physical_format: Text,
                raw_record_column_name: Optional[Text] = None):
@@ -79,6 +79,10 @@ class RecordBasedTFXIO(tfxio.TFXIO):
   @property
   def raw_record_column_name(self) -> Optional[Text]:
     return self._raw_record_column_name
+
+  @property
+  def telemetry_descriptors(self) -> Optional[List[Text]]:
+    return self._telemetry_descriptors
 
   def SupportAttachingRawRecords(self) -> bool:
     return False

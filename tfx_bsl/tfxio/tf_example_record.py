@@ -169,8 +169,6 @@ class TFExampleRecord(_TFExampleRecordBase):
         be identifiers of the component itself and not individual instances of
         source use.
     """
-    if telemetry_descriptors is None:
-      telemetry_descriptors = ["UNKNOWN_COMPONENT"]
     super(TFExampleRecord, self).__init__(
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
@@ -185,8 +183,11 @@ class TFExampleRecord(_TFExampleRecordBase):
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     return TFExampleRecord(
-        self._file_pattern, validate=self._validate, schema=projected_schema,
-        raw_record_column_name=self.raw_record_column_name)
+        file_pattern=self._file_pattern,
+        validate=self._validate,
+        schema=projected_schema,
+        raw_record_column_name=self.raw_record_column_name,
+        telemetry_descriptors=self.telemetry_descriptors)
 
   def TensorFlowDataset(self):
     raise NotImplementedError
