@@ -40,6 +40,24 @@ using ::arrow::Schema;
 using ::arrow::Table;
 using ::arrow::Type;
 
+// TODO(zhuo): remove this shim after tfx_bsl starts depending on pyarrow>=0.16.
+# if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR < 16)
+Status ConcatenateTablesShim(const std::vector<std::shared_ptr<Table>>& tables,
+                             std::shared_ptr<Table>* result) {
+  return FromArrowStatus(arrow::ConcatenateTables(tables, result));
+}
+#else
+Status ConcatenateTablesShim(const std::vector<std::shared_ptr<Table>>& tables,
+                             std::shared_ptr<Table>* result) {
+  auto status_or = arrow::ConcatenateTables(tables);
+  if (!status_or.ok()) {
+    return FromArrowStatus(status_or.status());
+  }
+  *result = std::move(status_or).ValueOrDie();
+  return Status::OK();
+}
+# endif
+
 // Returns an empty table that has the same schema as `table`.
 Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
   std::vector<std::shared_ptr<Array>> empty_arrays;
@@ -174,8 +192,7 @@ Status SliceTableByRowIndicesInternal(
   }
 
   std::shared_ptr<Table> concatenated;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(arrow::ConcatenateTables(table_slices, &concatenated)));
+  TFX_BSL_RETURN_IF_ERROR(ConcatenateTablesShim(table_slices, &concatenated));
 
   return FromArrowStatus(
       concatenated->CombineChunks(arrow::default_memory_pool(), result));
