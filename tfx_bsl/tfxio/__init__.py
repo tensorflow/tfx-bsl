@@ -16,3 +16,7 @@
 Design doc:
 https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md
 """
+
+# TODO(b/151624179): clean this (and its usage) up once the tfx_bsl release
+# containing this flag is out.
+TFXIO_HAS_TELEMETRY = True
