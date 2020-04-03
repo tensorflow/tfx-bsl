@@ -255,6 +255,20 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
               "occupied by those buffers because buffers might share the "
               "underlying memory"),
       py::call_guard<py::gil_scoped_release>());
+  // TODO(zhuo): pa.RecordBatch.take is available starting from arrow 0.17.
+  m.def(
+      "RecordBatchTake",
+      [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
+         const std::shared_ptr<arrow::Array>& indices) {
+        std::shared_ptr<arrow::RecordBatch> result;
+        Status s = RecordBatchTake(*record_batch, *indices, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      py::doc("Returns a RecordBatch that contains rows in `indices`."),
+      py::call_guard<py::gil_scoped_release>());
 }
 
 }  // namespace

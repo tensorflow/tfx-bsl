@@ -23,6 +23,7 @@ from tfx_bsl.arrow import table_util
 from absl.testing import absltest
 from absl.testing import parameterized
 
+
 _MERGE_TEST_CASES = [
     dict(
         testcase_name="empty_input",
@@ -41,7 +42,11 @@ _MERGE_TEST_CASES = [
                 "float": pa.array([1., None, 3.], type=pa.float32()),
                 "double": pa.array([1., None, 3.], type=pa.float64()),
                 "bytes": pa.array([b"abc", None, b"ghi"], type=pa.binary()),
+                "large_bytes": pa.array([b"abc", None, b"ghi"],
+                                        type=pa.large_binary()),
                 "unicode": pa.array([u"abc", None, u"ghi"], type=pa.utf8()),
+                "large_unicode": pa.array([u"abc", None, u"ghi"],
+                                          type=pa.large_utf8()),
             },
             {
                 "bool": pa.array([None, False], type=pa.bool_()),
@@ -52,7 +57,9 @@ _MERGE_TEST_CASES = [
                 "float": pa.array([None, 4.], type=pa.float32()),
                 "double": pa.array([None, 4.], type=pa.float64()),
                 "bytes": pa.array([None, b"jkl"], type=pa.binary()),
+                "large_bytes": pa.array([None, b"jkl"], type=pa.large_binary()),
                 "unicode": pa.array([None, u"jkl"], type=pa.utf8()),
+                "large_unicode": pa.array([None, u"jkl"], type=pa.large_utf8()),
             },
         ],
         expected_output={
@@ -73,8 +80,15 @@ _MERGE_TEST_CASES = [
             "bytes":
                 pa.array([b"abc", None, b"ghi", None, b"jkl"],
                          type=pa.binary()),
+            "large_bytes":
+                pa.array([b"abc", None, b"ghi", None, b"jkl"],
+                         type=pa.large_binary()),
             "unicode":
-                pa.array([u"abc", None, u"ghi", None, u"jkl"], type=pa.utf8()),
+                pa.array([u"abc", None, u"ghi", None, u"jkl"],
+                         type=pa.utf8()),
+            "large_unicode":
+                pa.array([u"abc", None, u"ghi", None, u"jkl"],
+                         type=pa.large_utf8()),
         }),
     dict(
         testcase_name="list",
@@ -97,6 +111,32 @@ _MERGE_TEST_CASES = [
             "list<int32>":
                 pa.array([[1, None, 3], None, None, []],
                          type=pa.list_(pa.int32()))
+        }),
+    dict(
+        testcase_name="large_list",
+        inputs=[
+            {
+                "large_list<int32>":
+                    pa.array([[1, None, 3], None],
+                             type=pa.large_list(pa.int32())),
+            },
+            {
+                "large_list<int32>":
+                    pa.array([None], type=pa.large_list(pa.int32())),
+            },
+            {
+                "large_list<int32>":
+                    pa.array([], type=pa.large_list(pa.int32())),
+            },
+            {
+                "large_list<int32>":
+                    pa.array([[]], type=pa.large_list(pa.int32())),
+            },
+        ],
+        expected_output={
+            "large_list<int32>":
+                pa.array([[1, None, 3], None, None, []],
+                         type=pa.large_list(pa.int32()))
         }),
     dict(
         testcase_name="struct",
@@ -200,6 +240,7 @@ _MERGE_TEST_CASES = [
         }),
 ]
 
+
 _MERGE_INVALID_INPUT_TEST_CASES = [
     dict(
         testcase_name="not_a_list_of_tables",
@@ -247,6 +288,24 @@ class MergeTablesTest(parameterized.TestCase):
       except AssertionError:
         self.fail(msg="Column {}:\nexpected:{}\ngot: {}".format(
             column_name, expected_output[column_name], column))
+
+
+class MergeRecordBatchesTest(parameterized.TestCase):
+
+  @parameterized.named_parameters(*_MERGE_TEST_CASES)
+  def test_merge_record_batches(self, inputs, expected_output):
+    input_record_batches = [
+        pa.RecordBatch.from_arrays(list(in_dict.values()), list(in_dict.keys()))
+        for in_dict in inputs
+    ]
+    merged = table_util.MergeRecordBatches(input_record_batches)
+
+    self.assertLen(expected_output, merged.num_columns)
+    for column, column_name in zip(merged.columns, merged.schema.names):
+      self.assertTrue(
+          expected_output[column_name].equals(column),
+          "Column {}:\nexpected:{}\ngot: {}".format(
+              column_name, expected_output[column_name], column))
 
 
 _SLICE_TEST_CASES = [
@@ -396,6 +455,19 @@ class GetTotalByteSizeTest(parameterized.TestCase):
     entity = factory([list_array, struct_array], ["a1", "a2"])
 
     self.assertEqual(42 + 26, table_util.TotalByteSize(entity))
+
+
+class RecordBatchTakeTest(parameterized.TestCase):
+
+  def test_simple(self):
+    record_batch = pa.RecordBatch.from_arrays(
+        [pa.array([[1, 2], None, [3]]),
+         pa.array([["a", "b"], ["c"], None])], ["a", "b"])
+    self.assertTrue(
+        table_util.RecordBatchTake(record_batch,
+                                   pa.array([1, 2]))
+        .equals(record_batch.slice(1)))
+
 
 if __name__ == "__main__":
   absltest.main()

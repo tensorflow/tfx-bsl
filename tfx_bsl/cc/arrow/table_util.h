@@ -62,6 +62,11 @@ Status TotalByteSize(const arrow::Table& table, bool ignore_unsupported,
                      size_t* result);
 Status TotalByteSize(const arrow::RecordBatch& record_batch,
                      bool ignore_unsupported, size_t* result);
+
+// Returns a RecordBatch that contains rows in `indices`.
+Status RecordBatchTake(const arrow::RecordBatch& record_batch,
+                       const arrow::Array& indices,
+                       std::shared_ptr<arrow::RecordBatch>* result);
 }  // namespace tfx_bsl
 
 #endif  // THIRD_PARTY_PY_TENSORFLOW_DATA_VALIDATION_ARROW_CC_MERGE_H_

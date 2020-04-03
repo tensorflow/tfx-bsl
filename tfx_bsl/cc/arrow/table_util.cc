@@ -23,6 +23,7 @@
 #include "absl/types/variant.h"
 #include "arrow/api.h"
 #include "arrow/array/concatenate.h"
+#include "arrow/compute/api.h"
 #include "arrow/visitor_inline.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/util/status.h"
@@ -296,6 +297,23 @@ Status TotalByteSize(const RecordBatch& record_batch,
     TFX_BSL_RETURN_IF_ERROR(status);
     *result += array_size;
   }
+  return Status::OK();
+}
+
+// Returns a RecordBatch that contains rows in `indices`.
+Status RecordBatchTake(const RecordBatch& record_batch, const Array& indices,
+                       std::shared_ptr<RecordBatch>* result) {
+  arrow::compute::FunctionContext ctx;
+  arrow::compute::TakeOptions options;
+  // TODO(zhuo): Take() can take RecordBatch starting from arrow 0.16.
+  std::vector<std::shared_ptr<Array>> columns;
+  for (int i = 0; i < record_batch.num_columns(); ++i) {
+    columns.emplace_back();
+    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::compute::Take(
+        &ctx, *record_batch.column(i), indices, options, &columns.back())));
+  }
+  *result = RecordBatch::Make(record_batch.schema(), indices.length(),
+                              std::move(columns));
   return Status::OK();
 }
 
