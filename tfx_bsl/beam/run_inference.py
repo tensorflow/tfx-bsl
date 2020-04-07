@@ -33,12 +33,17 @@ except ImportError:
 
 from absl import logging
 import apache_beam as beam
+from apache_beam.utils import retry
+from apache_beam.options.pipeline_options import GoogleCloudOptions
+from apache_beam.options.pipeline_options import PipelineOptions
+import googleapiclient
 from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
 import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.proto import model_spec_pb2
+from tfx_bsl.telemetry import util
 from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
     Tuple, Union
 
@@ -65,10 +70,13 @@ from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_serving.apis import regression_pb2
 
 _DEFAULT_INPUT_KEY = 'examples'
-_METRICS_NAMESPACE = 'tfx.BulkInferrer'
+_METRICS_DESCRIPTOR = 'BulkInferrer'
+_METRICS_DESCRIPTOR_IN_PROCESS = 'InProcess'
+_METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION = 'CloudAIPlatformPrediction'
 _MILLISECOND_TO_MICROSECOND = 1000
 _MICROSECOND_TO_NANOSECOND = 1000
 _SECOND_TO_MICROSECOND = 1000000
+_REMOTE_INFERENCE_NUM_RETRIES = 5
 
 # We define the following aliases of Any because the actual types are not
 # public.
@@ -84,7 +92,7 @@ _BulkInferResult = Union[prediction_log_pb2.PredictLog,
                                classification_pb2.Classifications]]
 
 
-# TODO: Converts this into enum once we stopped supporting Python 2.7
+# TODO(b/151468119): Converts this into enum once we stop supporting Python 2.7
 class OperationType(object):
   CLASSIFICATION = 'CLASSIFICATION'
   REGRESSION = 'REGRESSION'
@@ -98,15 +106,16 @@ class OperationType(object):
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInference(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
-    inference_endpoint: model_spec_pb2.InferenceEndpoint
+    inference_spec_type: model_spec_pb2.InferenceSpecType
 ) -> beam.pvalue.PCollection:
   """Run inference with a model.
 
    There are two types of inference you can perform using this PTransform:
-   1. Offline inference from a SavedModel instance. Used when
-     `saved_model_spec` field is set in `inference_endpoint`.
+   1. In-process inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_spec_type`.
    2. Remote inference by using a service endpoint. Used when
-     `model_endpoint_spec` field is set in `inference_endpoint`.
+     `ai_platform_prediction_model_spec` field is set in
+     `inference_spec_type`.
 
   TODO(b/131873699): Add support for the following features:
   1. Bytes as Input.
@@ -115,24 +124,27 @@ def RunInference(  # pylint: disable=invalid-name
 
   Args:
     examples: A PCollection containing examples.
-    inference_endpoint: Model inference endpoint.
+    inference_spec_type: Model inference endpoint.
 
   Returns:
     A PCollection containing prediction logs.
+
+  Raises:
+    ValueError; when operation is not supported.
   """
-  logging.info('RunInference on model: %s', inference_endpoint)
+  logging.info('RunInference on model: %s', inference_spec_type)
 
   batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
-  operation = _get_operation_type(inference_endpoint)
+  operation = _get_operation_type(inference_spec_type)
   if operation == OperationType.CLASSIFICATION:
-    return (batched_examples | 'Classify' >> _Classify(inference_endpoint))
+    return batched_examples | 'Classify' >> _Classify(inference_spec_type)
   elif operation == OperationType.REGRESSION:
-    return (batched_examples | 'Regress' >> _Regress(inference_endpoint))
+    return batched_examples | 'Regress' >> _Regress(inference_spec_type)
   elif operation == OperationType.PREDICTION:
-    return (batched_examples | 'Predict' >> _Predict(inference_endpoint))
+    return batched_examples | 'Predict' >> _Predict(inference_spec_type)
   elif operation == OperationType.MULTIHEAD:
     return (batched_examples
-            | 'MultiInference' >> _MultiInference(inference_endpoint))
+            | 'MultiInference' >> _MultiInference(inference_spec_type))
   else:
     raise ValueError('Unsupported operation %s' % operation)
 
@@ -145,11 +157,16 @@ _Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
 
 
 @beam.ptransform_fn
-def _Classify(pcoll, inference_endpoint):
-  if _using_offline_inference(inference_endpoint):
+@beam.typehints.with_input_types(Union[tf.train.Example,
+                                       tf.train.SequenceExample])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def _Classify(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
+              inference_spec_type: model_spec_pb2.InferenceSpecType):
+  """Performs classify PTransform."""
+  if _using_in_process_inference(inference_spec_type):
     return (pcoll
-            | beam.ParDo(
-                _BatchClassifyDoFn(inference_endpoint, shared.Shared()))
+            | 'Classify' >> beam.ParDo(
+                _BatchClassifyDoFn(inference_spec_type, shared.Shared()))
             | 'BuildPredictionLogForClassifications' >> beam.ParDo(
                 _BuildPredictionLogForClassificationsDoFn()))
   else:
@@ -157,11 +174,16 @@ def _Classify(pcoll, inference_endpoint):
 
 
 @beam.ptransform_fn
-def _Regress(pcoll, inference_endpoint):
-  if _using_offline_inference(inference_endpoint):
+@beam.typehints.with_input_types(Union[tf.train.Example,
+                                       tf.train.SequenceExample])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def _Regress(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
+             inference_spec_type: model_spec_pb2.InferenceSpecType):
+  """Performs regress PTransform."""
+  if _using_in_process_inference(inference_spec_type):
     return (pcoll
-            | beam.ParDo(
-                _BatchRegressDoFn(inference_endpoint, shared.Shared()))
+            | 'Regress' >> beam.ParDo(
+                _BatchRegressDoFn(inference_spec_type, shared.Shared()))
             | 'BuildPredictionLogForRegressions' >> beam.ParDo(
                 _BuildPredictionLogForRegressionsDoFn()))
   else:
@@ -169,27 +191,39 @@ def _Regress(pcoll, inference_endpoint):
 
 
 @beam.ptransform_fn
-def _Predict(pcoll, inference_endpoint):
-  if _using_offline_inference(inference_endpoint):
-    return (pcoll
-            | beam.ParDo(
-                _BatchPredictDoFn(inference_endpoint, shared.Shared()))
-            | 'BuildPredictionLogForPredictions' >> beam.ParDo(
-                _BuildPredictionLogForPredictionsDoFn()))
+@beam.typehints.with_input_types(Union[tf.train.Example,
+                                       tf.train.SequenceExample])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def _Predict(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
+             inference_spec_type: model_spec_pb2.InferenceSpecType):
+  """Performs predict PTransform."""
+  if _using_in_process_inference(inference_spec_type):
+    predictions = (
+        pcoll
+        | 'Predict' >> beam.ParDo(
+            _BatchPredictDoFn(inference_spec_type, shared.Shared())))
   else:
-    return (pcoll
-            | beam.ParDo(_RemotePredictDoFn(inference_endpoint))
-            | 'BuildPredictionLogForPredictions' >> beam.ParDo(
-                _BuildPredictionLogForPredictionsDoFn()))
+    predictions = (
+        pcoll
+        | 'RemotePredict' >> beam.ParDo(
+            _RemotePredictDoFn(inference_spec_type, pcoll.pipeline.options)))
+  return (predictions
+          | 'BuildPredictionLogForPredictions' >> beam.ParDo(
+              _BuildPredictionLogForPredictionsDoFn()))
 
 
 @beam.ptransform_fn
-def _MultiInference(pcoll, inference_endpoint):
-  if _using_offline_inference(inference_endpoint):
+@beam.typehints.with_input_types(Union[tf.train.Example,
+                                       tf.train.SequenceExample])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def _MultiInference(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
+                    inference_spec_type: model_spec_pb2.InferenceSpecType):
+  """Performs multi inference PTransform."""
+  if _using_in_process_inference(inference_spec_type):
     return (
         pcoll
-        | beam.ParDo(
-            _BatchMultiInferenceDoFn(inference_endpoint, shared.Shared()))
+        | 'MultiInference' >> beam.ParDo(
+            _BatchMultiInferenceDoFn(inference_spec_type, shared.Shared()))
         | 'BuildMultiInferenceLog' >> beam.ParDo(_BuildMultiInferenceLogDoFn()))
   else:
     raise NotImplementedError
@@ -202,29 +236,37 @@ class _BaseDoFn(beam.DoFn):
   class _MetricsCollector(object):
     """A collector for beam metrics."""
 
-    def __init__(self):
+    def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
       # Metrics cache
       self.load_model_latency_milli_secs_cache = None
       self.model_byte_size_cache = None
 
+      # TODO(b/151468119): Update metrics descriptor whitelist.
+      if _using_in_process_inference(inference_spec_type):
+        descriptors = [_METRICS_DESCRIPTOR, _METRICS_DESCRIPTOR_IN_PROCESS]
+      else:
+        descriptors = [
+            _METRICS_DESCRIPTOR, _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION
+        ]
+      namespace = util.MakeTfxNamespace(descriptors)
       self._inference_counter = beam.metrics.Metrics.counter(
-          _METRICS_NAMESPACE, 'num_inferences')
+          namespace, 'num_inferences')
       self._num_instances = beam.metrics.Metrics.counter(
-          _METRICS_NAMESPACE, 'num_instances')
+          namespace, 'num_instances')
       self._inference_request_batch_size = beam.metrics.Metrics.distribution(
-          _METRICS_NAMESPACE, 'inference_request_batch_size')
+          namespace, 'inference_request_batch_size')
       self._inference_request_batch_byte_size = (
           beam.metrics.Metrics.distribution(
-              _METRICS_NAMESPACE, 'inference_request_batch_byte_size'))
+              namespace, 'inference_request_batch_byte_size'))
       # Batch inference latency in microseconds.
       self._inference_batch_latency_micro_secs = (
           beam.metrics.Metrics.distribution(
-              _METRICS_NAMESPACE, 'inference_batch_latency_micro_secs'))
+              namespace, 'inference_batch_latency_micro_secs'))
       self._model_byte_size = beam.metrics.Metrics.distribution(
-          _METRICS_NAMESPACE, 'model_byte_size')
+          namespace, 'model_byte_size')
       # Model load latency in milliseconds.
       self._load_model_latency_milli_secs = beam.metrics.Metrics.distribution(
-          _METRICS_NAMESPACE, 'load_model_latency_milli_secs')
+          namespace, 'load_model_latency_milli_secs')
 
     def update_metrics_with_cache(self):
       if self.load_model_latency_milli_secs_cache is not None:
@@ -245,10 +287,10 @@ class _BaseDoFn(beam.DoFn):
       self._inference_request_batch_byte_size.update(
           sum(element.ByteSize() for element in elements))
 
-  def __init__(self):
+  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     super(_BaseDoFn, self).__init__()
     self._clock = None
-    self._metrics_collector = self._MetricsCollector()
+    self._metrics_collector = self._MetricsCollector(inference_spec_type)
 
   def setup(self):
     self._clock = _ClockFactory.make_clock()
@@ -280,6 +322,22 @@ class _BaseDoFn(beam.DoFn):
     raise NotImplementedError
 
 
+def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
+  """Retries for HttpError.
+
+  Retries if error is unavailable (503) or resource exhausted (429).
+  Resource exhausted may happen when qps or bandwidth exceeds quota.
+
+  Args:
+    exception: Exception from inference http request execution.
+  Returns:
+    A boolean of whether retry.
+  """
+
+  return (isinstance(exception, googleapiclient.errors.HttpError) and
+          exception.resp.status in (503, 429))
+
+
 @beam.typehints.with_input_types(List[Union[tf.train.Example,
                                             tf.train.SequenceExample]])
 # Using output typehints triggers NotImplementedError('BEAM-2717)' on
@@ -305,46 +363,59 @@ class _RemotePredictDoFn(_BaseDoFn):
   without having access to cloud-hosted model's signatures.
   """
 
-  def __init__(self, inference_endpoint: model_spec_pb2.InferenceEndpoint):
-    super(_RemotePredictDoFn, self).__init__()
+  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
+               pipeline_options: PipelineOptions):
+    super(_RemotePredictDoFn, self).__init__(inference_spec_type)
     self._api_client = None
-    project_id = inference_endpoint.model_endpoint_spec.project_id
-    if not project_id:
-      raise ValueError('A non-empty project id must be provided.')
 
-    model_name = inference_endpoint.model_endpoint_spec.model_name
+    project_id = (
+        inference_spec_type.ai_platform_prediction_model_spec.project_id or
+        pipeline_options.view_as(GoogleCloudOptions).project)
+    if not project_id:
+      raise ValueError('Either a non-empty project id or project flag in '
+                       ' beam pipeline options needs be provided.')
+
+    model_name = (
+        inference_spec_type.ai_platform_prediction_model_spec.model_name)
     if not model_name:
       raise ValueError('A non-empty model name must be provided.')
 
-    version_name = inference_endpoint.model_endpoint_spec.version_name
+    version_name = (
+        inference_spec_type.ai_platform_prediction_model_spec.version_name)
     name_spec = 'projects/{}/models/{}'
     # If version is not specified, the default version for a model is used.
     if version_name:
       name_spec += '/versions/{}'
-    self.full_model_name = name_spec.format(project_id, model_name,
-                                            version_name)
+    self._full_model_name = name_spec.format(project_id, model_name,
+                                             version_name)
 
   def setup(self):
     super(_RemotePredictDoFn, self).setup()
-    self._api_client = self._get_api_client()
+    self._api_client = discovery.build('ml', 'v1')
 
-  @staticmethod
-  def _get_api_client() -> discovery.Resource:
-    return discovery.build('ml', 'v1')
+  # Retry _REMOTE_INFERENCE_NUM_RETRIES times with exponential backoff.
+  @retry.with_exponential_backoff(
+      initial_delay_secs=1.0,
+      num_retries=_REMOTE_INFERENCE_NUM_RETRIES,
+      retry_filter=_retry_on_unavailable_and_resource_error_filter)
+  def _execute_request(
+      self,
+      request: http.HttpRequest) -> Mapping[Text, Sequence[Mapping[Text, Any]]]:
+    response = request.execute()
+    if 'error' in response:
+      raise ValueError(response['error'])
+    return response
 
-  @staticmethod
-  def _execute_request(request: http.HttpRequest) -> dict:
-    return request.execute()
-
-  def _make_request(self, model_name: str, body: dict) -> http.HttpRequest:
-    return self._api_client.projects().predict(name=model_name, body=body)
+  def _make_request(self, body: Mapping[Text, List[Any]]) -> http.HttpRequest:
+    return self._api_client.projects().predict(
+        name=self._full_model_name, body=body)
 
   @classmethod
   def _prepare_instances(
       cls, elements: List[tf.train.Example]
   ) -> Generator[Mapping[Text, Any], None, None]:
     for example in elements:
-      # TODO: support tf.train.SequenceExample
+      # TODO(b/151468119): support tf.train.SequenceExample
       if not isinstance(example, tf.train.Example):
         raise ValueError('Remote prediction only supports tf.train.Example')
 
@@ -399,10 +470,8 @@ class _RemotePredictDoFn(_BaseDoFn):
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
   ) -> Sequence[Mapping[Text, Any]]:
     body = {'instances': list(self._prepare_instances(elements))}
-    response = self._execute_request(
-        self._make_request(self.full_model_name, body))
-    if 'error' in response:
-      raise ValueError(response['error'])
+    request = self._make_request(body)
+    response = self._execute_request(request)
     return response['predictions']
 
   def _post_process(
@@ -412,7 +481,6 @@ class _RemotePredictDoFn(_BaseDoFn):
     result = []
     for output in outputs:
       predict_log = prediction_log_pb2.PredictLog()
-
       for output_alias, values in output.items():
         values = np.array(values)
         tensor_proto = tf.make_tensor_proto(
@@ -430,7 +498,7 @@ class _RemotePredictDoFn(_BaseDoFn):
 # TODO(b/143484017): Add batch_size back off in the case there are functional
 # reasons large batch sizes cannot be handled.
 class _BaseBatchSavedModelDoFn(_BaseDoFn):
-  """A DoFn that runs batch offline inference with a model.
+  """A DoFn that runs in-process batch inference with a model.
 
     Models need to have the required serving signature as mentioned in
     [Tensorflow Serving](https://www.tensorflow.org/tfx/serving/signature_defs)
@@ -441,21 +509,20 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
 
   def __init__(
       self,
-      inference_endpoint: model_spec_pb2.InferenceEndpoint,
+      inference_spec_type: model_spec_pb2.InferenceSpecType,
       shared_model_handle: shared.Shared,
   ):
-    super(_BaseBatchSavedModelDoFn, self).__init__()
-    self._inference_endpoint = inference_endpoint
+    super(_BaseBatchSavedModelDoFn, self).__init__(inference_spec_type)
+    self._inference_spec_type = inference_spec_type
     self._shared_model_handle = shared_model_handle
-    self._model_path = inference_endpoint.saved_model_spec.model_path
+    self._model_path = inference_spec_type.saved_model_spec.model_path
     self._tags = None
     self._signatures = _get_signatures(
-        inference_endpoint.saved_model_spec.model_path,
-        inference_endpoint.saved_model_spec.signature_name,
-        _get_tags(inference_endpoint))
+        inference_spec_type.saved_model_spec.model_path,
+        inference_spec_type.saved_model_spec.signature_name,
+        _get_tags(inference_spec_type))
     self._session = None
     self._io_tensor_spec = None
-    self._metrics_collector = self._MetricsCollector()
 
   def setup(self):
     """Load the model.
@@ -465,7 +532,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     """
 
     super(_BaseBatchSavedModelDoFn, self).setup()
-    self._tags = _get_tags(self._inference_endpoint)
+    self._tags = _get_tags(self._inference_spec_type)
     self._io_tensor_spec = self._pre_process()
 
     if self._has_tpu_tag():
@@ -1000,9 +1067,9 @@ def _signature_pre_process_regress(
   return input_tensor_name, output_alias_tensor_names
 
 
-def _using_offline_inference(
-    inference_endpoint: model_spec_pb2.InferenceEndpoint) -> bool:
-  return inference_endpoint.WhichOneof('type') == 'saved_model_spec'
+def _using_in_process_inference(
+    inference_spec_type: model_spec_pb2.InferenceSpecType) -> bool:
+  return inference_spec_type.WhichOneof('type') == 'saved_model_spec'
 
 
 def _get_signatures(model_path: Text, signatures: Sequence[Text],
@@ -1029,12 +1096,12 @@ def _get_signatures(model_path: Text, signatures: Sequence[Text],
 
 
 def _get_operation_type(
-    inference_endpoint: model_spec_pb2.InferenceEndpoint) -> str:
-  if _using_offline_inference(inference_endpoint):
+    inference_spec_type: model_spec_pb2.InferenceSpecType) -> Text:
+  if _using_in_process_inference(inference_spec_type):
     signatures = _get_signatures(
-        inference_endpoint.saved_model_spec.model_path,
-        inference_endpoint.saved_model_spec.signature_name,
-        _get_tags(inference_endpoint))
+        inference_spec_type.saved_model_spec.model_path,
+        inference_spec_type.saved_model_spec.signature_name,
+        _get_tags(inference_spec_type))
     if not signatures:
       raise ValueError('Model does not have valid signature to use')
 
@@ -1087,11 +1154,11 @@ def _get_current_process_memory_in_bytes():
 
 
 def _get_tags(
-    inference_endpoint: model_spec_pb2.InferenceEndpoint) -> Sequence[Text]:
+    inference_spec_type: model_spec_pb2.InferenceSpecType) -> Sequence[Text]:
   """Returns tags from ModelSpec."""
 
-  if inference_endpoint.saved_model_spec.tag:
-    return list(inference_endpoint.saved_model_spec.tag)
+  if inference_spec_type.saved_model_spec.tag:
+    return list(inference_spec_type.saved_model_spec.tag)
   else:
     return [tf.saved_model.SERVING]
 

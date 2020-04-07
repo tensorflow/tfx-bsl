@@ -20,7 +20,6 @@ from __future__ import print_function
 
 import json
 import os
-import tempfile
 try:
   import unittest.mock as mock
 except ImportError:
@@ -42,20 +41,10 @@ from google.protobuf import text_format
 from tensorflow_serving.apis import prediction_log_pb2
 
 
-class TestKerasModel(tf.keras.Model):
-
-  def __init__(self, serve_layer):
-    super(TestKerasModel, self).__init__(name='test_keras_model')
-    self.serve_layer = serve_layer
-
-  @tf.function
-  def call(self, serialized_example):
-    return self.serve_layer(serialized_example)
-
-
 class RunInferenceFixture(tf.test.TestCase):
 
   def setUp(self):
+    super(RunInferenceFixture, self).setUp()
     self._predict_examples = [
         text_format.Parse(
             """
@@ -217,14 +206,14 @@ class RunOfflineInferenceTest(RunInferenceFixture):
           signature_def_map=signature_def_map)
       builder.save()
 
-  def _run_inference_with_beam(self, example_path, inference_endpoint,
+  def _run_inference_with_beam(self, example_path, inference_spec_type,
                                prediction_log_path):
     with beam.Pipeline() as pipeline:
       _ = (
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-          | 'RunInference' >> run_inference.RunInference(inference_endpoint)
+          | 'RunInference' >> run_inference.RunInference(inference_spec_type)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -246,7 +235,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     with self.assertRaisesRegexp(IOError, 'SavedModel file does not exist.*'):
       self._run_inference_with_beam(
           example_path,
-          model_spec_pb2.InferenceEndpoint(
+          model_spec_pb2.InferenceSpecType(
               saved_model_spec=model_spec_pb2.SavedModelSpec(
                   model_path=self._get_output_data_dir())), prediction_log_path)
 
@@ -258,7 +247,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         example_path,
-        model_spec_pb2.InferenceEndpoint(
+        model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path)), prediction_log_path)
 
@@ -287,7 +276,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         example_path,
-        model_spec_pb2.InferenceEndpoint(
+        model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['classify_sum'])),
         prediction_log_path)
@@ -311,7 +300,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         example_path,
-        model_spec_pb2.InferenceEndpoint(
+        model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['regress_diff'])),
         prediction_log_path)
@@ -334,7 +323,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         example_path,
-        model_spec_pb2.InferenceEndpoint(
+        model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path,
                 signature_name=['regress_diff', 'classify_sum'])),
@@ -406,7 +395,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         example_path,
-        model_spec_pb2.InferenceEndpoint(
+        model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path)), prediction_log_path)
 
@@ -418,14 +407,14 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
     self._build_multihead_model(model_path)
-    inference_endpoint = model_spec_pb2.InferenceEndpoint(
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
         saved_model_spec=model_spec_pb2.SavedModelSpec(
             model_path=model_path, signature_name=['classify_sum']))
     pipeline = beam.Pipeline()
     _ = (
         pipeline | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
         | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInference(inference_endpoint))
+        | 'RunInference' >> run_inference.RunInference(inference_spec_type))
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -466,23 +455,10 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     super(RunRemoteInferenceTest, self).setUp()
     self.example_path = self._get_output_data_dir('example')
     self._prepare_predict_examples(self.example_path)
-
-  @staticmethod
-  def _make_api_client_mock(response_body):
-
-    def _get_api_client_mock():
-      builder = http.RequestMockBuilder(
-          {'ml.projects.predict': (None, response_body)})
-      # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
-      data_dir = os.path.join(os.path.join(
-          os.path.dirname(__file__), 'testdata'), 'ml_discovery.json')
-      return discovery.build(
-          'ml',
-          'v1',
-          http=http.HttpMock(data_dir, {'status': http_client.OK}),
-          requestBuilder=builder)
-
-    return _get_api_client_mock
+    # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
+    self._discovery_testdata_dir = os.path.join(
+        os.path.join(os.path.dirname(__file__), 'testdata'),
+        'ml_discovery.json')
 
   @staticmethod
   def _make_response_body(content, successful):
@@ -492,13 +468,13 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       response_dict = {'error': content}
     return json.dumps(response_dict)
 
-  def _set_up_pipeline(self, inference_endpoint):
+  def _set_up_pipeline(self, inference_spec_type):
     self.pipeline = beam.Pipeline()
     self.pcoll = (
         self.pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
         | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInference(inference_endpoint))
+        | 'RunInference' >> run_inference.RunInference(inference_spec_type))
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()
@@ -506,13 +482,21 @@ class RunRemoteInferenceTest(RunInferenceFixture):
 
   def test_model_predict(self):
     predictions = [{'output_1': [0.901], 'output_2': [0.997]}]
-    with mock.patch('tfx_bsl.beam.run_inference._RemotePredictDoFn.'
-                    '_get_api_client') as response_mock:
-      response_mock.side_effect = self._make_api_client_mock(
-          self._make_response_body(predictions, successful=True))
-
-      inference_endpoint = model_spec_pb2.InferenceEndpoint(
-          model_endpoint_spec=model_spec_pb2.ModelEndpointSpec(
+    builder = http.RequestMockBuilder({
+        'ml.projects.predict':
+            (None, self._make_response_body(predictions, successful=True))
+    })
+    resource = discovery.build(
+        'ml',
+        'v1',
+        http=http.HttpMock(self._discovery_testdata_dir,
+                           {'status': http_client.OK}),
+        requestBuilder=builder)
+    with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
+      response_mock.side_effect = lambda service, version: resource
+      inference_spec_type = model_spec_pb2.InferenceSpecType(
+          ai_platform_prediction_model_spec=model_spec_pb2
+          .AIPlatformPredictionModelSpec(
               project_id='test-project',
               model_name='test-model',
           ))
@@ -523,25 +507,33 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       prediction_log.predict_log.response.outputs['output_2'].CopyFrom(
           tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
 
-      self._set_up_pipeline(inference_endpoint)
+      self._set_up_pipeline(inference_spec_type)
       assert_that(self.pcoll, equal_to([prediction_log]))
       self._run_inference_with_beam()
 
   def test_exception_raised_when_response_body_contains_error_entry(self):
     error_msg = 'Base64 decode failed.'
-    with mock.patch('tfx_bsl.beam.run_inference._RemotePredictDoFn.'
-                    '_get_api_client') as response_mock:
-      response_mock.side_effect = self._make_api_client_mock(
-          self._make_response_body(error_msg, successful=False))
-
-      inference_endpoint = model_spec_pb2.InferenceEndpoint(
-          model_endpoint_spec=model_spec_pb2.ModelEndpointSpec(
+    builder = http.RequestMockBuilder({
+        'ml.projects.predict':
+            (None, self._make_response_body(error_msg, successful=False))
+    })
+    resource = discovery.build(
+        'ml',
+        'v1',
+        http=http.HttpMock(self._discovery_testdata_dir,
+                           {'status': http_client.OK}),
+        requestBuilder=builder)
+    with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
+      response_mock.side_effect = lambda service, version: resource
+      inference_spec_type = model_spec_pb2.InferenceSpecType(
+          ai_platform_prediction_model_spec=model_spec_pb2
+          .AIPlatformPredictionModelSpec(
               project_id='test-project',
               model_name='test-model',
           ))
 
       try:
-        self._set_up_pipeline(inference_endpoint)
+        self._set_up_pipeline(inference_spec_type)
         self._run_inference_with_beam()
       except ValueError as exc:
         actual_error_msg = str(exc)
@@ -550,12 +542,12 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         self.fail('Test was expected to throw ValueError exception')
 
   def test_exception_raised_when_project_id_is_empty(self):
-    inference_endpoint = model_spec_pb2.InferenceEndpoint(
-        model_endpoint_spec=model_spec_pb2.ModelEndpointSpec(
-            model_name='test-model',))
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+        ai_platform_prediction_model_spec=model_spec_pb2
+        .AIPlatformPredictionModelSpec(model_name='test-model',))
 
     with self.assertRaises(ValueError):
-      self._set_up_pipeline(inference_endpoint)
+      self._set_up_pipeline(inference_spec_type)
       self._run_inference_with_beam()
 
   def test_request_body_with_binary_data(self):

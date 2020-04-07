@@ -15,14 +15,27 @@ syntax = "proto3";
 
 package tfx_bsl.model_spec;
 
-// Specifies the model by which inference is performed.
-message InferenceEndpoint {
+// Specifies how the model is hosted to recieve inference requests.
+message InferenceSpecType {
   oneof type {
+    // Use `saved_model_spec` if the model is loaded in memory and
+    // inference is performed locally.
     SavedModelSpec saved_model_spec = 1;
-    ModelEndpointSpec model_endpoint_spec = 2;
+
+    // Use `ai_platform_prediction_model_spec` if the model is uploaded to
+    // Google Cloud AI Platform Prediction and inference will be executed
+    // remotely.
+    // This requires users deploy their models to
+    // [Google Cloud AI Platform online
+    // predictions](https://cloud.google.com/ai-platform/prediction/docs/online-predict)
+    // before using this. Users are responsible for the model lifecycle and
+    // authorization.
+    // TODO(b/151468119): Update user guide.
+    AIPlatformPredictionModelSpec ai_platform_prediction_model_spec = 2;
   }
 }
 
+// Used for models which are loaded in memory and run locally.
 message SavedModelSpec {
   // Path to the model.
   string model_path = 1;
@@ -31,6 +44,8 @@ message SavedModelSpec {
   // signature names are specified, inference is done as a multi head model.
   // If nothing is specified, default serving signature is used as a single
   // head model.
+  // If not specified, tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+  // will be used.
   repeated string signature_name = 2;
 
   // Tags to select a specific inference graph from the model.
@@ -41,13 +56,27 @@ message SavedModelSpec {
   repeated string tag = 3;
 }
 
-message ModelEndpointSpec {
+// Used for models which are hosted in Google
+// [Cloud AI Platform
+// Prediction](https://cloud.google.com/ai-platform/prediction/docs/online-predict)
+// You may need to set up the authorization as described in the link above.
+// If you run the job on Dataflow, please make sure the
+// [controller service
+// account](https://cloud.google.com/dataflow/docs/concepts/security-and-permissions#controller_service_account)
+// has access to your asset (model and data).
+message AIPlatformPredictionModelSpec {
+  // Optional.
   // The ID of the Google Cloud project containing the model.
+  // If not provided, project flag in beam pipeline option will be
+  // used.
   string project_id = 1;
 
+  // Required.
   // The name of the model.
   string model_name = 2;
 
+  // Optional.
   // The name of the model's version.
+  // If not specified, version won't be attached to the request.
   string version_name = 3;
 }

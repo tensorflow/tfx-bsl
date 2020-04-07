@@ -8,11 +8,16 @@
 
 ## Breaking Changes
 
+*   Renamed ModelEndpointSpec to AIPlatformPredictionModelSpec to specify remote
+    model endpoint on Google Cloud Platform.
+*   Renamed InferenceEndpoint to InferenceSpecType.
+
 ## Deprecations
 
 # Release 0.21.4
 
 ## Major Features and Improvements
+
 *   Added a tfxio.telemetry.ProfileRecordBatches, a PTransform to collect
     telemetry from Arrow RecordBatches.
 *   Added remote model inference on Google Cloud Platform.
