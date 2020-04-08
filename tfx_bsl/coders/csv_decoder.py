@@ -24,9 +24,10 @@ import csv
 import apache_beam as beam
 import enum
 import numpy as np
+import pyarrow as pa
 import six
 import tensorflow as tf
-from typing import Any, Dict, List, Text, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Union
 
 from tensorflow_metadata.proto.v0 import statistics_pb2
 
@@ -62,8 +63,6 @@ ColumnInfo = collections.namedtuple(
 class ParseCSVLine(beam.DoFn):
   """A beam.DoFn to parse CSVLines into List[CSVCell]."""
 
-  __slots__ = ["_delimiter", "_reader"]
-
   def __init__(self, delimiter: Union[Text, bytes]):
     self._delimiter = delimiter
     self._reader = None
@@ -83,11 +82,21 @@ class ColumnTypeInferrer(beam.CombineFn):
   Its input can be produced by ParseCSVLine().
   """
 
-  def __init__(self, column_names: List[ColumnName],
-               skip_blank_lines: bool) -> None:
+  def __init__(
+      self,
+      column_names: List[ColumnName],
+      skip_blank_lines: bool,
+      multivalent_columns: Optional[Set[ColumnName]] = None,
+      secondary_delimiter: Optional[Union[Text, bytes]] = None) -> None:
     """Initializes a feature type inferrer combiner."""
     self._column_names = column_names
     self._skip_blank_lines = skip_blank_lines
+    self._multivalent_columns = (
+        multivalent_columns if multivalent_columns is not None else set())
+    if multivalent_columns:
+      assert secondary_delimiter, ("secondary_delimiter must be specified if "
+                                   "there are multivalent columns")
+      self._multivalent_reader = _CSVRecordReader(secondary_delimiter)
 
   def create_accumulator(self) -> Dict[ColumnName, ColumnType]:
     """Creates an empty accumulator to keep track of the feature types."""
@@ -120,8 +129,13 @@ class ColumnTypeInferrer(beam.CombineFn):
 
       # Get the already inferred type of the feature.
       previous_type = accumulator.get(column_name, None)
-      # Infer the type from the current feature value.
-      current_type = _infer_value_type(cell)
+      if column_name in self._multivalent_columns:
+        current_type = max([
+            _infer_value_type(value)
+            for value in self._multivalent_reader.read_line(cell)
+        ])
+      else:
+        current_type = _infer_value_type(cell)
 
       # If the type inferred from the current value is higher in the type
       # hierarchy compared to the already inferred type, we update the type.
@@ -162,10 +176,91 @@ class ColumnTypeInferrer(beam.CombineFn):
     ]
 
 
+@beam.typehints.with_input_types(List[List[CSVCell]], List[ColumnInfo])
+@beam.typehints.with_output_types(pa.RecordBatch)
+class BatchedCSVRowsToRecordBatch(beam.DoFn):
+  """DoFn to convert a batch of csv rows to a RecordBatch."""
+
+  def __init__(self,
+               skip_blank_lines: bool,
+               multivalent_columns: Optional[Set[ColumnName]] = None,
+               secondary_delimiter: Optional[Union[Text, bytes]] = None):
+    self._skip_blank_lines = skip_blank_lines
+    self._multivalent_columns = (
+        multivalent_columns if multivalent_columns is not None else set())
+    if multivalent_columns:
+      assert secondary_delimiter, ("secondary_delimiter must be specified if "
+                                   "there are multivalent columns")
+      self._multivalent_reader = _CSVRecordReader(secondary_delimiter)
+
+    self._column_handlers = None
+    self._column_names = None
+    self._column_arrow_types = None
+
+  def _get_column_handler(
+      self, column_info: ColumnInfo
+  ) -> Callable[[CSVCell], Optional[Iterable[Union[int, float, bytes, Text]]]]:
+    value_converter = _VALUE_CONVERTER_MAP[column_info.type]
+    if column_info.name in self._multivalent_columns:
+      # If the column is multivalent and unknown, we treat it as a univalent
+      # column. This will result in a null array instead of a list<null>", as
+      # TFDV does not support list<null>.
+      if column_info.type is ColumnType.UNKNOWN:
+        return lambda v: None
+      return lambda v: [  # pylint: disable=g-long-lambda
+          value_converter(sub_v)
+          for sub_v in self._multivalent_reader.read_line(v)
+      ]
+    else:
+      return lambda v: (value_converter(v),)
+
+  def _process_column_infos(self, column_infos: List[ColumnInfo]):
+    self._column_arrow_types = [_ARROW_TYPE_MAP[c.type] for c in column_infos]
+    self._column_handlers = [self._get_column_handler(c) for c in column_infos]
+    self._column_names = [c.name for c in column_infos]
+
+  def process(self, batch: List[List[CSVCell]],
+              column_infos: List[ColumnInfo]) -> Iterable[pa.RecordBatch]:
+    if self._column_names is None:
+      self._process_column_infos(column_infos)
+
+    values_list_by_column = [[] for _ in self._column_handlers]
+    for csv_row in batch:
+      if not csv_row:
+        if not self._skip_blank_lines:
+          for l in values_list_by_column:
+            l.append(None)
+        continue
+      if len(csv_row) != len(self._column_handlers):
+        raise ValueError("Encountered a row of unexpected number of columns")
+      for value, handler, values_list in (zip(csv_row, self._column_handlers,
+                                              values_list_by_column)):
+        values_list.append(handler(value) if value else None)
+
+    arrow_arrays = [
+        pa.array(l, type=t)
+        for l, t in zip(values_list_by_column, self._column_arrow_types)
+    ]
+    yield pa.RecordBatch.from_arrays(arrow_arrays, self._column_names)
+
+
+_VALUE_CONVERTER_MAP = {
+    ColumnType.UNKNOWN: lambda x: None,
+    ColumnType.INT: int,
+    ColumnType.FLOAT: float,
+    ColumnType.STRING: lambda x: x,
+}
+
+_ARROW_TYPE_MAP = {
+    ColumnType.UNKNOWN: pa.null(),
+    ColumnType.INT: pa.list_(pa.int64()),
+    ColumnType.FLOAT: pa.list_(pa.float32()),
+    ColumnType.STRING: pa.list_(pa.binary()),
+}
+
+
 class _CSVRecordReader(object):
   """A picklable wrapper for csv.reader that can decode one record at a time."""
-
-  __slots__ = ["_delimiter", "_line_iterator", "_reader", "_to_reader_input"]
 
   def __init__(self, delimiter: Union[Text, bytes]):
     self._delimiter = delimiter

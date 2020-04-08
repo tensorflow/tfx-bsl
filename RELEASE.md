@@ -6,6 +6,8 @@
 
 ## Bug Fixes and Other Changes
 
+*   CSV coder support for multivalent columns.
+
 ## Breaking Changes
 
 *   Renamed ModelEndpointSpec to AIPlatformPredictionModelSpec to specify remote
