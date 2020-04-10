@@ -87,23 +87,68 @@ class RecordBasedTFXIO(tfxio.TFXIO):
   def SupportAttachingRawRecords(self) -> bool:
     return False
 
-  @abc.abstractmethod
   def RawRecordBeamSource(self) -> beam.PTransform:
-    """Returns a PTransform that produces a PCollection[bytes]."""
+    """Returns a PTransform that produces a PCollection[bytes].
 
-  @abc.abstractmethod
+    Used together with RawRecordToRecordBatch(), it allows getting both the
+    PCollection of the raw records and the PCollection of the RecordBatch from
+    the same source. For example:
+
+    record_batch = pipeline | tfxio.BeamSource()
+    raw_record = pipeline | tfxio.RawRecordBeamSource()
+
+    would result in the files being read twice, while the following would only
+    read once:
+
+    raw_record = pipeline | tfxio.RawRecordBeamSource()
+    record_batch = raw_record | tfxio.RawRecordToRecordBatch()
+    """
+
+    @beam.typehints.with_input_types(beam.Pipeline)
+    @beam.typehints.with_output_types(pa.RecordBatch)
+    def _PTransformFn(pipeline: beam.Pipeline):
+      return (pipeline | "ReadRawRecords" >> self.RawRecordBeamSourceInternal()
+              | "CollectRawRecordTelemetry" >> telemetry.ProfileRawRecords(
+                  self._telemetry_descriptors, self._logical_format,
+                  self._physical_format))
+
+    return beam.ptransform_fn(_PTransformFn)()
+
   def RawRecordToRecordBatch(self,
                              batch_size: Optional[int] = None
                             ) -> beam.PTransform:
     """Returns a PTransform that converts raw records to Arrow RecordBatches.
 
-    The PTransform takes PCollection[bytes] and outputs
-    PCollection[RecordBatches].
+    The input PCollection must be from self.RawRecordBeamSource() (also see
+    the documentation for that method).
 
     Args:
       batch_size: if not None, the `pa.RecordBatch` produced will be of the
         specified size. Otherwise it's automatically tuned by Beam.
     """
+
+    @beam.typehints.with_input_types(bytes)
+    @beam.typehints.with_output_types(pa.RecordBatch)
+    def _PTransformFn(pcoll: beam.pvalue.PCollection):
+      return (pcoll
+              | "RawRecordToRecordBatch" >>
+              self.RawRecordToRecordBatchInternal(batch_size)
+              | "CollectRecordBatchTelemetry" >>
+              telemetry.ProfileRecordBatches(self._telemetry_descriptors,
+                                             self._logical_format,
+                                             self._physical_format))
+
+    return beam.ptransform_fn(_PTransformFn)()
+
+  @abc.abstractmethod
+  def RawRecordBeamSourceInternal(self) -> beam.PTransform:
+    """Returns a PTransform that produces a PCollection[bytes]."""
+
+  @abc.abstractmethod
+  def RawRecordToRecordBatchInternal(self,
+                                     batch_size: Optional[int] = None
+                                    ) -> beam.PTransform:
+    """Returns a PTransform that converts raw records to Arrow RecordBatches."""
     pass
 
   @abc.abstractmethod
@@ -130,23 +175,16 @@ class RecordBasedTFXIO(tfxio.TFXIO):
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
 
-    @beam.ptransform_fn
     @beam.typehints.with_input_types(beam.Pipeline)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(pipeline: beam.pvalue.PCollection):
       """Converts raw records to RecordBatches."""
       return (
           pipeline
-          | "ReadRawRecords" >> self.RawRecordBeamSource()
-          | "CollectRawRecordTelemetry" >> telemetry.ProfileRawRecords(
-              self._telemetry_descriptors,
-              self._logical_format, self._physical_format)
-          | "RawRecordToRecordBatch" >> self.RawRecordToRecordBatch(batch_size)
-          | "CollectRecordBatcheTelemetry" >> telemetry.ProfileRecordBatches(
-              self._telemetry_descriptors,
-              self._logical_format, self._physical_format))
+          | "RawRecordBeamSource" >> self.RawRecordBeamSource()
+          | "RawRecordToRecordBatch" >> self.RawRecordToRecordBatch(batch_size))
 
-    return _PTransformFn()  # pylint: disable=no-value-for-parameter
+    return beam.ptransform_fn(_PTransformFn)()
 
 
 def CreateRawRecordColumn(raw_records: List[bytes]) -> pa.Array:

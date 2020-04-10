@@ -69,16 +69,16 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   def _SerializedExamplesSource(self) -> beam.PTransform:
     """Returns a PTransform that produces PCollection[bytes]."""
 
-  def RawRecordBeamSource(self) -> beam.PTransform:
+  def RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return self._SerializedExamplesSource()
 
-  def RawRecordToRecordBatch(self,
-                             batch_size: Optional[int] = None
-                            ) -> beam.PTransform:
-    @beam.ptransform_fn
+  def RawRecordToRecordBatchInternal(self,
+                                     batch_size: Optional[int] = None
+                                    ) -> beam.PTransform:
+
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
-    def _ptransform_fn(raw_records_pcoll: beam.pvalue.PCollection):
+    def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
       return (
           raw_records_pcoll
           | "Batch" >> beam.BatchElements(
@@ -87,7 +87,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
               _DecodeBatchExamplesDoFn(self._schema,
                                        self.raw_record_column_name)))
 
-    return _ptransform_fn()  # pylint: disable=no-value-for-parameter
+    return beam.ptransform_fn(_PTransformFn)()
 
   def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
     if not self._schema:
