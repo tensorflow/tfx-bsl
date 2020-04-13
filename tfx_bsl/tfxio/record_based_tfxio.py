@@ -105,7 +105,7 @@ class RecordBasedTFXIO(tfxio.TFXIO):
     """
 
     @beam.typehints.with_input_types(beam.Pipeline)
-    @beam.typehints.with_output_types(pa.RecordBatch)
+    @beam.typehints.with_output_types(bytes)
     def _PTransformFn(pipeline: beam.Pipeline):
       return (pipeline | "ReadRawRecords" >> self.RawRecordBeamSourceInternal()
               | "CollectRawRecordTelemetry" >> telemetry.ProfileRawRecords(

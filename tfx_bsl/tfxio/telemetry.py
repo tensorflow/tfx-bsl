@@ -63,8 +63,8 @@ def ProfileRecordBatches(
                               physical_format, distribution_update_probability))
 
 
-@beam.typehints.with_input_types(pa.RecordBatch)
-@beam.typehints.with_output_types(pa.RecordBatch)
+@beam.typehints.with_input_types(bytes)
+@beam.typehints.with_output_types(bytes)
 @beam.ptransform_fn
 def ProfileRawRecords(
     pcoll: beam.pvalue.PCollection,
