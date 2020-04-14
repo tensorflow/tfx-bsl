@@ -31,6 +31,22 @@ namespace tfx_bsl {
 // Decoder
 
 namespace {
+
+absl::string_view KindToStr(tensorflow::Feature::KindCase kind) {
+  switch (kind) {
+    case tensorflow::Feature::kBytesList:
+      return "bytes_list";
+    case tensorflow::Feature::kFloatList:
+      return "float_list";
+    case tensorflow::Feature::kInt64List:
+      return "int64_list";
+    case tensorflow::Feature::KIND_NOT_SET:
+      return "kind-not-set";
+    default:
+      return "unknown-kind";
+  }
+}
+
 // Implementation notes:
 // a ~5x improvement in parsing performance (which is ~70% of
 // parsing+arrow_building) is possible if we directly use
@@ -120,7 +136,9 @@ class FloatDecoder : public FeatureDecoder {
   Status DecodeFeatureValues(
       const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kFloatList) {
-      return errors::InvalidArgument("Feature had wrong type");
+      return errors::InvalidArgument(
+          absl::StrCat("Feature had wrong type, expected float_list, found ",
+                       KindToStr(feature.kind_case())));
     }
     for (float value : feature.float_list().value()) {
       TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
@@ -152,7 +170,9 @@ class IntDecoder : public FeatureDecoder {
   Status DecodeFeatureValues(
       const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kInt64List) {
-      return errors::InvalidArgument("Feature had wrong type");
+      return errors::InvalidArgument(
+          absl::StrCat("Feature had wrong type, expected in64_list, found ",
+                       KindToStr(feature.kind_case())));
     }
     for (auto value : feature.int64_list().value()) {
       TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
@@ -183,7 +203,9 @@ class BytesDecoder : public FeatureDecoder {
   Status DecodeFeatureValues(
       const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kBytesList) {
-      return errors::InvalidArgument("Feature had wrong type");
+      return errors::InvalidArgument(
+          absl::StrCat("Feature had wrong type, expected bytes_list, found ",
+                       KindToStr(feature.kind_case())));
     }
     for (const std::string& value : feature.bytes_list().value()) {
       TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
@@ -274,7 +296,12 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
       }
       const auto it = feature_decoders_->find(feature_name);
       if (it != feature_decoders_->end()) {
-        TFX_BSL_RETURN_IF_ERROR(it->second->DecodeFeature(feature));
+        Status status = it->second->DecodeFeature(feature);
+        if (!status.ok()) {
+          return Status(status.code(),
+                        absl::StrCat(status.error_message(), " for feature \"",
+                        feature_name, "\""));
+        }
       }
     }
     for (const auto& p : *feature_decoders_) {
@@ -345,7 +372,12 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
         }
       }
       if (feature_decoder) {
-        TFX_BSL_RETURN_IF_ERROR(feature_decoder->DecodeFeature(feature));
+        Status status = feature_decoder->DecodeFeature(feature);
+        if (!status.ok()) {
+          return Status(status.code(),
+                        absl::StrCat(status.error_message(), " for feature \"",
+                        feature_name, "\""));
+        }
       }
     }
 

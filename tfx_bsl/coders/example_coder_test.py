@@ -162,7 +162,9 @@ _INVALID_INPUT_CASES = [
         """
         ],
         error=RuntimeError,
-        error_msg_regex="Feature had wrong type",
+        error_msg_regex=(
+            "Feature had wrong type, expected bytes_list, found float_list "
+            "for feature \"a\""),
     ),
     dict(
         testcase_name="no_schema_mixed_type",
@@ -175,7 +177,9 @@ _INVALID_INPUT_CASES = [
         """
         ],
         error=RuntimeError,
-        error_msg_regex="Feature had wrong type",
+        error_msg_regex=(
+            "Feature had wrong type, expected float_list, found int64_list"
+            " for feature \"a\""),
     ),
 ]
 
