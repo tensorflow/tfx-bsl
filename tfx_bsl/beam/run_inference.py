@@ -23,7 +23,6 @@ import base64
 import collections
 import os
 import platform
-import six
 import sys
 import time
 try:
@@ -33,20 +32,22 @@ except ImportError:
 
 from absl import logging
 import apache_beam as beam
-from apache_beam.utils import retry
 from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.utils import retry
 import googleapiclient
 from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
+import six
 import tensorflow as tf
 from tfx_bsl.beam import shared
-from tfx_bsl.proto import model_spec_pb2
+from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
     Tuple, Union
 
+# TODO(b/140306674): stop using the internal TF API.
 from tensorflow.python.saved_model import loader_impl
 from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
@@ -62,15 +63,9 @@ try:
   from tensorflow.contrib.boosted_trees.python.ops import quantile_ops as _  # pylint: disable=unused-import
 except ImportError:
   pass
-# TODO(b/140306674): stop using the internal TF API.
-from tensorflow.python.saved_model import loader_impl  # pylint: disable=g-direct-tensorflow-import
-from tensorflow_serving.apis import classification_pb2
-from tensorflow_serving.apis import inference_pb2
-from tensorflow_serving.apis import prediction_log_pb2
-from tensorflow_serving.apis import regression_pb2
 
 _DEFAULT_INPUT_KEY = 'examples'
-_METRICS_DESCRIPTOR = 'BulkInferrer'
+_METRICS_DESCRIPTOR_INFERENCE = 'BulkInferrer'
 _METRICS_DESCRIPTOR_IN_PROCESS = 'InProcess'
 _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION = 'CloudAIPlatformPrediction'
 _MILLISECOND_TO_MICROSECOND = 1000
@@ -104,23 +99,11 @@ class OperationType(object):
 @beam.typehints.with_input_types(Union[tf.train.Example,
                                        tf.train.SequenceExample])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInference(  # pylint: disable=invalid-name
+def RunInferenceImpl(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType
 ) -> beam.pvalue.PCollection:
-  """Run inference with a model.
-
-   There are two types of inference you can perform using this PTransform:
-   1. In-process inference from a SavedModel instance. Used when
-     `saved_model_spec` field is set in `inference_spec_type`.
-   2. Remote inference by using a service endpoint. Used when
-     `ai_platform_prediction_model_spec` field is set in
-     `inference_spec_type`.
-
-  TODO(b/131873699): Add support for the following features:
-  1. Bytes as Input.
-  2. PTable input.
-  3. Models as beam side-input.
+  """Implementation of RunInference API.
 
   Args:
     examples: A PCollection containing examples.
@@ -135,18 +118,18 @@ def RunInference(  # pylint: disable=invalid-name
   logging.info('RunInference on model: %s', inference_spec_type)
 
   batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
-  operation = _get_operation_type(inference_spec_type)
-  if operation == OperationType.CLASSIFICATION:
+  operation_type = _get_operation_type(inference_spec_type)
+  if operation_type == OperationType.CLASSIFICATION:
     return batched_examples | 'Classify' >> _Classify(inference_spec_type)
-  elif operation == OperationType.REGRESSION:
+  elif operation_type == OperationType.REGRESSION:
     return batched_examples | 'Regress' >> _Regress(inference_spec_type)
-  elif operation == OperationType.PREDICTION:
+  elif operation_type == OperationType.PREDICTION:
     return batched_examples | 'Predict' >> _Predict(inference_spec_type)
-  elif operation == OperationType.MULTIHEAD:
+  elif operation_type == OperationType.MULTIHEAD:
     return (batched_examples
             | 'MultiInference' >> _MultiInference(inference_spec_type))
   else:
-    raise ValueError('Unsupported operation %s' % operation)
+    raise ValueError('Unsupported operation_type %s' % operation_type)
 
 
 _IOTensorSpec = collections.namedtuple(
@@ -237,18 +220,15 @@ class _BaseDoFn(beam.DoFn):
     """A collector for beam metrics."""
 
     def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
-      # Metrics cache
-      self.load_model_latency_milli_secs_cache = None
-      self.model_byte_size_cache = None
+      operation_type = _get_operation_type(inference_spec_type)
+      proximity_descriptor = (
+          _METRICS_DESCRIPTOR_IN_PROCESS
+          if _using_in_process_inference(inference_spec_type) else
+          _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
+      namespace = util.MakeTfxNamespace(
+          [_METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
 
-      # TODO(b/151468119): Update metrics descriptor whitelist.
-      if _using_in_process_inference(inference_spec_type):
-        descriptors = [_METRICS_DESCRIPTOR, _METRICS_DESCRIPTOR_IN_PROCESS]
-      else:
-        descriptors = [
-            _METRICS_DESCRIPTOR, _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION
-        ]
-      namespace = util.MakeTfxNamespace(descriptors)
+      # Metrics
       self._inference_counter = beam.metrics.Metrics.counter(
           namespace, 'num_inferences')
       self._num_instances = beam.metrics.Metrics.counter(
@@ -267,6 +247,10 @@ class _BaseDoFn(beam.DoFn):
       # Model load latency in milliseconds.
       self._load_model_latency_milli_secs = beam.metrics.Metrics.distribution(
           namespace, 'load_model_latency_milli_secs')
+
+      # Metrics cache
+      self.load_model_latency_milli_secs_cache = None
+      self.model_byte_size_cache = None
 
     def update_metrics_with_cache(self):
       if self.load_model_latency_milli_secs_cache is not None:
@@ -295,9 +279,6 @@ class _BaseDoFn(beam.DoFn):
   def setup(self):
     self._clock = _ClockFactory.make_clock()
 
-  def finish_bundle(self):
-    self._metrics_collector.update_metrics_with_cache()
-
   def process(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
   ) -> Iterable[Any]:
@@ -308,6 +289,9 @@ class _BaseDoFn(beam.DoFn):
         elements,
         self._clock.get_current_time_in_microseconds() - batch_start_time)
     return result
+
+  def finish_bundle(self):
+    self._metrics_collector.update_metrics_with_cache()
 
   @abc.abstractmethod
   def run_inference(
@@ -342,6 +326,8 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
                                             tf.train.SequenceExample]])
 # Using output typehints triggers NotImplementedError('BEAM-2717)' on
 # streaming mode on Dataflow runner.
+# TODO(b/151468119): Consider to re-batch with online serving request size
+# limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
 # @beam.typehints.with_output_types(prediction_log_pb2.PredictLog)
 class _RemotePredictDoFn(_BaseDoFn):
   """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
@@ -391,6 +377,8 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   def setup(self):
     super(_RemotePredictDoFn, self).setup()
+    # TODO(b/151468119): Add tfx_bsl_version and tfx_bsl_py_version to
+    # user agent once custom header is supported in googleapiclient.
     self._api_client = discovery.build('ml', 'v1')
 
   # Retry _REMOTE_INFERENCE_NUM_RETRIES times with exponential backoff.
@@ -401,10 +389,10 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _execute_request(
       self,
       request: http.HttpRequest) -> Mapping[Text, Sequence[Mapping[Text, Any]]]:
-    response = request.execute()
-    if 'error' in response:
-      raise ValueError(response['error'])
-    return response
+    result = request.execute()
+    if 'error' in result:
+      raise ValueError(result['error'])
+    return result
 
   def _make_request(self, body: Mapping[Text, List[Any]]) -> http.HttpRequest:
     return self._api_client.projects().predict(
@@ -427,7 +415,8 @@ class _RemotePredictDoFn(_BaseDoFn):
         attr = getattr(feature, attr_name)
         values = cls._parse_feature_content(attr.value, attr_name,
                                             cls._sending_as_binary(input_name))
-        values = cls._maybe_flatten(values)
+        # Flatten a sequence if its length is 1
+        values = (values[0] if len(values) == 1 else values)
         instance[input_name] = values
       yield instance
 
@@ -437,7 +426,7 @@ class _RemotePredictDoFn(_BaseDoFn):
     return input_name.endswith('_bytes')
 
   @staticmethod
-  def _parse_feature_content(values: Iterable[Any], attr_name: Text,
+  def _parse_feature_content(values: Sequence[Any], attr_name: Text,
                              as_binary: bool) -> Sequence[Any]:
     """Parse the content of tf.train.Feature object.
 
@@ -450,21 +439,11 @@ class _RemotePredictDoFn(_BaseDoFn):
     a single attribute named 'b64'.
     """
     if as_binary:
-      values = [{'b64': base64.b64encode(x).decode()} for x in values]
+      return [{'b64': base64.b64encode(x).decode()} for x in values]
     elif attr_name == 'bytes_list':
-      values = [x.decode() for x in values]
+      return [x.decode() for x in values]
     else:
-      values = [x for x in values]
-    return values
-
-  @staticmethod
-  def _maybe_flatten(values: Sequence[Any]) -> Union[Sequence[Any], Any]:
-    """Flatten a sequence if its length is 1."""
-    if len(values) == 1:
-      result = values[0]
-    else:
-      result = values
-    return result
+      return values
 
   def run_inference(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]

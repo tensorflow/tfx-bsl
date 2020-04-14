@@ -4,6 +4,8 @@
 
 ## Major Features and Improvements
 
+*   Moved RunInference API and related protos to tfx_bsl/public directory.
+
 ## Bug Fixes and Other Changes
 
 *   CSV coder support for multivalent columns.

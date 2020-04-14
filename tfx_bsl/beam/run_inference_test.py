@@ -34,7 +34,7 @@ from googleapiclient import http
 from six.moves import http_client
 import tensorflow as tf
 from tfx_bsl.beam import run_inference
-from tfx_bsl.proto import model_spec_pb2
+from tfx_bsl.public.proto import model_spec_pb2
 
 from google.protobuf import text_format
 
@@ -213,7 +213,8 @@ class RunOfflineInferenceTest(RunInferenceFixture):
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-          | 'RunInference' >> run_inference.RunInference(inference_spec_type)
+          |
+          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -414,7 +415,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     _ = (
         pipeline | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
         | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInference(inference_spec_type))
+        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -474,7 +475,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         self.pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
         | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInference(inference_spec_type))
+        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()

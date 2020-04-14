@@ -7,7 +7,7 @@ config_setting(
     ],
 )
 
-_public_protos = ["//tfx_bsl/proto:public_protos"]
+_public_protos = ["//tfx_bsl/public/proto:public_protos"]
 
 _py_extension = select({
     ":windows": [
