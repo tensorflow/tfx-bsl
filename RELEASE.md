@@ -5,10 +5,10 @@
 ## Major Features and Improvements
 
 *   Moved RunInference API and related protos to tfx_bsl/public directory.
+*   CSV coder support for multivalent columns.
+*   tf.Exmaple coder support for producing large types (LargeList, LargeBinary).
 
 ## Bug Fixes and Other Changes
-
-*   CSV coder support for multivalent columns.
 
 ## Breaking Changes
 

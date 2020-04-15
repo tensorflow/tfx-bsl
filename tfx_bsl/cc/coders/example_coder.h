@@ -33,18 +33,21 @@ namespace tfx_bsl {
 // If a schema is provided then the record batch will contain only the fields
 // from the schema, in the same order as the Schema.  The data type of the
 // schema to determine the field types, with INT, BYTES and FLOAT fields in the
-// schema corresponding to the Arrow data types list[int64], list[binary] and
-// list[float32].
+// schema corresponding to the Arrow data types list_type[int64],
+// list_type[binary_type] and list_type[float32]. Where 'list' could be list or
+// large_list and 'binary_type' could be binary or large_binary, depending
+// on `use_large_types`.
 //
 // If a schema is not provided then the data type will be inferred, and chosen
-// from  list[int64], list[binary] and list[float32].  In the case where no data
-// type can be inferred the arrow null type will be inferred.
+// from list_type[int64], list_type[binary_type] and list_type[float32].  In the
+// case where no data type can be inferred the arrow null type will be inferred.
 
 class FeatureDecoder;
 class ExamplesToRecordBatchDecoder {
  public:
   static Status Make(
       absl::optional<absl::string_view> serialized_schema,
+      bool use_large_types,
       std::unique_ptr<ExamplesToRecordBatchDecoder>* result);
   ~ExamplesToRecordBatchDecoder();
 
@@ -57,6 +60,7 @@ class ExamplesToRecordBatchDecoder {
 
  private:
   ExamplesToRecordBatchDecoder(
+      bool use_large_types,
       std::unique_ptr<const ::tensorflow::metadata::v0::Schema> schema,
       std::unique_ptr<
           absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
@@ -64,15 +68,16 @@ class ExamplesToRecordBatchDecoder {
   Status DecodeFeatureDecodersAvailable(
       const std::vector<absl::string_view>& serialized_examples,
       std::shared_ptr<::arrow::RecordBatch>* record_batch) const;
-  static Status DecodeFeatureDecodersUnavailable(
+  Status DecodeFeatureDecodersUnavailable(
       const std::vector<absl::string_view>& serialized_examples,
-      std::shared_ptr<::arrow::RecordBatch>* record_batch);
+      std::shared_ptr<::arrow::RecordBatch>* record_batch) const;
 
  private:
   const std::unique_ptr<const ::tensorflow::metadata::v0::Schema> schema_;
   const std::unique_ptr<
       absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
       feature_decoders_;
+  const bool use_large_types_;
 };
 
 // Converts a RecordBatch to a list of examples.

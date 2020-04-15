@@ -64,18 +64,22 @@ _TEST_EXAMPLES = [
 ]
 
 
+# pylint: disable=g-long-lambda
 _DECODE_CASES = [
     dict(
         testcase_name="without_schema_simple",
         schema_text_proto=None,
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays([
-            pa.array([None, None, [1.0], None], type=pa.list_(pa.float32())),
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([None, None, [1.0], None], type=list_factory(pa.float32())
+                    ),
             pa.array([None, None, None, None], type=pa.null()),
-            pa.array([[b"a", b"b"], None, None, []], type=pa.list_(
-                pa.binary())),
-            pa.array([[1.0, 2.0], None, None, []], type=pa.list_(pa.float32())),
-            pa.array([[4, 5], None, None, []], type=pa.list_(pa.int64()))
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=list_factory(binary_type)),
+            pa.array([[1.0, 2.0], None, None, []],
+                     type=list_factory(pa.float32())),
+            pa.array([[4, 5], None, None, []], type=list_factory(pa.int64()))
         ], ["v", "w", "x", "y", "z"])),
     dict(
         testcase_name="with_schema_simple",
@@ -93,11 +97,13 @@ _DECODE_CASES = [
           type: INT
         }""",
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays([
-            pa.array([[b"a", b"b"], None, None, []], type=pa.list_(
-                pa.binary())),
-            pa.array([[1.0, 2.0], None, None, []], type=pa.list_(pa.float32())),
-            pa.array([[4, 5], None, None, []], type=pa.list_(pa.int64()))
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=list_factory(binary_type)),
+            pa.array([[1.0, 2.0], None, None, []],
+                     type=list_factory(pa.float32())),
+            pa.array([[4, 5], None, None, []], type=list_factory(pa.int64()))
         ], ["x", "y", "z"])),
     dict(
         testcase_name="ignore_features_not_in_schema",
@@ -112,10 +118,12 @@ _DECODE_CASES = [
         }
         """,
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays([
-            pa.array([[b"a", b"b"], None, None, []], type=pa.list_(
-                pa.binary())),
-            pa.array([[1.0, 2.0], None, None, []], type=pa.list_(pa.float32())),
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=list_factory(binary_type)),
+            pa.array([[1.0, 2.0], None, None, []],
+                     type=list_factory(pa.float32())),
         ], ["x", "y"])),
     dict(
         testcase_name="build_nulls_for_unseen_feature",
@@ -126,8 +134,9 @@ _DECODE_CASES = [
         }
         """,
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays([
-            pa.array([None, None, None, None], type=pa.list_(pa.binary())),
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([None, None, None, None], type=list_factory(binary_type)),
         ], ["a"])),
     dict(
         testcase_name="build_null_for_unset_kind",
@@ -142,10 +151,12 @@ _DECODE_CASES = [
         features { feature { key: "a" value { } } }
         """
         ],
-        expected=pa.RecordBatch.from_arrays([
-            pa.array([None], type=pa.list_(pa.binary())),
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([None], type=list_factory(binary_type)),
         ], ["a"])),
 ]
+# pylint: enable=g-long-lambda
 
 _INVALID_INPUT_CASES = [
     dict(
@@ -187,14 +198,15 @@ _INVALID_INPUT_CASES = [
 class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
   @parameterized.named_parameters(*_DECODE_CASES)
-  def test_decode(self, schema_text_proto, examples_text_proto, expected):
+  def test_decode(self, schema_text_proto, examples_text_proto,
+                  create_expected):
     serialized_examples = [
-        text_format.Merge(pbtxt, tf.train.Example()).SerializeToString()
+        text_format.Parse(pbtxt, tf.train.Example()).SerializeToString()
         for pbtxt in examples_text_proto
     ]
     serialized_schema = None
     if schema_text_proto is not None:
-      serialized_schema = text_format.Merge(
+      serialized_schema = text_format.Parse(
           schema_text_proto, schema_pb2.Schema()).SerializeToString()
 
     if serialized_schema:
@@ -204,6 +216,32 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
     result = coder.DecodeBatch(serialized_examples)
     self.assertIsInstance(result, pa.RecordBatch)
+    expected = create_expected(pa.list_, pa.binary())
+    self.assertTrue(
+        result.equals(expected),
+        "actual: {}\n expected:{}".format(result, expected))
+
+  @parameterized.named_parameters(*_DECODE_CASES)
+  def test_decode_large_types(self, schema_text_proto, examples_text_proto,
+                              create_expected):
+    serialized_examples = [
+        text_format.Parse(pbtxt, tf.train.Example()).SerializeToString()
+        for pbtxt in examples_text_proto
+    ]
+    serialized_schema = None
+    if schema_text_proto is not None:
+      serialized_schema = text_format.Parse(
+          schema_text_proto, schema_pb2.Schema()).SerializeToString()
+
+    if serialized_schema:
+      coder = example_coder.ExamplesToRecordBatchDecoder(
+          serialized_schema=serialized_schema, use_large_types=True)
+    else:
+      coder = example_coder.ExamplesToRecordBatchDecoder(use_large_types=True)
+
+    result = coder.DecodeBatch(serialized_examples)
+    self.assertIsInstance(result, pa.RecordBatch)
+    expected = create_expected(pa.large_list, pa.large_binary())
     self.assertTrue(
         result.equals(expected),
         "actual: {}\n expected:{}".format(result, expected))
@@ -212,12 +250,12 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
   def test_invalid_input(self, schema_text_proto, examples_text_proto, error,
                          error_msg_regex):
     serialized_examples = [
-        text_format.Merge(pbtxt, tf.train.Example()).SerializeToString()
+        text_format.Parse(pbtxt, tf.train.Example()).SerializeToString()
         for pbtxt in examples_text_proto
     ]
     serialized_schema = None
     if schema_text_proto is not None:
-      serialized_schema = text_format.Merge(
+      serialized_schema = text_format.Parse(
           schema_text_proto, schema_pb2.Schema()).SerializeToString()
 
     if serialized_schema:

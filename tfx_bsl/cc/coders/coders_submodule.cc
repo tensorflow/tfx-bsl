@@ -34,24 +34,25 @@ void DefineCodersSubmodule(py::module main_module) {
   m.doc() = "Coders.";
 
   py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
-      .def(py::init([](absl::string_view serialized_schema) {
-             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-             Status s =
-                 ExamplesToRecordBatchDecoder::Make(serialized_schema, &result);
-             if (!s.ok()) {
-               throw std::runtime_error(s.ToString());
-             }
-             return result;
-           }))
-      .def(py::init([] {
-             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-             Status s =
-                 ExamplesToRecordBatchDecoder::Make(absl::nullopt, &result);
-             if (!s.ok()) {
-               throw std::runtime_error(s.ToString());
-             }
-             return result;
-           }))
+      .def(py::init(
+          [](absl::string_view serialized_schema, const bool use_large_types) {
+            std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+            Status s = ExamplesToRecordBatchDecoder::Make(
+                serialized_schema, use_large_types, &result);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+            return result;
+          }), py::arg("serialized_schema"), py::arg("use_large_types") = false)
+      .def(py::init([](const bool use_large_types) {
+        std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+        Status s = ExamplesToRecordBatchDecoder::Make(absl::nullopt,
+                                                      use_large_types, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      }), py::arg("use_large_types") = false)
       .def(
           "DecodeBatch",
           [](ExamplesToRecordBatchDecoder* decoder,
