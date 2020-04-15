@@ -27,7 +27,7 @@ try:
   from tfx_bsl.cc.tfx_bsl_extension.coders import ExampleToNumpyDict
 except ImportError:
   import sys
-  sys.stderr.write("Error importing tfx_bsl_extension.arrow.table_util. "
+  sys.stderr.write("Error importing tfx_bsl_extension.coders. "
                    "Some tfx_bsl functionalities are not available")
 # pylint: enable=g-import-not-at-top
 # pytype: enable=import-error
