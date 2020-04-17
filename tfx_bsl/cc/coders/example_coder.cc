@@ -63,6 +63,8 @@ Status ParseExample(const absl::string_view serialized_example,
 
 // LargeListBuilder and ListBuilder don't share the same base class. We create
 // wrappers of them so the wrappers can share.
+// TODO(b/154119411): we should start always producing LargeList. Clean this
+// up.
 class ListBuilderInterface {
  public:
   virtual ~ListBuilderInterface() = default;
@@ -107,6 +109,8 @@ std::unique_ptr<ListBuilderInterface> MakeListBuilderWrapper(
 
 // BinaryBuilder and LargeBinaryBuilder don't share the same base class. We
 // create wrappers of them so the wrappers can share.
+// TODO(b/154119411): we should start always producing LargeBinary. Clean this
+// up.
 class BinaryBuilderInterface {
  public:
   virtual ~BinaryBuilderInterface() = default;

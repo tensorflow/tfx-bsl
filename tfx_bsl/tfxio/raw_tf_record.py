@@ -18,6 +18,7 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+from absl import logging
 import apache_beam as beam
 import pyarrow as pa
 import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
@@ -50,6 +51,8 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
         telemetry_descriptors=telemetry_descriptors,
         logical_format="bytes",
         physical_format=physical_format)
+    if self._can_produce_large_types:
+      logging.info("We decided to produce LargeList and LargeBinary types.")
 
   def SupportAttachingRawRecords(self) -> bool:
     return True
@@ -65,7 +68,8 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
               | "Batch" >> beam.BatchElements(
                   **record_based_tfxio.GetBatchElementsKwargs(batch_size))
               | "ToRecordBatch" >> beam.Map(_BatchedRecordsToArrow,
-                                            self.raw_record_column_name))
+                                            self.raw_record_column_name,
+                                            self._can_produce_large_types))
 
     return beam.ptransform_fn(_PTransformFn)()
 
@@ -95,8 +99,10 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
 
 
 def _BatchedRecordsToArrow(records: List[bytes],
-                           raw_record_column_name) -> pa.RecordBatch:
-  raw_record_column = record_based_tfxio.CreateRawRecordColumn(records)
+                           raw_record_column_name: Text,
+                           should_produce_large_types: bool) -> pa.RecordBatch:
+  raw_record_column = record_based_tfxio.CreateRawRecordColumn(
+      records, should_produce_large_types)
   return pa.RecordBatch.from_arrays(
       [raw_record_column], [raw_record_column_name])
 

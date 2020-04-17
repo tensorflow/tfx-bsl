@@ -165,12 +165,14 @@ class RecordBasedTFXIO(tfxio.TFXIO):
   def ArrowSchema(self) -> pa.Schema:
     schema = self._ArrowSchemaNoRawRecordColumn()
     if self._raw_record_column_name is not None:
+      column_type = (pa.large_list(pa.large_binary()) if
+                     self._can_produce_large_types else pa.list_(pa.binary()))
       if schema.get_field_index(self._raw_record_column_name) != -1:
         raise ValueError(
             "Raw record column name {} collided with a column in the schema."
             .format(self._raw_record_column_name))
       schema = schema.append(
-          pa.field(self._raw_record_column_name, pa.list_(pa.binary())))
+          pa.field(self._raw_record_column_name, column_type))
     return schema
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
@@ -187,23 +189,29 @@ class RecordBasedTFXIO(tfxio.TFXIO):
     return beam.ptransform_fn(_PTransformFn)()
 
 
-def CreateRawRecordColumn(raw_records: List[bytes]) -> pa.Array:
+def CreateRawRecordColumn(
+    raw_records: List[bytes], produce_large_types: bool) -> pa.Array:
   """Returns an Array that satisfies the requirement of a raw record column."""
-  return pa.ListArray.from_arrays(
+  list_array_factory = (
+      pa.LargeListArray.from_arrays
+      if produce_large_types else pa.ListArray.from_arrays)
+  binary_type = pa.large_binary() if produce_large_types else pa.binary()
+  return list_array_factory(
       np.arange(0, len(raw_records) + 1, dtype=np.int64),
-      pa.array(raw_records, type=pa.binary()))
+      pa.array(raw_records, type=binary_type))
 
 
 def AppendRawRecordColumn(
     record_batch: pa.RecordBatch,
     column_name: Text,
     raw_records: List[bytes],
+    produce_large_types: bool
 ) -> pa.RecordBatch:
   """Appends `raw_records` as a new column in `record_batch`."""
   assert record_batch.num_rows == len(raw_records)
   schema = record_batch.schema
   assert schema.get_field_index(column_name) == -1
-  raw_record_column = CreateRawRecordColumn(raw_records)
+  raw_record_column = CreateRawRecordColumn(raw_records, produce_large_types)
   return pa.RecordBatch.from_arrays(
       list(record_batch.columns) + [raw_record_column],
       list(schema.names) + [column_name])

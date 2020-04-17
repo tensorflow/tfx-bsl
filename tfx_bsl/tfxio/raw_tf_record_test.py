@@ -40,6 +40,10 @@ def _WriteRawRecords(filename):
       w.write(r)
 
 
+def _ProducesLargeTypes(tfxio):
+  return tfxio._can_produce_large_types
+
+
 class RawTfRecordTest(absltest.TestCase):
 
   @classmethod
@@ -56,17 +60,21 @@ class RawTfRecordTest(absltest.TestCase):
     tfxio = raw_tf_record.RawTfRecordTFXIO(
         self._raw_record_file, column_name,
         telemetry_descriptors=telemetry_descriptors)
-    self.assertTrue(
-        tfxio.ArrowSchema(),
-        pa.schema([pa.field(column_name, pa.list_(pa.binary()))]))
+    expected_type = (
+        pa.large_list(pa.large_binary())
+        if _ProducesLargeTypes(tfxio) else pa.list_(pa.binary()))
+
+    got_schema = tfxio.ArrowSchema()
+    self.assertTrue(got_schema.equals(
+        pa.schema([pa.field(column_name, expected_type)])),
+                    "got: {}".format(got_schema))
 
     def _AssertFn(record_batches):
       self.assertLen(record_batches, 1)
       record_batch = record_batches[0]
       self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
       self.assertTrue(record_batch.columns[0].equals(
-          pa.array([[r] for r in _RAW_RECORDS],
-                   type=pa.list_(pa.binary()))))
+          pa.array([[r] for r in _RAW_RECORDS], type=expected_type)))
       tensor_adapter = tfxio.TensorAdapter()
       tensors = tensor_adapter.ToBatchTensors(record_batch)
       self.assertLen(tensors, 1)

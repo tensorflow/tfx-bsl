@@ -150,6 +150,22 @@ class TFXIO(object):
     """
     return tensor_adapter.TensorAdapter(self.TensorAdapterConfig())
 
+  # TODO(b/154119411): Once the support for large types in pyarrow is
+  # complete, all TFXIOs should produce large types, then clean this up (which
+  # will lead to larger clean-ups in concrete TFXIO implementations).
+  @property
+  def _can_produce_large_types(self) -> bool:
+    """Returns whether producing large types is safe.
+
+    Large types are LargeList and LargeBinary. Because some pyarrow version
+    has incomplete support for these types, it's not safe to always produce
+    them. The property value only depends on the pyarrow version so it will
+    not change throughout the life time of the TFXIO.
+
+    Returns: a boolean.
+    """
+    return False
+
 
 class _ProjectedTFXIO(TFXIO):
   """A wrapper of a projected TFXIO to track its origin."""
