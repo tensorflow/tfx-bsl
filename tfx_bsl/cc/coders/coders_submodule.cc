@@ -64,7 +64,19 @@ void DefineCodersSubmodule(py::module main_module) {
             }
             return result;
           },
-          py::call_guard<py::gil_scoped_release>());
+          py::call_guard<py::gil_scoped_release>())
+      .def("ArrowSchema",
+           [](ExamplesToRecordBatchDecoder* decoder) {
+             auto result = decoder->ArrowSchema();
+             if (!result) {
+               throw std::runtime_error(
+                   "ExamplesToRecordBatchDecoder: Unable to get the arrow "
+                   "schema if a TFMD schema was not provided at the "
+                   "construction time.");
+             }
+             return result;
+           }
+          );
 
   // We DO NOT RELEASE the GIL before calling ExampleToNumpyDict. It uses
   // Python C-APIs heavily and assumes GIL is held.

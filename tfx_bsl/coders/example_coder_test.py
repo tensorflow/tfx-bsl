@@ -220,6 +220,8 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     self.assertTrue(
         result.equals(expected),
         "actual: {}\n expected:{}".format(result, expected))
+    if serialized_schema:
+      self.assertTrue(expected.schema.equals(coder.ArrowSchema()))
 
   @parameterized.named_parameters(*_DECODE_CASES)
   def test_decode_large_types(self, schema_text_proto, examples_text_proto,
@@ -245,6 +247,8 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     self.assertTrue(
         result.equals(expected),
         "actual: {}\n expected:{}".format(result, expected))
+    if serialized_schema:
+      self.assertTrue(expected.schema.equals(coder.ArrowSchema()))
 
   @parameterized.named_parameters(*_INVALID_INPUT_CASES)
   def test_invalid_input(self, schema_text_proto, examples_text_proto, error,
@@ -266,6 +270,10 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     with self.assertRaisesRegex(error, error_msg_regex):
       coder.DecodeBatch(serialized_examples)
 
+  def test_arrow_schema_not_available_if_tfmd_schema_not_available(self):
+    coder = example_coder.ExamplesToRecordBatchDecoder()
+    with self.assertRaisesRegex(RuntimeError, "Unable to get the arrow schema"):
+      _ = coder.ArrowSchema()
 
 if __name__ == "__main__":
   absltest.main()

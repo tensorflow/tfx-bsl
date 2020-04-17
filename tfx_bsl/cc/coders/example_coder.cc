@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 #include "absl/container/flat_hash_map.h"
@@ -144,6 +145,37 @@ std::unique_ptr<BinaryBuilderInterface> MakeBinaryBuilderWrapper(
   }
   return absl::make_unique<BinaryBuilderWrapper<arrow::BinaryBuilder>>(
       memory_pool);
+}
+
+Status TfmdFeatureToArrowField(const bool use_large_types,
+                               const tensorflow::metadata::v0::Feature& feature,
+                               std::shared_ptr<arrow::Field>* out) {
+  // Used for disambiguating overloaded functions.
+  using ListFactoryType = std::shared_ptr<arrow::DataType> (*)(
+      const std::shared_ptr<arrow::DataType>&);
+
+  ListFactoryType list_factory = &arrow::list;
+  if (use_large_types) {
+    list_factory = &arrow::large_list;
+  }
+
+  switch (feature.type()) {
+    case tensorflow::metadata::v0::FLOAT:
+      *out = arrow::field(feature.name(), list_factory(arrow::float32()));
+      break;
+    case tensorflow::metadata::v0::INT:
+      *out = arrow::field(feature.name(), list_factory(arrow::int64()));
+      break;
+    case tensorflow::metadata::v0::BYTES: {
+      const auto binary_type =
+          use_large_types ? arrow::large_binary() : arrow::binary();
+      *out = arrow::field(feature.name(), list_factory(binary_type));
+      break;
+    }
+    default:
+      return errors::InvalidArgument("Bad field type");
+  }
+  return Status::OK();
 }
 
 }  // namespace
@@ -297,8 +329,7 @@ class BytesDecoder : public FeatureDecoder {
   std::unique_ptr<BinaryBuilderInterface> values_builder_;
 };
 
-
-Status MakeFeatureDecoder(
+static Status MakeFeatureDecoder(
       const bool large_list,
       const tensorflow::metadata::v0::Feature& feature,
       std::unique_ptr<FeatureDecoder>* out) {
@@ -335,22 +366,27 @@ Status ExamplesToRecordBatchDecoder::Make(
                               serialized_schema->size())) {
     return errors::InvalidArgument("Unable to parse schema.");
   }
+  std::vector<std::shared_ptr<arrow::Field>> arrow_schema_fields;
   for (const tensorflow::metadata::v0::Feature& feature : schema->feature()) {
     TFX_BSL_RETURN_IF_ERROR(MakeFeatureDecoder(
         use_large_types, feature, &(*feature_decoders)[feature.name()]));
+    arrow_schema_fields.emplace_back();
+    TFX_BSL_RETURN_IF_ERROR(TfmdFeatureToArrowField(
+        use_large_types, feature, &arrow_schema_fields.back()));
   }
   *result = absl::WrapUnique(new ExamplesToRecordBatchDecoder(
-      use_large_types, std::move(schema), std::move(feature_decoders)));
+      use_large_types, arrow::schema(std::move(arrow_schema_fields)),
+      std::move(feature_decoders)));
   return Status::OK();
 }
 
 ExamplesToRecordBatchDecoder::ExamplesToRecordBatchDecoder(
     const bool use_large_types,
-    std::unique_ptr<const ::tensorflow::metadata::v0::Schema> schema,
+    std::shared_ptr<arrow::Schema> arrow_schema,
     std::unique_ptr<
         absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
         feature_decoders)
-    : schema_(std::move(schema)),
+    : arrow_schema_(std::move(arrow_schema)),
       feature_decoders_(std::move(feature_decoders)),
       use_large_types_(use_large_types) {}
 
@@ -363,6 +399,11 @@ Status ExamplesToRecordBatchDecoder::DecodeBatch(
              ? DecodeFeatureDecodersAvailable(serialized_examples, record_batch)
              : DecodeFeatureDecodersUnavailable(serialized_examples,
                                                 record_batch);
+}
+
+std::shared_ptr<arrow::Schema> ExamplesToRecordBatchDecoder::ArrowSchema()
+    const {
+  return arrow_schema_;
 }
 
 Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
@@ -394,15 +435,13 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
   }
 
   std::vector<std::shared_ptr<::arrow::Array>> arrays;
-  std::vector<std::shared_ptr<::arrow::Field>> fields;
-  for (const tensorflow::metadata::v0::Feature& feature : schema_->feature()) {
-    FeatureDecoder& decoder = *(*feature_decoders_)[feature.name()];
+  for (const auto& field : arrow_schema_->fields()) {
+    FeatureDecoder& decoder = *(*feature_decoders_)[field->name()];
     arrays.emplace_back();
     TFX_BSL_RETURN_IF_ERROR(decoder.Finish(&arrays.back()));
-    fields.push_back(::arrow::field(feature.name(), arrays.back()->type()));
   }
   *record_batch = ::arrow::RecordBatch::Make(
-      arrow::schema(fields), serialized_examples.size(), arrays);
+      arrow_schema_, serialized_examples.size(), arrays);
   return Status::OK();
 }
 

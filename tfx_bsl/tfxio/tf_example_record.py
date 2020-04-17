@@ -29,7 +29,7 @@ from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
 from tfx_bsl.tfxio import tfxio
-from typing import Dict, List, Optional, Text
+from typing import List, Optional, Text
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -53,8 +53,6 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         logical_format="tf_example",
         physical_format=physical_format)
     self._schema = schema
-    self._feature_type_to_arrow_type = _GetFeatureTypeToArrowTypeMapping(
-        self._can_produce_large_types)
     if self._can_produce_large_types:
       logging.info("We decided to produce LargeList and LargeBinary types.")
 
@@ -92,17 +90,9 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     if not self._schema:
       raise ValueError("TFMD schema not provided. Unable to derive an"
                        "Arrow schema")
-    # TODO(zhuo): consider asking the schema from the decoder, to make it more
-    # consistent.
-    fields = []
-    for f in self._schema.feature:
-      arrow_type = self._feature_type_to_arrow_type.get(f.type)
-      if not arrow_type:
-        raise ValueError("Feature {} has unsupport type {}".format(
-            f.name, f.type))
-      fields.append(pa.field(f.name, arrow_type))
-
-    return pa.schema(fields)
+    return example_coder.ExamplesToRecordBatchDecoder(
+        self._schema.SerializeToString(),
+        self._can_produce_large_types).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     result = (
@@ -224,17 +214,3 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
           decoded, self._raw_record_column_name, examples,
           self._produce_large_types)
 
-
-def _GetFeatureTypeToArrowTypeMapping(
-    large_types: bool) -> Dict[int, pa.DataType]:
-  if large_types:
-    return {
-        schema_pb2.FeatureType.BYTES: pa.large_list(pa.large_binary()),
-        schema_pb2.FeatureType.INT: pa.large_list(pa.int64()),
-        schema_pb2.FeatureType.FLOAT: pa.large_list(pa.float32()),
-    }
-  return {
-      schema_pb2.FeatureType.BYTES: pa.list_(pa.binary()),
-      schema_pb2.FeatureType.INT: pa.list_(pa.int64()),
-      schema_pb2.FeatureType.FLOAT: pa.list_(pa.float32()),
-  }
