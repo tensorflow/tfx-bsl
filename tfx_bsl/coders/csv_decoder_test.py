@@ -26,8 +26,10 @@ from apache_beam.testing import util as beam_test_util
 import numpy as np
 import pyarrow as pa
 from tfx_bsl.coders import csv_decoder
+from google.protobuf import text_format
 from absl.testing import absltest
 from absl.testing import parameterized
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 _TEST_CASES = [
     dict(
@@ -373,7 +375,51 @@ _TEST_CASES = [
             pa.array([[b'test'], [b'test']], pa.list_(pa.binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
-        secondary_delimiter='|')
+        secondary_delimiter='|'),
+    dict(
+        testcase_name='with_schema',
+        input_lines=['1,2.0,hello', '5,12.34,world'],
+        column_names=['int_feature', 'float_feature', 'str_feature'],
+        expected_csv_cells=[
+            [b'1', b'2.0', b'hello'],
+            [b'5', b'12.34', b'world'],
+        ],
+        expected_types=[
+            csv_decoder.ColumnType.INT,
+            csv_decoder.ColumnType.FLOAT,
+            csv_decoder.ColumnType.STRING,
+        ],
+        schema=text_format.Parse(
+            """feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "float_feature"
+                type: FLOAT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "str_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema()),
+        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[1], [5]], pa.list_(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
+            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary()))
+        ], ['int_feature', 'float_feature', 'str_feature'])),
 ]
 
 
@@ -388,6 +434,7 @@ class CSVDecoderTest(parameterized.TestCase):
                            expected_types,
                            expected_record_batch,
                            skip_blank_lines=False,
+                           schema=None,
                            delimiter=',',
                            multivalent_columns=None,
                            secondary_delimiter=None):
@@ -435,10 +482,25 @@ class CSVDecoderTest(parameterized.TestCase):
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
 
+    # Testing CSVToRecordBatch
+    with beam.Pipeline() as p:
+      record_batches = p | 'CreatingPColl' >> beam.Create(
+          input_lines,
+          reshuffle=False) | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
+              column_names=column_names,
+              delimiter=delimiter,
+              skip_blank_lines=skip_blank_lines,
+              desired_batch_size=1000,
+              schema=schema,
+              multivalent_columns=multivalent_columns,
+              secondary_delimiter=secondary_delimiter)
+      beam_test_util.assert_that(
+          record_batches, _check_record_batches, label='check_record_batches')
+
   def test_invalid_row(self):
     input_lines = ['1,2.0,hello', '5,12.34']
     column_names = ['int_feature', 'float_feature', 'str_feature']
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
         ValueError, '.*Columns do not match specified csv headers.*'):
       with beam.Pipeline() as p:
         result = (
@@ -447,6 +509,52 @@ class CSVDecoderTest(parameterized.TestCase):
             | beam.CombineGlobally(
                 csv_decoder.ColumnTypeInferrer(
                     column_names, skip_blank_lines=False)))
+        beam_test_util.assert_that(result, lambda _: None)
+
+  def test_invalid_schema_type(self):
+    input_lines = ['1']
+    column_names = ['f1']
+    schema = text_format.Parse(
+        """
+              feature {
+                name: "struct_feature"
+                type: STRUCT
+              }
+              """, schema_pb2.Schema())
+    with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
+        ValueError, '.*Schema contains invalid type: STRUCT.*'):
+      with beam.Pipeline() as p:
+        result = (
+            p | beam.Create(input_lines, reshuffle=False)
+            | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
+                column_names=column_names,
+                schema=schema,
+                desired_batch_size=1000))
+        beam_test_util.assert_that(result, lambda _: None)
+
+  def test_invalid_schema_missing_column(self):
+    input_lines = ['1,2']
+    column_names = ['f1', 'f2']
+    schema = text_format.Parse(
+        """
+              feature {
+                name: "f1"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema())
+    with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
+        ValueError, '.*Schema does not contain column.*'):
+      with beam.Pipeline() as p:
+        result = (
+            p | beam.Create(input_lines, reshuffle=False)
+            | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
+                column_names=column_names,
+                schema=schema,
+                desired_batch_size=1000))
         beam_test_util.assert_that(result, lambda _: None)
 
 

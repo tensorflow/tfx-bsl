@@ -27,6 +27,7 @@ import apache_beam as beam
 import numpy as np
 import pyarrow as pa
 import six
+from tfx_bsl.coders import batch_util
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
 from typing import List, Optional, Text
@@ -217,18 +218,4 @@ def AppendRawRecordColumn(
       list(schema.names) + [column_name])
 
 
-# Beam might grow the batch size too large for Arrow BinaryArray / ListArray
-# to hold the contents (e.g. if the sum of the length of a string feature in
-# a batch exceeds 2GB). Before the decoder can produce LargeBinaryArray /
-# LargeListArray, we have to cap the batch size.
-_BATCH_SIZE_CAP = 1000
-
-
-def GetBatchElementsKwargs(batch_size: Optional[int]):
-  """Returns the kwargs to pass to beam.BatchElements()."""
-  if batch_size is None:
-    return {"max_batch_size": _BATCH_SIZE_CAP}
-  return {
-      "min_batch_size": batch_size,
-      "max_batch_size": batch_size,
-  }
+GetBatchElementsKwargs = batch_util.GetBatchElementsKwargs

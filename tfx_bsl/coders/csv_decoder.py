@@ -27,8 +27,10 @@ import numpy as np
 import pyarrow as pa
 import six
 import tensorflow as tf
+from tfx_bsl.coders import batch_util
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Union
 
+from tensorflow_metadata.proto.v0 import schema_pb2
 from tensorflow_metadata.proto.v0 import statistics_pb2
 
 
@@ -56,6 +58,78 @@ ColumnInfo = collections.namedtuple(
         "name",  # type: ColumnName  # pytype: disable=ignored-type-comment
         "type",  # type: Optional[ColumnType]  # pytype: disable=ignored-type-comment
     ])
+
+_SCHEMA_TYPE_TO_COLUMN_TYPE = {
+    schema_pb2.INT: ColumnType.INT,
+    schema_pb2.FLOAT: ColumnType.FLOAT,
+    schema_pb2.BYTES: ColumnType.STRING
+}
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(CSVLine)
+@beam.typehints.with_output_types(pa.RecordBatch)
+def CSVToRecordBatch(lines: beam.pvalue.PCollection,
+                     column_names: List[Text],
+                     desired_batch_size: Optional[int],
+                     delimiter: Text = ",",
+                     skip_blank_lines: bool = True,
+                     schema: Optional[schema_pb2.Schema] = None,
+                     multivalent_columns: Optional[List[Union[Text,
+                                                              bytes]]] = None,
+                     secondary_delimiter: Optional[Union[Text, bytes]] = None):
+  """Decodes CSV records into Arrow RecordBatches.
+
+  Args:
+    lines: The pcollection of raw records (csv lines).
+    column_names: List of feature names. Order must match the order in the CSV
+      file.
+    desired_batch_size: Batch size. The output Arrow RecordBatches will have as
+      many rows as the `desired_batch_size`. If None, the batch size is auto
+      tuned by beam.
+    delimiter: A one-character string used to separate fields.
+    skip_blank_lines: A boolean to indicate whether to skip over blank lines
+      rather than interpreting them as missing values.
+    schema: An optional schema of the input data. If this is provided, it must
+      contain all columns.
+    multivalent_columns: Columns that can contain multiple values. If
+      secondary_delimiter is provided, this must also be provided.
+    secondary_delimiter: Delimiter used for parsing multivalent columns. If
+      multivalent_columns is provided, this must also be provided.
+
+  Returns:
+    RecordBatches of the CSV lines.
+
+  Raises:
+    ValueError: If the columns do not match the specified csv headers. Or if the
+                schema has invalid feature types. Or if the schema does not
+                contain all columns.
+  """
+
+  csv_lines = (lines | "ParseCSVLines" >> beam.ParDo(ParseCSVLine(delimiter)))
+
+  if schema is not None:
+    column_infos = _get_feature_types_from_schema(schema, column_names)
+  else:
+    # TODO(b/72746442): Consider using a DeepCopy optimization similar to TFT.
+    # Do first pass to infer the feature types.
+    column_infos = beam.pvalue.AsSingleton(
+        csv_lines | "InferColumnTypes" >> beam.CombineGlobally(
+            ColumnTypeInferrer(
+                column_names=column_names,
+                skip_blank_lines=skip_blank_lines,
+                multivalent_columns=multivalent_columns,
+                secondary_delimiter=secondary_delimiter)))
+
+  # Do second pass to generate the RecordBatches.
+  return (csv_lines
+          | "BatchCSVLines" >> beam.BatchElements(
+              **batch_util.GetBatchElementsKwargs(desired_batch_size))
+          | "BatchedCSVRowsToArrow" >> beam.ParDo(
+              BatchedCSVRowsToRecordBatch(
+                  skip_blank_lines=skip_blank_lines,
+                  multivalent_columns=multivalent_columns,
+                  secondary_delimiter=secondary_delimiter), column_infos))
 
 
 @beam.typehints.with_input_types(CSVLine)
@@ -327,3 +401,24 @@ def _infer_value_type(value: CSVCell) -> ColumnType:
     except ValueError:
       return ColumnType.STRING
     return ColumnType.FLOAT
+
+
+def _get_feature_types_from_schema(
+    schema: schema_pb2.Schema,
+    column_names: List[Union[bytes, Text]]) -> List[ColumnInfo]:
+  """Get statistics feature types from the input schema."""
+  feature_type_map = {}
+  for feature in schema.feature:
+    feature_type = _SCHEMA_TYPE_TO_COLUMN_TYPE.get(feature.type, None)
+    if feature_type is None:
+      raise ValueError("Schema contains invalid type: {}.".format(
+          schema_pb2.FeatureType.Name(feature.type)))
+    feature_type_map[feature.name] = feature_type
+
+  column_infos = []
+  for col_name in column_names:
+    feature_type = feature_type_map.get(col_name, None)
+    if feature_type is None:
+      raise ValueError("Schema does not contain column: {}".format(col_name))
+    column_infos.append(ColumnInfo(col_name, feature_type))
+  return column_infos
