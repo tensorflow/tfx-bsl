@@ -42,8 +42,9 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None,
                telemetry_descriptors: Optional[List[Text]] = None,
-               physical_format: Optional[Text] = None):
-    # TODO(zhuo): make telemetry_descriptors and physical_format required
+               physical_format: Optional[Text] = None,
+               schema_for_decoding: Optional[schema_pb2.Schema] = None):
+    # TODO(b/154648951): make telemetry_descriptors and physical_format required
     # arguments, when TFT's compatibility TFXIO starts setting them.
     if physical_format is None:
       physical_format = "unknown"
@@ -55,6 +56,9 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     self._schema = schema
     if self._can_produce_large_types:
       logging.info("We decided to produce LargeList and LargeBinary types.")
+    if schema_for_decoding is not None:
+      assert schema is not None
+    self._schema_for_decoding = schema_for_decoding
 
   def SupportAttachingRawRecords(self) -> bool:
     return True
@@ -75,23 +79,23 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
-      return (
-          raw_records_pcoll
-          | "Batch" >> beam.BatchElements(
-              **record_based_tfxio.GetBatchElementsKwargs(batch_size))
-          | "Decode" >> beam.ParDo(
-              _DecodeBatchExamplesDoFn(self._schema,
-                                       self.raw_record_column_name,
-                                       self._can_produce_large_types)))
+      return (raw_records_pcoll
+              | "Batch" >> beam.BatchElements(
+                  **record_based_tfxio.GetBatchElementsKwargs(batch_size))
+              | "Decode" >> beam.ParDo(
+                  _DecodeBatchExamplesDoFn(self._GetSchemaForDecoding(),
+                                           self.raw_record_column_name,
+                                           self._can_produce_large_types)))
 
     return beam.ptransform_fn(_PTransformFn)()
 
   def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
-    if not self._schema:
+    schema = self._GetSchemaForDecoding()
+    if schema is None:
       raise ValueError("TFMD schema not provided. Unable to derive an"
                        "Arrow schema")
     return example_coder.ExamplesToRecordBatchDecoder(
-        self._schema.SerializeToString(),
+        schema.SerializeToString(),
         self._can_produce_large_types).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
@@ -131,6 +135,10 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         {k: v for k, v in tensor_representations.items() if k in tensor_names})
 
     return result
+
+  def _GetSchemaForDecoding(self) -> schema_pb2.Schema:
+    return (self._schema
+            if self._schema_for_decoding is None else self._schema_for_decoding)
 
 
 class TFExampleRecord(_TFExampleRecordBase):
@@ -213,4 +221,3 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
       yield record_based_tfxio.AppendRawRecordColumn(
           decoded, self._raw_record_column_name, examples,
           self._produce_large_types)
-
