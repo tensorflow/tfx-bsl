@@ -33,6 +33,7 @@ import apache_beam as beam
 import pyarrow as pa
 import six
 import tensorflow as tf
+from tfx_bsl.arrow import pyarrow_capability
 from tfx_bsl.tfxio import tensor_adapter
 from typing import List, Optional, Text
 
@@ -164,7 +165,8 @@ class TFXIO(object):
 
     Returns: a boolean.
     """
-    return False
+    return (pyarrow_capability.HasFullSupportForLargeList() and
+            pyarrow_capability.HasFullSupportForLargeBinary())
 
 
 class _ProjectedTFXIO(TFXIO):
