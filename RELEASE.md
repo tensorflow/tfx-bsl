@@ -10,6 +10,8 @@
 
 ## Bug Fixes and Other Changes
 
+*   Requires `apache-beam>=2.20,<3`.
+
 ## Breaking Changes
 
 *   Renamed ModelEndpointSpec to AIPlatformPredictionModelSpec to specify remote
