@@ -27,7 +27,6 @@ import apache_beam as beam
 import numpy as np
 import pyarrow as pa
 import six
-from tfx_bsl.coders import batch_util
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
 from typing import List, Optional, Text
@@ -216,6 +215,3 @@ def AppendRawRecordColumn(
   return pa.RecordBatch.from_arrays(
       list(record_batch.columns) + [raw_record_column],
       list(schema.names) + [column_name])
-
-
-GetBatchElementsKwargs = batch_util.GetBatchElementsKwargs

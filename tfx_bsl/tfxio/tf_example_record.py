@@ -24,6 +24,7 @@ from absl import logging
 import apache_beam as beam
 import pyarrow as pa
 import six
+from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import example_coder
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
@@ -81,7 +82,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
       return (raw_records_pcoll
               | "Batch" >> beam.BatchElements(
-                  **record_based_tfxio.GetBatchElementsKwargs(batch_size))
+                  **batch_util.GetBatchElementsKwargs(batch_size))
               | "Decode" >> beam.ParDo(
                   _DecodeBatchExamplesDoFn(self._GetSchemaForDecoding(),
                                            self.raw_record_column_name,

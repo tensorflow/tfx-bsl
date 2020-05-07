@@ -22,6 +22,7 @@ from absl import logging
 import apache_beam as beam
 import pyarrow as pa
 import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
+from tfx_bsl.coders import batch_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tfxio
@@ -66,10 +67,10 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
     def _PTransformFn(raw_record_pcoll: beam.pvalue.PCollection):
       return (raw_record_pcoll
               | "Batch" >> beam.BatchElements(
-                  **record_based_tfxio.GetBatchElementsKwargs(batch_size))
-              | "ToRecordBatch" >> beam.Map(_BatchedRecordsToArrow,
-                                            self.raw_record_column_name,
-                                            self._can_produce_large_types))
+                  **batch_util.GetBatchElementsKwargs(batch_size))
+              | "ToRecordBatch" >>
+              beam.Map(_BatchedRecordsToArrow, self.raw_record_column_name,
+                       self._can_produce_large_types))
 
     return beam.ptransform_fn(_PTransformFn)()
 
