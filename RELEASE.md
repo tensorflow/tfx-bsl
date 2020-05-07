@@ -11,6 +11,7 @@
 ## Bug Fixes and Other Changes
 
 *   Requires `apache-beam>=2.20,<3`.
+*   Requires `pyarrow>=0.16,<0.17`
 
 ## Breaking Changes
 
