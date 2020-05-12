@@ -1,6 +1,6 @@
 # `tfx_bsl` release notes
 
-# Current Version(Still in Development)
+# Release 0.22.0
 
 ## Major Features and Improvements
 
@@ -10,8 +10,9 @@
 
 ## Bug Fixes and Other Changes
 
-*   Requires `apache-beam>=2.20,<3`.
-*   Requires `pyarrow>=0.16,<0.17`
+*   Depends on `apache-beam>=2.20,<3`.
+*   Depends on `pyarrow>=0.16,<0.17`
+*   Depends on `tensorflow-metadata>=0.22,<0.23`
 
 ## Breaking Changes
 
