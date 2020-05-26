@@ -8,6 +8,8 @@
 
 ## Bug Fixes and Other Changes
 
+*   Depends on `pandas>=0.24,<1`.
+
 ## Breaking changes
 
 ## Deprecations

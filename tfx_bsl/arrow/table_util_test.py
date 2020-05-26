@@ -17,6 +17,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import collections
+import pandas as pd
 import pyarrow as pa
 from tfx_bsl.arrow import table_util
 
@@ -467,6 +469,73 @@ class RecordBatchTakeTest(parameterized.TestCase):
         table_util.RecordBatchTake(record_batch,
                                    pa.array([1, 2]))
         .equals(record_batch.slice(1)))
+
+
+class DataFrameToRecordBatchTest(parameterized.TestCase):
+
+  def testDataFrameToRecordBatch(self):
+
+    df_data = pd.DataFrame([{
+        "age": 17,
+        "language": "english",
+        "prediction": False,
+        "label": False,
+        "complex_var": 2 + 3j
+    }, {
+        "age": 30,
+        "language": "spanish",
+        "prediction": True,
+        "label": True,
+        "complex_var": 2 + 3j
+    }])
+
+    expected_fields = {"age", "language", "prediction", "label"}
+    expected_row_counts = collections.Counter({
+        (17, 30): 1,
+        (0, 1): 2,
+        (b"english", b"spanish"): 1
+    })
+
+    rb_data = table_util.DataFrameToRecordBatch(df_data)
+    self.assertSetEqual(set(rb_data.schema.names), expected_fields)
+
+    actual_row_counts = collections.Counter()
+    for col in rb_data.columns:
+      row = tuple(col)
+      actual_row_counts[row] += 1
+    self.assertDictEqual(actual_row_counts, expected_row_counts)
+
+    canonicalized_rb_data = table_util.CanonicalizeRecordBatch(rb_data)
+    self.assertSetEqual(
+        set(canonicalized_rb_data.schema.names), expected_fields)
+
+    actual_row_counts = collections.Counter()
+    for col in canonicalized_rb_data.columns:
+      row = (col[0][0], col[1][0])
+      actual_row_counts[row] += 1
+    self.assertDictEqual(actual_row_counts, expected_row_counts)
+
+    expected_age_column = pa.array([[17], [30]], type=pa.list_(pa.int64()))
+    expected_language_column = pa.array([["english"], ["spanish"]],
+                                        type=pa.list_(pa.binary()))
+    expected_prediction_column = pa.array([[0], [1]], type=pa.list_(pa.int8()))
+    expected_label_column = pa.array([[0], [1]], type=pa.list_(pa.int8()))
+    self.assertTrue(
+        canonicalized_rb_data.column(
+            canonicalized_rb_data.schema.get_field_index("age")).equals(
+                expected_age_column))
+    self.assertTrue(
+        canonicalized_rb_data.column(
+            canonicalized_rb_data.schema.get_field_index("language")).equals(
+                expected_language_column))
+    self.assertTrue(
+        canonicalized_rb_data.column(
+            canonicalized_rb_data.schema.get_field_index("prediction")).equals(
+                expected_prediction_column))
+    self.assertTrue(
+        canonicalized_rb_data.column(
+            canonicalized_rb_data.schema.get_field_index("label")).equals(
+                expected_label_column))
 
 
 if __name__ == "__main__":
