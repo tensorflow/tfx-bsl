@@ -4,6 +4,8 @@
 
 ## Major Features and Improvements
 
+*   Added SequenceExamplesToRecordBatchDecoder.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking changes
