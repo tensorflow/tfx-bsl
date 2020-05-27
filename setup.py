@@ -96,6 +96,7 @@ setup(
         'apache-beam[gcp]>=2.20,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
+        'pandas>=0.24,<1',
         'protobuf>=3.7,<4',
         'six>=1.12,<2',
         'tensorflow>=1.15,<3',

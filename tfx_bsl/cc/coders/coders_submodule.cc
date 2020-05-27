@@ -34,25 +34,27 @@ void DefineCodersSubmodule(py::module main_module) {
   m.doc() = "Coders.";
 
   py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
-      .def(py::init(
-          [](absl::string_view serialized_schema, const bool use_large_types) {
-            std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-            Status s = ExamplesToRecordBatchDecoder::Make(
-                serialized_schema, use_large_types, &result);
-            if (!s.ok()) {
-              throw std::runtime_error(s.ToString());
-            }
-            return result;
-          }), py::arg("serialized_schema"), py::arg("use_large_types") = false)
+      .def(py::init([](absl::string_view serialized_schema,
+                       const bool use_large_types) {
+             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+             Status s = ExamplesToRecordBatchDecoder::Make(
+                 serialized_schema, use_large_types, &result);
+             if (!s.ok()) {
+               throw std::runtime_error(s.ToString());
+             }
+             return result;
+           }),
+           py::arg("serialized_schema"), py::arg("use_large_types") = false)
       .def(py::init([](const bool use_large_types) {
-        std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-        Status s = ExamplesToRecordBatchDecoder::Make(absl::nullopt,
-                                                      use_large_types, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      }), py::arg("use_large_types") = false)
+             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
+             Status s = ExamplesToRecordBatchDecoder::Make(
+                 absl::nullopt, use_large_types, &result);
+             if (!s.ok()) {
+               throw std::runtime_error(s.ToString());
+             }
+             return result;
+           }),
+           py::arg("use_large_types") = false)
       .def(
           "DecodeBatch",
           [](ExamplesToRecordBatchDecoder* decoder,
@@ -75,8 +77,46 @@ void DefineCodersSubmodule(py::module main_module) {
                    "construction time.");
              }
              return result;
-           }
-          );
+           });
+
+  py::class_<SequenceExamplesToRecordBatchDecoder>(
+      m, "SequenceExamplesToRecordBatchDecoder")
+      .def(py::init([](const std::string& sequence_feature_column_name,
+                       const absl::string_view serialized_schema,
+                       const bool use_large_types) {
+             std::unique_ptr<SequenceExamplesToRecordBatchDecoder> result;
+             Status s;
+             if (serialized_schema.empty()) {
+               s = SequenceExamplesToRecordBatchDecoder::Make(
+                   absl::nullopt, sequence_feature_column_name, use_large_types,
+                   &result);
+             } else {
+               s = SequenceExamplesToRecordBatchDecoder::Make(
+                   serialized_schema, sequence_feature_column_name,
+                   use_large_types, &result);
+             }
+             if (!s.ok()) {
+               throw std::runtime_error(s.ToString());
+             }
+             return result;
+           }),
+           py::arg("sequence_feature_column_name"),
+           py::arg("serialized_schema") = "",
+           py::arg("use_large_types") = false)
+      .def(
+          "DecodeBatch",
+          [](SequenceExamplesToRecordBatchDecoder* decoder,
+             const std::vector<absl::string_view>&
+                 serialized_sequence_examples) {
+            std::shared_ptr<arrow::RecordBatch> result;
+            Status s =
+                decoder->DecodeBatch(serialized_sequence_examples, &result);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+            return result;
+          },
+          py::call_guard<py::gil_scoped_release>());
 
   // We DO NOT RELEASE the GIL before calling ExampleToNumpyDict. It uses
   // Python C-APIs heavily and assumes GIL is held.

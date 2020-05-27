@@ -28,11 +28,12 @@ import pyarrow as pa
 import six
 import tensorflow as tf
 from tfx_bsl.coders import batch_util
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Tuple, Union
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 from tensorflow_metadata.proto.v0 import statistics_pb2
 
+PARSE_CSV_LINE_YIELDS_RAW_RECORDS = True
 
 CSVCell = bytes
 # Text if Python3, bytes otherwise.
@@ -77,7 +78,9 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
                      schema: Optional[schema_pb2.Schema] = None,
                      multivalent_columns: Optional[List[Union[Text,
                                                               bytes]]] = None,
-                     secondary_delimiter: Optional[Union[Text, bytes]] = None):
+                     secondary_delimiter: Optional[Union[Text, bytes]] = None,
+                     raw_record_column_name: Optional[Text] = None,
+                     produce_large_types: bool = False):
   """Decodes CSV records into Arrow RecordBatches.
 
   Args:
@@ -96,25 +99,40 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
       secondary_delimiter is provided, this must also be provided.
     secondary_delimiter: Delimiter used for parsing multivalent columns. If
       multivalent_columns is provided, this must also be provided.
+    raw_record_column_name: Optional name for a column containing the raw csv
+      lines. If this is None, then this column will not be produced. This will
+      always be the last column in the record batch.
+    produce_large_types: If True, will output record batches with columns that
+      are large_list types.
 
   Returns:
     RecordBatches of the CSV lines.
 
   Raises:
-    ValueError: If the columns do not match the specified csv headers. Or if the
-                schema has invalid feature types. Or if the schema does not
-                contain all columns.
+    ValueError:
+      * If the columns do not match the specified csv headers.
+      * If the schema has invalid feature types.
+      * If the schema does not contain all columns.
+      * If raw_record_column_name exists in column_names
   """
+  if (raw_record_column_name is not None and
+      raw_record_column_name in column_names):
+    raise ValueError(
+        "raw_record_column_name: {} is already an existing column name. "
+        "Please choose a different name.".format(raw_record_column_name))
 
-  csv_lines = (lines | "ParseCSVLines" >> beam.ParDo(ParseCSVLine(delimiter)))
+  csv_lines_and_raw_records = (
+      lines | "ParseCSVLines" >> beam.ParDo(ParseCSVLine(delimiter)))
 
   if schema is not None:
-    column_infos = _get_feature_types_from_schema(schema, column_names)
+    column_infos = _GetColumnInfosFromSchema(schema, column_names)
   else:
     # TODO(b/72746442): Consider using a DeepCopy optimization similar to TFT.
     # Do first pass to infer the feature types.
     column_infos = beam.pvalue.AsSingleton(
-        csv_lines | "InferColumnTypes" >> beam.CombineGlobally(
+        csv_lines_and_raw_records
+        | "ExtractParsedCSVLines" >> beam.Keys()
+        | "InferColumnTypes" >> beam.CombineGlobally(
             ColumnTypeInferrer(
                 column_names=column_names,
                 skip_blank_lines=skip_blank_lines,
@@ -122,20 +140,26 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
                 secondary_delimiter=secondary_delimiter)))
 
   # Do second pass to generate the RecordBatches.
-  return (csv_lines
+  return (csv_lines_and_raw_records
           | "BatchCSVLines" >> beam.BatchElements(
               **batch_util.GetBatchElementsKwargs(desired_batch_size))
           | "BatchedCSVRowsToArrow" >> beam.ParDo(
               BatchedCSVRowsToRecordBatch(
                   skip_blank_lines=skip_blank_lines,
                   multivalent_columns=multivalent_columns,
-                  secondary_delimiter=secondary_delimiter), column_infos))
+                  secondary_delimiter=secondary_delimiter,
+                  raw_record_column_name=raw_record_column_name,
+                  produce_large_types=produce_large_types), column_infos))
 
 
 @beam.typehints.with_input_types(CSVLine)
-@beam.typehints.with_output_types(beam.typehints.List[CSVCell])
+@beam.typehints.with_output_types(
+    beam.typehints.Tuple[beam.typehints.List[CSVCell], CSVLine])
 class ParseCSVLine(beam.DoFn):
-  """A beam.DoFn to parse CSVLines into List[CSVCell]."""
+  """A beam.DoFn to parse CSVLines into Tuple(List[CSVCell], CSVLine).
+
+  The CSVLine is the raw csv row. The raw csv row will always be output.
+  """
 
   def __init__(self, delimiter: Union[Text, bytes]):
     self._delimiter = delimiter
@@ -145,7 +169,8 @@ class ParseCSVLine(beam.DoFn):
     self._reader = _CSVRecordReader(self._delimiter)
 
   def process(self, csv_line: CSVLine):
-    yield self._reader.read_line(csv_line)
+    line = self._reader.ReadLine(csv_line)
+    yield (line, csv_line)
 
 
 @beam.typehints.with_input_types(beam.typehints.List[CSVCell])
@@ -205,11 +230,11 @@ class ColumnTypeInferrer(beam.CombineFn):
       previous_type = accumulator.get(column_name, None)
       if column_name in self._multivalent_columns:
         current_type = max([
-            _infer_value_type(value)
-            for value in self._multivalent_reader.read_line(cell)
+            _InferValueType(value)
+            for value in self._multivalent_reader.ReadLine(cell)
         ])
       else:
-        current_type = _infer_value_type(cell)
+        current_type = _InferValueType(cell)
 
       # If the type inferred from the current value is higher in the type
       # hierarchy compared to the already inferred type, we update the type.
@@ -250,7 +275,10 @@ class ColumnTypeInferrer(beam.CombineFn):
     ]
 
 
-@beam.typehints.with_input_types(List[List[CSVCell]], List[ColumnInfo])
+@beam.typehints.with_input_types(
+    beam.typehints.List[beam.typehints.Tuple[beam.typehints.List[CSVCell],
+                                             CSVLine]],
+    beam.typehints.List[ColumnInfo])
 @beam.typehints.with_output_types(pa.RecordBatch)
 class BatchedCSVRowsToRecordBatch(beam.DoFn):
   """DoFn to convert a batch of csv rows to a RecordBatch."""
@@ -258,14 +286,20 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
   def __init__(self,
                skip_blank_lines: bool,
                multivalent_columns: Optional[Set[ColumnName]] = None,
-               secondary_delimiter: Optional[Union[Text, bytes]] = None):
+               secondary_delimiter: Optional[Union[Text, bytes]] = None,
+               raw_record_column_name: Optional[Text] = None,
+               produce_large_types: bool = False):
     self._skip_blank_lines = skip_blank_lines
+    self._produce_large_types = produce_large_types
     self._multivalent_columns = (
         multivalent_columns if multivalent_columns is not None else set())
     if multivalent_columns:
       assert secondary_delimiter, ("secondary_delimiter must be specified if "
                                    "there are multivalent columns")
       self._multivalent_reader = _CSVRecordReader(secondary_delimiter)
+    self._raw_record_column_name = raw_record_column_name
+    self._raw_record_column_type = _GetFeatureTypeToArrowTypeMapping(
+        self._produce_large_types).get(ColumnType.STRING)
 
     self._column_handlers = None
     self._column_names = None
@@ -283,23 +317,28 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
         return lambda v: None
       return lambda v: [  # pylint: disable=g-long-lambda
           value_converter(sub_v)
-          for sub_v in self._multivalent_reader.read_line(v)
+          for sub_v in self._multivalent_reader.ReadLine(v)
       ]
     else:
       return lambda v: (value_converter(v),)
 
   def _process_column_infos(self, column_infos: List[ColumnInfo]):
-    self._column_arrow_types = [_ARROW_TYPE_MAP[c.type] for c in column_infos]
+    arrow_type_map = _GetFeatureTypeToArrowTypeMapping(
+        self._produce_large_types)
+    self._column_arrow_types = [
+        arrow_type_map.get(c.type) for c in column_infos
+    ]
     self._column_handlers = [self._get_column_handler(c) for c in column_infos]
     self._column_names = [c.name for c in column_infos]
 
-  def process(self, batch: List[List[CSVCell]],
+  def process(self, batch_of_tuple: List[Tuple[List[CSVCell], CSVLine]],
               column_infos: List[ColumnInfo]) -> Iterable[pa.RecordBatch]:
     if self._column_names is None:
       self._process_column_infos(column_infos)
 
+    raw_records = []
     values_list_by_column = [[] for _ in self._column_handlers]
-    for csv_row in batch:
+    for (csv_row, raw_record) in batch_of_tuple:
       if not csv_row:
         if not self._skip_blank_lines:
           for l in values_list_by_column:
@@ -310,11 +349,18 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
       for value, handler, values_list in (zip(csv_row, self._column_handlers,
                                               values_list_by_column)):
         values_list.append(handler(value) if value else None)
+      if self._raw_record_column_name is not None:
+        raw_records.append([raw_record])
 
     arrow_arrays = [
         pa.array(l, type=t)
         for l, t in zip(values_list_by_column, self._column_arrow_types)
     ]
+
+    if self._raw_record_column_name is not None:
+      arrow_arrays.append(
+          pa.array(raw_records, type=self._raw_record_column_type))
+      self._column_names.append(self._raw_record_column_name)
     yield pa.RecordBatch.from_arrays(arrow_arrays, self._column_names)
 
 
@@ -325,12 +371,55 @@ _VALUE_CONVERTER_MAP = {
     ColumnType.STRING: lambda x: x,
 }
 
-_ARROW_TYPE_MAP = {
-    ColumnType.UNKNOWN: pa.null(),
-    ColumnType.INT: pa.list_(pa.int64()),
-    ColumnType.FLOAT: pa.list_(pa.float32()),
-    ColumnType.STRING: pa.list_(pa.binary()),
-}
+
+def GetArrowSchema(column_names: List[Text],
+                   schema: schema_pb2.Schema,
+                   raw_record_column_name: Optional[Text] = None,
+                   large_types: bool = False) -> pa.Schema:
+  """Returns the arrow schema given columns and a TFMD schema.
+
+  Args:
+    column_names: List of feature names. This must match the features in schema.
+    schema: The schema proto to base the arrow schema from.
+    raw_record_column_name: An optional name for the column containing raw
+     records. If this is not set, the arrow schema will not contain a raw
+     records column.
+    large_types: If True, will output schema with columns that are large_lists.
+
+  Returns:
+    Arrow Schema based on the provided schema proto.
+
+  Raises:
+    ValueError:
+     * If the column names do not match the schema proto.
+     * If the feature type does not map to an arrow type.
+     * If raw_record_column_name exists in column_names
+  """
+  if len(column_names) != len(schema.feature):
+    raise ValueError(
+        "Column Names: {} does not match schema features: {}".format(
+            column_names, schema.feature))
+
+  fields = []
+  column_name_to_schema_feature_map = {f.name: f for f in schema.feature}
+  for col in column_names:
+    feature = column_name_to_schema_feature_map[col]
+    arrow_type = _GetFeatureTypeToArrowTypeMapping(large_types).get(
+        _SCHEMA_TYPE_TO_COLUMN_TYPE.get(feature.type), None)
+    if arrow_type is None:
+      raise ValueError("Feature {} has unsupport type {}".format(
+          feature.name, feature.type))
+    fields.append(pa.field(feature.name, arrow_type))
+
+  if raw_record_column_name is not None:
+    if raw_record_column_name in column_names:
+      raise ValueError(
+          "raw_record_column_name: {} is already an existing column name. "
+          "Please choose a different name.".format(raw_record_column_name))
+    raw_record_type = _GetFeatureTypeToArrowTypeMapping(large_types).get(
+        ColumnType.STRING)
+    fields.append(pa.field(raw_record_column_name, raw_record_type))
+  return pa.schema(fields)
 
 
 class _CSVRecordReader(object):
@@ -347,9 +436,9 @@ class _CSVRecordReader(object):
     else:
       self._to_reader_input = tf.compat.as_text
 
-  def read_line(self, csv_line: CSVLine) -> List[CSVCell]:
+  def ReadLine(self, csv_line: CSVLine) -> List[CSVCell]:
     """Reads out bytes for PY2 and Unicode for PY3."""
-    self._line_iterator.set_item(self._to_reader_input(csv_line))
+    self._line_iterator.SetItem(self._to_reader_input(csv_line))
     return [tf.compat.as_bytes(cell) for cell in next(self._reader)]
 
   def __getstate__(self):
@@ -365,7 +454,7 @@ class _MutableRepeat(object):
   def __init__(self):
     self._item = None
 
-  def set_item(self, item: Any):
+  def SetItem(self, item: Any):
     self._item = item
 
   def __iter__(self) -> Any:
@@ -381,7 +470,7 @@ _INT64_MIN = np.iinfo(np.int64).min
 _INT64_MAX = np.iinfo(np.int64).max
 
 
-def _infer_value_type(value: CSVCell) -> ColumnType:
+def _InferValueType(value: CSVCell) -> ColumnType:
   """Infer column type from the input value."""
   if not value:
     return ColumnType.UNKNOWN
@@ -403,10 +492,10 @@ def _infer_value_type(value: CSVCell) -> ColumnType:
     return ColumnType.FLOAT
 
 
-def _get_feature_types_from_schema(
+def _GetColumnInfosFromSchema(
     schema: schema_pb2.Schema,
     column_names: List[Union[bytes, Text]]) -> List[ColumnInfo]:
-  """Get statistics feature types from the input schema."""
+  """Get column name and type from the input schema."""
   feature_type_map = {}
   for feature in schema.feature:
     feature_type = _SCHEMA_TYPE_TO_COLUMN_TYPE.get(feature.type, None)
@@ -422,3 +511,20 @@ def _get_feature_types_from_schema(
       raise ValueError("Schema does not contain column: {}".format(col_name))
     column_infos.append(ColumnInfo(col_name, feature_type))
   return column_infos
+
+
+def _GetFeatureTypeToArrowTypeMapping(
+    large_types: bool) -> Dict[int, pa.DataType]:
+  if large_types:
+    return {
+        ColumnType.UNKNOWN: pa.null(),
+        ColumnType.INT: pa.large_list(pa.int64()),
+        ColumnType.FLOAT: pa.large_list(pa.float32()),
+        ColumnType.STRING: pa.large_list(pa.large_binary())
+    }
+  return {
+      ColumnType.UNKNOWN: pa.null(),
+      ColumnType.INT: pa.list_(pa.int64()),
+      ColumnType.FLOAT: pa.list_(pa.float32()),
+      ColumnType.STRING: pa.list_(pa.binary())
+  }
