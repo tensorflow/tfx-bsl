@@ -18,8 +18,12 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+import logging
+from typing import List, Optional, Text
+import pandas as pd
 import pyarrow as pa
-from typing import List
+from tfx_bsl.arrow import array_util
+
 # pytype: disable=import-error
 # pylint: disable=unused-import
 # pylint: disable=g-import-not-at-top
@@ -41,6 +45,20 @@ except ImportError as err:
 
 _EMPTY_RECORD_BATCH = pa.RecordBatch.from_arrays([], [])
 
+_NUMPY_KIND_TO_ARROW_TYPE = {
+    "i": pa.int64(),
+    "u": pa.uint64(),
+    "f": pa.float64(),
+    "b": pa.int8(),
+    "S": pa.binary(),
+    "O": pa.binary(),
+    "U": pa.binary(),
+}
+
+
+def NumpyKindToArrowType(kind: Text) -> Optional[pa.DataType]:
+  return _NUMPY_KIND_TO_ARROW_TYPE.get(kind)
+
 
 def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
   """Merges a list of arrow RecordBatches into one. Similar to MergeTables."""
@@ -58,3 +76,50 @@ def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
   batches = one_chunk_table.to_batches(max_chunksize=None)
   assert len(batches) == 1
   return batches[0]
+
+
+def DataFrameToRecordBatch(
+    dataframe: pd.DataFrame) -> pa.RecordBatch:
+  """Convert pandas.DataFrame to a pyarrow.RecordBatch with primitive arrays.
+
+  Args:
+    dataframe: A pandas.DataFrame, where rows correspond to examples and columns
+      correspond to features.
+
+  Returns:
+    A pa.RecordBatch containing the same values as the input data in primitive
+    array format.
+  """
+
+  arrow_fields = []
+  for col_name, col_type in zip(dataframe.columns, dataframe.dtypes):
+    arrow_type = NumpyKindToArrowType(col_type.kind)
+    if not arrow_type:
+      logging.warning("Ignoring feature %s of type %s", col_name, col_type)
+      continue
+    arrow_fields.append(pa.field(col_name, arrow_type))
+  return pa.RecordBatch.from_pandas(dataframe, schema=pa.schema(arrow_fields))
+
+
+def CanonicalizeRecordBatch(
+    record_batch_with_primitive_arrays: pa.RecordBatch,) -> pa.RecordBatch:
+  """Converts primitive arrays in a pyarrow.RecordBatch to SingletonListArrays.
+
+  Args:
+    record_batch_with_primitive_arrays: A pyarrow.RecordBatch where values are
+      stored in primitive arrays or singleton list arrays.
+
+  Returns:
+    pyArrow.RecordBatch in SingletonListArray format.
+  """
+  arrays = []
+  for column_array in record_batch_with_primitive_arrays.columns:
+    arr_type = column_array.type
+    if not (pa.types.is_list(arr_type) or pa.types.is_large_list(arr_type)):
+      arrays.append(array_util.ToSingletonListArray(column_array))
+    else:
+      arrays.append(column_array)
+  # TODO(pachristopher): Consider using a list of record batches instead of a
+  # single record batch to avoid having list arrays larger than 2^31 elements.
+  return pa.RecordBatch.from_arrays(
+      arrays, record_batch_with_primitive_arrays.schema.names)

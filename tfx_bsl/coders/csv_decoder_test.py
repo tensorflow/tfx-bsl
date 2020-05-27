@@ -420,6 +420,141 @@ _TEST_CASES = [
             pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
             pa.array([[b'hello'], [b'world']], pa.list_(pa.binary()))
         ], ['int_feature', 'float_feature', 'str_feature'])),
+    dict(
+        testcase_name='large_list',
+        input_lines=['1', '5'],
+        column_names=['large_list_feature'],
+        expected_csv_cells=[
+            [b'1'],
+            [b'5'],
+        ],
+        expected_types=[csv_decoder.ColumnType.INT],
+        schema=text_format.Parse(
+            """feature {
+                name: "large_list_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema()),
+        expected_record_batch=pa.RecordBatch.from_arrays(
+            [pa.array([[1], [5]], pa.large_list(pa.int64()))],
+            ['large_list_feature']),
+        produce_large_types=True),
+    dict(
+        testcase_name='large_string',
+        input_lines=['hello', 'world'],
+        column_names=['large_string_feature'],
+        expected_csv_cells=[
+            [b'hello'],
+            [b'world'],
+        ],
+        expected_types=[csv_decoder.ColumnType.STRING],
+        schema=text_format.Parse(
+            """feature {
+                name: "large_string_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema()),
+        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b'hello'], [b'world']],
+                     pa.large_list(pa.large_binary()))
+        ], ['large_string_feature']),
+        produce_large_types=True),
+    dict(
+        testcase_name='attach_raw_records',
+        input_lines=['1,2.0,hello', '5,12.34,world'],
+        column_names=['int_feature', 'float_feature', 'str_feature'],
+        expected_csv_cells=[
+            [b'1', b'2.0', b'hello'],
+            [b'5', b'12.34', b'world'],
+        ],
+        expected_types=[
+            csv_decoder.ColumnType.INT,
+            csv_decoder.ColumnType.FLOAT,
+            csv_decoder.ColumnType.STRING,
+        ],
+        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[1], [5]], pa.list_(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
+            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary())),
+            pa.array([[b'1,2.0,hello'], [b'5,12.34,world']],
+                     pa.list_(pa.binary()))
+        ], ['int_feature', 'float_feature', 'str_feature', 'raw_records']),
+        raw_record_column_name='raw_records'),
+    dict(
+        testcase_name='with_schema_attach_raw_record',
+        input_lines=['1,2.0,hello', '5,12.34,world'],
+        column_names=['int_feature', 'float_feature', 'str_feature'],
+        expected_csv_cells=[
+            [b'1', b'2.0', b'hello'],
+            [b'5', b'12.34', b'world'],
+        ],
+        expected_types=[
+            csv_decoder.ColumnType.INT,
+            csv_decoder.ColumnType.FLOAT,
+            csv_decoder.ColumnType.STRING,
+        ],
+        schema=text_format.Parse(
+            """feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "float_feature"
+                type: FLOAT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "str_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema()),
+        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[1], [5]], pa.list_(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
+            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary())),
+            pa.array([[b'1,2.0,hello'], [b'5,12.34,world']],
+                     pa.list_(pa.binary()))
+        ], ['int_feature', 'float_feature', 'str_feature', 'raw_records'
+           ]),
+        raw_record_column_name='raw_records'),
+    dict(
+        testcase_name='multivalent_attach_raw_records',
+        input_lines=['1,2 "abcdef"', '5,1 "wxxyyz"'],
+        column_names=['f1', 'f2'],
+        expected_csv_cells=[[b'1,2', b'abcdef'], [b'5,1', b'wxxyyz']],
+        expected_types=[
+            csv_decoder.ColumnType.INT,
+            csv_decoder.ColumnType.STRING,
+        ],
+        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[1, 2], [5, 1]], pa.list_(pa.int64())),
+            pa.array([[b'abcdef'], [b'wxxyyz']], pa.list_(pa.binary())),
+            pa.array([[b'1,2 "abcdef"'], [b'5,1 "wxxyyz"']],
+                     pa.list_(pa.binary()))
+        ], ['f1', 'f2', 'raw_records']),
+        delimiter=' ',
+        multivalent_columns=['f1'],
+        secondary_delimiter=',',
+        raw_record_column_name='raw_records'),
 ]
 
 
@@ -437,10 +572,14 @@ class CSVDecoderTest(parameterized.TestCase):
                            schema=None,
                            delimiter=',',
                            multivalent_columns=None,
-                           secondary_delimiter=None):
+                           secondary_delimiter=None,
+                           raw_record_column_name=None,
+                           produce_large_types=False):
 
     def _check_csv_cells(actual):
-      self.assertEqual(expected_csv_cells, actual)
+      for i in range(len(actual)):
+        self.assertEqual(expected_csv_cells[i], actual[i][0])
+        self.assertEqual(input_lines[i], actual[i][1])
 
     def _check_types(actual):
       self.assertLen(actual, 1)
@@ -456,44 +595,63 @@ class CSVDecoderTest(parameterized.TestCase):
       else:
         self.assertEqual(expected_record_batch, actual)
 
+    def _check_arrow_schema(actual):
+      if actual:
+        expected_arrow_schema = csv_decoder.GetArrowSchema(
+            column_names, schema, raw_record_column_name, produce_large_types)
+        self.assertEqual(actual[0].schema, expected_arrow_schema)
+
     with beam.Pipeline() as p:
-      parsed_csv_cells = (
+      parsed_csv_cells_and_raw_records = (
           p | beam.Create(input_lines, reshuffle=False)
           | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=delimiter)))
-      inferred_types = parsed_csv_cells | beam.CombineGlobally(
-          csv_decoder.ColumnTypeInferrer(
-              column_names,
-              skip_blank_lines=skip_blank_lines,
-              multivalent_columns=multivalent_columns,
-              secondary_delimiter=secondary_delimiter))
+      inferred_types = (
+          parsed_csv_cells_and_raw_records
+          | beam.Keys()
+          | beam.CombineGlobally(
+              csv_decoder.ColumnTypeInferrer(
+                  column_names,
+                  skip_blank_lines=skip_blank_lines,
+                  multivalent_columns=multivalent_columns,
+                  secondary_delimiter=secondary_delimiter)))
 
       beam_test_util.assert_that(
-          parsed_csv_cells, _check_csv_cells, label='check_parsed_csv_cells')
+          parsed_csv_cells_and_raw_records,
+          _check_csv_cells,
+          label='check_parsed_csv_cells')
       beam_test_util.assert_that(
           inferred_types, _check_types, label='check_types')
 
-      record_batches = parsed_csv_cells | beam.BatchElements(
-          min_batch_size=1000) | beam.ParDo(
+      record_batches = (
+          parsed_csv_cells_and_raw_records
+          | beam.BatchElements(min_batch_size=1000) | beam.ParDo(
               csv_decoder.BatchedCSVRowsToRecordBatch(
                   skip_blank_lines=skip_blank_lines,
                   multivalent_columns=multivalent_columns,
-                  secondary_delimiter=secondary_delimiter),
-              beam.pvalue.AsSingleton(inferred_types))
+                  secondary_delimiter=secondary_delimiter,
+                  raw_record_column_name=raw_record_column_name,
+                  produce_large_types=produce_large_types),
+              beam.pvalue.AsSingleton(inferred_types)))
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
+      if schema:
+        beam_test_util.assert_that(
+            record_batches, _check_arrow_schema, label='check_arrow_schema')
 
     # Testing CSVToRecordBatch
     with beam.Pipeline() as p:
-      record_batches = p | 'CreatingPColl' >> beam.Create(
-          input_lines,
-          reshuffle=False) | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
+      record_batches = (
+          p | 'CreatingPColl' >> beam.Create(input_lines, reshuffle=False)
+          | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
               column_names=column_names,
               delimiter=delimiter,
               skip_blank_lines=skip_blank_lines,
               desired_batch_size=1000,
               schema=schema,
               multivalent_columns=multivalent_columns,
-              secondary_delimiter=secondary_delimiter)
+              secondary_delimiter=secondary_delimiter,
+              raw_record_column_name=raw_record_column_name,
+              produce_large_types=produce_large_types))
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
 
@@ -506,6 +664,7 @@ class CSVDecoderTest(parameterized.TestCase):
         result = (
             p | beam.Create(input_lines, reshuffle=False)
             | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=','))
+            | beam.Keys()
             | beam.CombineGlobally(
                 csv_decoder.ColumnTypeInferrer(
                     column_names, skip_blank_lines=False)))
@@ -556,6 +715,76 @@ class CSVDecoderTest(parameterized.TestCase):
                 schema=schema,
                 desired_batch_size=1000))
         beam_test_util.assert_that(result, lambda _: None)
+
+  def test_invalid_raw_record_column_name(self):
+    input_lines = ['1,2.0,hello', '5,12.34']
+    schema = text_format.Parse(
+        """
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "float_feature"
+                type: FLOAT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "str_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema())
+    column_names = ['int_feature', 'float_feature', 'str_feature']
+    with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
+        ValueError, 'raw_record_column_name.* is already an existing column.*'):
+      with beam.Pipeline() as p:
+        result = (
+            p | beam.Create(input_lines, reshuffle=False)
+            | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
+                column_names=column_names,
+                desired_batch_size=1000,
+                raw_record_column_name='int_feature'))
+        beam_test_util.assert_that(result, lambda _: None)
+    with self.assertRaisesRegex(
+        ValueError, 'raw_record_column_name.* is already an existing column.*'):
+      csv_decoder.GetArrowSchema(
+          column_names, schema, raw_record_column_name='int_feature')
+
+  def test_get_arrow_schema_column_names_invalid(self):
+    schema = text_format.Parse(
+        """
+              feature {
+                name: "f1"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "f2"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              """, schema_pb2.Schema())
+    column_names = ['f1']
+    with self.assertRaisesRegex(
+        ValueError, 'Column Names.* does not match schema features.*'):
+      csv_decoder.GetArrowSchema(column_names, schema)
 
 
 if __name__ == '__main__':
