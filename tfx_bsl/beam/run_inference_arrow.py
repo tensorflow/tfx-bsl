@@ -80,7 +80,7 @@ _SignatureDef = Any
 _MetaGraphDef = Any
 _SavedModel = Any
 
-# TODO (Maxine): what is this?
+# TODO (Maxine): Change this to serialized?
 _BulkInferResult = Union[prediction_log_pb2.PredictLog,
                          Tuple[tf.train.Example, regression_pb2.Regression],
                          Tuple[tf.train.Example,
@@ -97,9 +97,9 @@ class OperationType(object):
   MULTIHEAD = 'MULTIHEAD'
 
 
-# TODO (Me): pTransform from examples/sequence example here
+# TODO (Maxine): pTransform from examples/sequence example here
 
-# TODO (Me): Union[bytes, pa.RecordBatch]?
+# TODO (Maxine): Union[bytes, pa.RecordBatch]?
 @beam.ptransform_fn
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
@@ -320,7 +320,7 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
   return (isinstance(exception, googleapiclient.errors.HttpError) and
           exception.resp.status in (503, 429))
 
-# TODO (Maxine): change all example to serialized
+
 @beam.typehints.with_input_types(List[str])
 # Using output typehints triggers NotImplementedError('BEAM-2717)' on
 # streaming mode on Dataflow runner.
@@ -398,13 +398,15 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   @classmethod
   def _prepare_instances(
-      cls, elements: List[tf.train.Example]
+      cls, elements: List[str]
   ) -> Generator[Mapping[Text, Any], None, None]:
     for example in elements:
       # TODO(b/151468119): support tf.train.SequenceExample
-      if not isinstance(example, tf.train.Example):
-        raise ValueError('Remote prediction only supports tf.train.Example')
+      if not isinstance(example, str):
+        # raise ValueError('Remote prediction only supports tf.train.Example')
+        raise ValueError('Example should be serialized before calling remote prediction')
 
+      # TODO (Maxine): Fix this part with serialized example
       instance = {}
       for input_name, feature in example.features.feature.items():
         attr_name = feature.WhichOneof('kind')
@@ -443,17 +445,14 @@ class _RemotePredictDoFn(_BaseDoFn):
     else:
       return values
 
-  def run_inference(
-      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
-  ) -> Sequence[Mapping[Text, Any]]:
+  def run_inference(self, elements: List[str]) -> Sequence[Mapping[Text, Any]]:
     body = {'instances': list(self._prepare_instances(elements))}
     request = self._make_request(body)
     response = self._execute_request(request)
     return response['predictions']
 
   def _post_process(
-      self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]],
-      outputs: Sequence[Mapping[Text, Any]]
+      self, elements: List[str], outputs: Sequence[Mapping[Text, Any]]
   ) -> Iterable[prediction_log_pb2.PredictLog]:
     result = []
     for output in outputs:
@@ -474,6 +473,9 @@ class _RemotePredictDoFn(_BaseDoFn):
 # is fixed.
 # TODO(b/143484017): Add batch_size back off in the case there are functional
 # reasons large batch sizes cannot be handled.
+
+# TODO (Maxine): Anything I can do to check that the serialized string is an example or sequence example?
+# converting it and then check?
 class _BaseBatchSavedModelDoFn(_BaseDoFn):
   """A DoFn that runs in-process batch inference with a model.
 
@@ -592,13 +594,14 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     return result
 
   def _check_elements(
-      self, elements: List[Union[tf.train.Example,
-                                 tf.train.SequenceExample]]) -> None:
+      self, elements: List[str]) -> None:
     """Unimplemented."""
 
     raise NotImplementedError
 
 
+# TODO (Maxine): Haven't change other than typeints beyond this point
+# should I change these to example inside the functions or keep them as serialized
 @beam.typehints.with_input_types(List[str])
 @beam.typehints.with_output_types(Tuple[tf.train.Example,
                                         classification_pb2.Classifications])
@@ -834,7 +837,7 @@ class _BuildMultiInferenceLogDoFn(beam.DoFn):
 def _post_process_classify(
     output_alias_tensor_names: Mapping[Text, Text],
     elements: Sequence[tf.train.Example], outputs: Mapping[Text, np.ndarray]
-) -> Sequence[classification_pb2.Classifications]:
+  ) -> Sequence[classification_pb2.Classifications]:
   """Returns classifications from inference output."""
 
   # This is to avoid error "The truth value of an array with
