@@ -71,12 +71,10 @@ class RunInferenceFixture(tf.test.TestCase):
         output_file.write(example.SerializeToString())
 
 
-ARROW_INPUT_COLUMN = '__raw_record__'
 class RunOfflineInferenceTest(RunInferenceFixture):
-  
+
   def setUp(self):
     super(RunOfflineInferenceTest, self).setUp()
-    
     self._predict_examples = [
         text_format.Parse(
             """
@@ -108,8 +106,6 @@ class RunOfflineInferenceTest(RunInferenceFixture):
             """, tf.train.Example()),
     ]
 
-    # TODO: Ask if these example can directly transform to recordBatch
-    
 
   def _prepare_multihead_examples(self, example_path):
     with tf.io.TFRecordWriter(example_path) as output_file:
