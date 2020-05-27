@@ -1,0 +1,2 @@
+build --action_env ARROW_HEADER_DIR="/home/zhangmaxine/tfx-venv/lib/python3.7/site-packages/pyarrow/include"
+build --action_env ARROW_SHARED_LIBRARY_DIR="/home/zhangmaxine/tfx-venv/lib/python3.7/site-packages/pyarrow"
