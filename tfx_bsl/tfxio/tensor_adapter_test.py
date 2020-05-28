@@ -341,6 +341,274 @@ _ONE_TENSOR_TEST_CASES = (
     _MakeVarLenSparseTensorFromListArrayTestCases()
 )
 
+
+def _MakeRaggedTensorDTypesTestCases():
+  result = []
+  tensor_representation_textpb = """
+  ragged_tensor {
+    feature_path {
+      step: "ragged_feature"
+    }
+  }
+  """
+  for t in _ALL_SUPPORTED_VALUE_TYPES:
+    for list_type_factory in (("list", pa.list_), ("large_list",
+                                                   pa.large_list)):
+      expected_type_spec = tf.RaggedTensorSpec([None, None],
+                                               _ARROW_TYPE_TO_TF_TYPE[t],
+                                               ragged_rank=1,
+                                               row_splits_dtype=tf.int64)
+      if pa.types.is_integer(t):
+        values = [[1, 2], None, [], [3]]
+        expected_values = [1, 2, 3]
+      elif pa.types.is_floating(t):
+        values = [[1.0, 2.0], None, [], [3.0]]
+        expected_values = [1.0, 2.0, 3.0]
+      else:
+        values = [[b"a", b"b"], None, [], [b"c"]]
+        expected_values = [b"a", b"b", b"c"]
+      row_splits = np.asarray([0, 2, 2, 2, 3], dtype=np.int64)
+
+      if tf.executing_eagerly():
+        expected_output = tf.RaggedTensor.from_row_splits(
+            values=tf.constant(
+                expected_values, dtype=_ARROW_TYPE_TO_TF_TYPE[t]),
+            row_splits=row_splits)
+      else:
+        expected_output = tf.compat.v1.ragged.RaggedTensorValue(
+            values=np.array(expected_values, _ARROW_TYPE_TO_NP_TYPE[t]),
+            row_splits=row_splits)
+
+      result.append({
+          "testcase_name":
+              "1D_{}_{}".format(t, list_type_factory[0]),
+          "tensor_representation_textpb":
+              tensor_representation_textpb,
+          "record_batch":
+              pa.RecordBatch.from_arrays(
+                  [pa.array(values, type=list_type_factory[1](t))],
+                  ["ragged_feature"]),
+          "expected_ragged_tensor":
+              expected_output,
+          "expected_type_spec":
+              expected_type_spec,
+      })
+
+  return result
+
+
+_RAGGED_TENSOR_TEST_CASES = (
+    _MakeRaggedTensorDTypesTestCases() + [
+        dict(
+            testcase_name="Simple",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+          }
+          row_partition_dtype: INT32
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1], None, [2], [3, 4, 5], []], type=pa.list_(pa.int64()))
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int32),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([1, 2, 3, 4, 5]),
+                row_splits=np.asarray([0, 1, 1, 2, 5, 5]))),
+        dict(
+            testcase_name="3D",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+          }
+          row_partition_dtype: INT32
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[[1]], None, [[2]], [[3, 4], [5]], []],
+                         type=pa.list_(pa.list_(pa.int64())))
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None]),
+                tf.int64,
+                ragged_rank=2,
+                row_splits_dtype=tf.int32),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=np.asarray([1, 2, 3, 4, 5]),
+                    row_splits=np.asarray([0, 1, 2, 4, 5])),
+                row_splits=np.asarray([0, 1, 1, 2, 4, 4]))),
+        dict(
+            testcase_name="StructOfList",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "inner_feature"
+          }
+          row_partition_dtype: INT32
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.StructArray.from_arrays([
+                    pa.array([[1, 2, 3], [4]], pa.list_(pa.int64())),
+                    pa.array([["a", "b", "c"], ["d"]], pa.list_(pa.binary()))
+                ], ["inner_feature", "x2"])
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int32),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([1, 2, 3, 4]),
+                row_splits=np.asarray([0, 3, 4]))),
+        dict(
+            testcase_name="ListOfStruct",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "inner_feature"
+          }
+          row_partition_dtype: INT32
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[{
+                    "inner_feature": 1,
+                    "x2": "a"
+                }, {
+                    "inner_feature": 2,
+                    "x2": "b"
+                }], [{
+                    "inner_feature": 3,
+                    "x2": "c"
+                }]],
+                         pa.list_(
+                             pa.struct([("inner_feature", pa.int64()),
+                                        ("x2", pa.binary())])))
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int32),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([1, 2, 3]), row_splits=np.asarray([0, 2, 3
+                                                                    ]))),
+        dict(
+            testcase_name="NestedStructList",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "inner_feature_1"
+            step: "inner_feature_2"
+          }
+          row_partition_dtype: INT32
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.StructArray.from_arrays([
+                    pa.array([[{
+                        "inner_feature_2": "x",
+                        "x2": "a"
+                    }, {
+                        "inner_feature_2": "y",
+                        "x2": "b"
+                    }], [{
+                        "inner_feature_2": "z",
+                        "x2": "c"
+                    }]],
+                             pa.list_(
+                                 pa.struct([("inner_feature_2", pa.binary()),
+                                            ("x3", pa.binary())]))),
+                    pa.array([["a", "b", "c"], ["d"]], pa.list_(pa.binary()))
+                ], ["inner_feature_1", "x2"])
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None]),
+                tf.string,
+                ragged_rank=1,
+                row_splits_dtype=tf.int32),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([b"x", b"y", b"z"]),
+                row_splits=np.asarray([0, 2, 3]))),
+        dict(
+            testcase_name="ListStructStruct",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "inner_feature_1"
+            step: "inner_feature_2"
+          }
+          row_partition_dtype: INT32
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[{
+                    "inner_feature_1": {
+                        "inner_feature_2": 1,
+                        "x2": "a"
+                    }
+                }, {
+                    "inner_feature_1": {
+                        "inner_feature_2": 2,
+                        "x2": "b"
+                    }
+                }], [{
+                    "inner_feature_1": {
+                        "inner_feature_2": 3,
+                        "x2": "c"
+                    }
+                }]],
+                         pa.list_(
+                             pa.struct([("inner_feature_1",
+                                         pa.struct([("inner_feature_2", pa.int64()),
+                                                    ("x2", pa.binary())]))])))
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int32),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([1, 2, 3]), row_splits=np.asarray([0, 2, 3
+                                                                    ]))),
+        dict(
+            testcase_name="MixedLargeTypes",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+          }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[[1]], None, [[2]], [[3, 4], [5]], []],
+                         type=pa.list_(pa.large_list(pa.int64())))
+            ], ["ragged_feature"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None]),
+                tf.int64,
+                ragged_rank=2,
+                row_splits_dtype=tf.int64),
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=np.asarray([1, 2, 3, 4, 5]),
+                    row_splits=np.asarray([0, 1, 2, 4, 5])),
+                row_splits=np.asarray([0, 1, 1, 2, 4, 4]))),
+    ])
+
 _INVALID_DEFAULT_VALUE_TEST_CASES = [
     dict(
         testcase_name="default_value_not_set",
@@ -429,9 +697,14 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllEqual(a.values, b.values)
     self.assertAllEqual(a.dense_shape, b.dense_shape)
 
+  def assertRaggedAllEqual(self, a, b):
+    self.assertAllEqual(a.values, b.values)
+    self.assertAllEqual(a.row_splits, b.row_splits)
+
   def assertNonEager(self, v):
     """Asserts `v` is not a Eager tensor."""
-    self.assertIsInstance(v, (tf.compat.v1.SparseTensorValue, np.ndarray))
+    self.assertIsInstance(v, (tf.compat.v1.ragged.RaggedTensorValue,
+                              tf.compat.v1.SparseTensorValue, np.ndarray))
 
   def assertAdapterCanProduceNonEagerInEagerMode(self, adapter, record_batch):
     if tf.executing_eagerly():
@@ -566,6 +839,119 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
         actual_output)
 
     self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
+
+  @parameterized.named_parameters(_RAGGED_TENSOR_TEST_CASES)
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensor(self, tensor_representation_textpb, record_batch,
+                       expected_type_spec, expected_ragged_tensor):
+    tensor_representation = text_format.Parse(tensor_representation_textpb,
+                                              schema_pb2.TensorRepresentation())
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           {"output": tensor_representation}))
+    converted = adapter.ToBatchTensors(record_batch)
+    self.assertLen(converted, 1)
+    self.assertIn("output", converted)
+    actual_output = converted["output"]
+    self.assertIsInstance(
+        actual_output, (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue))
+    if tf.executing_eagerly():
+      self.assertTrue(
+          expected_type_spec.is_compatible_with(actual_output),
+          "{} is not compatible with spec {}".format(actual_output,
+                                                     expected_type_spec))
+
+    self.assertRaggedAllEqual(actual_output, expected_ragged_tensor)
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorFromStructArrayWithNoNestedness(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "inner_feature"
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.StructArray.from_arrays(
+            [pa.array([1, 2, 3]),
+             pa.array(["a", "b", "c"])], ["inner_feature", "x2"])
+    ], ["ragged_feature"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorStructTypeInvalidSteps(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "wrong_step"
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.StructArray.from_arrays([
+            pa.array([[1, 2, 3]], pa.list_(pa.int64())),
+            pa.array([["a", "b", "c"]], pa.list_(pa.binary()))
+        ], ["inner_feature", "x2"])
+    ], ["ragged_feature"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorStructTypeNonLeaf(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.StructArray.from_arrays([
+            pa.array([[1, 2, 3]], pa.list_(pa.int64())),
+            pa.array([["a", "b", "c"]], pa.list_(pa.binary()))
+        ], ["inner_feature", "x2"])
+    ], ["ragged_feature"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorSlicedRecordBatch(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays(
+        [pa.array([[1], None, [2], [3, 4, 5], []], type=pa.list_(pa.int64()))],
+        ["ragged_feature"])
+    record_batch = record_batch.slice(1, 3)
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           {"output": tensor_representation}))
+    with self.assertRaisesRegex(
+        ValueError,
+        ".*We currently do not handle converting slices to RaggedTensors."):
+      adapter.ToBatchTensors(record_batch)
 
   @test_util.run_in_graph_and_eager_modes
   def testMultipleColumns(self):

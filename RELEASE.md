@@ -5,6 +5,7 @@
 ## Major Features and Improvements
 
 *   Added SequenceExamplesToRecordBatchDecoder.
+*   Added support for TensorAdapter to output tf.RaggedTensors.
 
 ## Bug Fixes and Other Changes
 
