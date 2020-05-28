@@ -64,18 +64,13 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   def SupportAttachingRawRecords(self) -> bool:
     return True
 
-  # TODO(zhuo): change all the derived classes to implement
-  # RawRecordBeamSource(), and remove this interface.
   @abc.abstractmethod
-  def _SerializedExamplesSource(self) -> beam.PTransform:
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     """Returns a PTransform that produces PCollection[bytes]."""
 
-  def RawRecordBeamSourceInternal(self) -> beam.PTransform:
-    return self._SerializedExamplesSource()
-
-  def RawRecordToRecordBatchInternal(self,
-                                     batch_size: Optional[int] = None
-                                    ) -> beam.PTransform:
+  def _RawRecordToRecordBatchInternal(self,
+                                      batch_size: Optional[int] = None
+                                     ) -> beam.PTransform:
 
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
@@ -174,8 +169,7 @@ class TFExampleRecord(_TFExampleRecordBase):
     self._file_pattern = file_pattern
     self._validate = validate
 
-  def _SerializedExamplesSource(self) -> beam.PTransform:
-    """Returns a PTransform that produces PCollection[bytes]."""
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return beam.io.ReadFromTFRecord(self._file_pattern, validate=self._validate)
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:

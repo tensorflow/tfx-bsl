@@ -73,12 +73,12 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
   def _CSVSource(self) -> beam.PTransform:
     """Returns a PTtransform that producese PCollection[bytets]."""
 
-  def RawRecordBeamSourceInternal(self) -> beam.PTransform:
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return self._CSVSource()
 
-  def RawRecordToRecordBatchInternal(self,
-                                     batch_size: Optional[int] = None
-                                    ) -> beam.PTransform:
+  def _RawRecordToRecordBatchInternal(self,
+                                      batch_size: Optional[int] = None
+                                     ) -> beam.PTransform:
 
     @beam.typehints.with_input_types(List[bytes])
     @beam.typehints.with_output_types(pa.RecordBatch)

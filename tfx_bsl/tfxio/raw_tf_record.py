@@ -58,9 +58,9 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
   def SupportAttachingRawRecords(self) -> bool:
     return True
 
-  def RawRecordToRecordBatchInternal(self,
-                                     batch_size: Optional[int] = None
-                                    ) -> beam.PTransform:
+  def _RawRecordToRecordBatchInternal(self,
+                                      batch_size: Optional[int] = None
+                                     ) -> beam.PTransform:
 
     @beam.typehints.with_input_types(beam.Pipeline)
     @beam.typehints.with_output_types(pa.RecordBatch)
@@ -119,7 +119,8 @@ class RawTfRecordTFXIO(_RawRecordTFXIO):
         raw_record_column_name=raw_record_column_name)
     self._file_pattern = file_pattern
 
-  def RawRecordBeamSourceInternal(self) -> beam.PTransform:
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
+
     @beam.typehints.with_input_types(beam.Pipeline)
     @beam.typehints.with_output_types(bytes)
     def _PTransformFn(pipeline: beam.pvalue.PCollection):
