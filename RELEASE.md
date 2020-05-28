@@ -6,6 +6,7 @@
 
 *   Added SequenceExamplesToRecordBatchDecoder.
 *   Added support for TensorAdapter to output tf.RaggedTensors.
+*   Improved performance of tf.Example and tf.SequenceExample coders.
 
 ## Bug Fixes and Other Changes
 
