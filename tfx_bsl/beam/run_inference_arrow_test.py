@@ -213,8 +213,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-          |
-          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
+          | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -450,127 +449,127 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         load_model_latency_milli_secs['distributions'][0].result.sum, 0)
 
 
-class RunRemoteInferenceTest(RunInferenceFixture):
+# class RunRemoteInferenceTest(RunInferenceFixture):
 
-  def setUp(self):
-    super(RunRemoteInferenceTest, self).setUp()
-    self.example_path = self._get_output_data_dir('example')
-    self._prepare_predict_examples(self.example_path)
-    # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
-    self._discovery_testdata_dir = os.path.join(
-        os.path.join(os.path.dirname(__file__), 'testdata'),
-        'ml_discovery.json')
+#   def setUp(self):
+#     super(RunRemoteInferenceTest, self).setUp()
+#     self.example_path = self._get_output_data_dir('example')
+#     self._prepare_predict_examples(self.example_path)
+#     # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
+#     self._discovery_testdata_dir = os.path.join(
+#         os.path.join(os.path.dirname(__file__), 'testdata'),
+#         'ml_discovery.json')
 
-  @staticmethod
-  def _make_response_body(content, successful):
-    if successful:
-      response_dict = {'predictions': content}
-    else:
-      response_dict = {'error': content}
-    return json.dumps(response_dict)
+#   @staticmethod
+#   def _make_response_body(content, successful):
+#     if successful:
+#       response_dict = {'predictions': content}
+#     else:
+#       response_dict = {'error': content}
+#     return json.dumps(response_dict)
 
-  def _set_up_pipeline(self, inference_spec_type):
-    self.pipeline = beam.Pipeline()
-    self.pcoll = (
-        self.pipeline
-        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
-        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
+#   def _set_up_pipeline(self, inference_spec_type):
+#     self.pipeline = beam.Pipeline()
+#     self.pcoll = (
+#         self.pipeline
+#         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
+#         | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
+#         | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
 
-  def _run_inference_with_beam(self):
-    self.pipeline_result = self.pipeline.run()
-    self.pipeline_result.wait_until_finish()
+#   def _run_inference_with_beam(self):
+#     self.pipeline_result = self.pipeline.run()
+#     self.pipeline_result.wait_until_finish()
 
-  def test_model_predict(self):
-    predictions = [{'output_1': [0.901], 'output_2': [0.997]}]
-    builder = http.RequestMockBuilder({
-        'ml.projects.predict':
-            (None, self._make_response_body(predictions, successful=True))
-    })
-    resource = discovery.build(
-        'ml',
-        'v1',
-        http=http.HttpMock(self._discovery_testdata_dir,
-                           {'status': http_client.OK}),
-        requestBuilder=builder)
-    with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
-      response_mock.side_effect = lambda service, version: resource
-      inference_spec_type = model_spec_pb2.InferenceSpecType(
-          ai_platform_prediction_model_spec=model_spec_pb2
-          .AIPlatformPredictionModelSpec(
-              project_id='test-project',
-              model_name='test-model',
-          ))
+#   def test_model_predict(self):
+#     predictions = [{'output_1': [0.901], 'output_2': [0.997]}]
+#     builder = http.RequestMockBuilder({
+#         'ml.projects.predict':
+#             (None, self._make_response_body(predictions, successful=True))
+#     })
+#     resource = discovery.build(
+#         'ml',
+#         'v1',
+#         http=http.HttpMock(self._discovery_testdata_dir,
+#                            {'status': http_client.OK}),
+#         requestBuilder=builder)
+#     with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
+#       response_mock.side_effect = lambda service, version: resource
+#       inference_spec_type = model_spec_pb2.InferenceSpecType(
+#           ai_platform_prediction_model_spec=model_spec_pb2
+#           .AIPlatformPredictionModelSpec(
+#               project_id='test-project',
+#               model_name='test-model',
+#           ))
 
-      prediction_log = prediction_log_pb2.PredictionLog()
-      prediction_log.predict_log.response.outputs['output_1'].CopyFrom(
-          tf.make_tensor_proto(values=[0.901], dtype=tf.double, shape=(1, 1)))
-      prediction_log.predict_log.response.outputs['output_2'].CopyFrom(
-          tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
+#       prediction_log = prediction_log_pb2.PredictionLog()
+#       prediction_log.predict_log.response.outputs['output_1'].CopyFrom(
+#           tf.make_tensor_proto(values=[0.901], dtype=tf.double, shape=(1, 1)))
+#       prediction_log.predict_log.response.outputs['output_2'].CopyFrom(
+#           tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
 
-      self._set_up_pipeline(inference_spec_type)
-      assert_that(self.pcoll, equal_to([prediction_log]))
-      self._run_inference_with_beam()
+#       self._set_up_pipeline(inference_spec_type)
+#       assert_that(self.pcoll, equal_to([prediction_log]))
+#       self._run_inference_with_beam()
 
-  def test_exception_raised_when_response_body_contains_error_entry(self):
-    error_msg = 'Base64 decode failed.'
-    builder = http.RequestMockBuilder({
-        'ml.projects.predict':
-            (None, self._make_response_body(error_msg, successful=False))
-    })
-    resource = discovery.build(
-        'ml',
-        'v1',
-        http=http.HttpMock(self._discovery_testdata_dir,
-                           {'status': http_client.OK}),
-        requestBuilder=builder)
-    with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
-      response_mock.side_effect = lambda service, version: resource
-      inference_spec_type = model_spec_pb2.InferenceSpecType(
-          ai_platform_prediction_model_spec=model_spec_pb2
-          .AIPlatformPredictionModelSpec(
-              project_id='test-project',
-              model_name='test-model',
-          ))
+#   def test_exception_raised_when_response_body_contains_error_entry(self):
+#     error_msg = 'Base64 decode failed.'
+#     builder = http.RequestMockBuilder({
+#         'ml.projects.predict':
+#             (None, self._make_response_body(error_msg, successful=False))
+#     })
+#     resource = discovery.build(
+#         'ml',
+#         'v1',
+#         http=http.HttpMock(self._discovery_testdata_dir,
+#                            {'status': http_client.OK}),
+#         requestBuilder=builder)
+#     with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
+#       response_mock.side_effect = lambda service, version: resource
+#       inference_spec_type = model_spec_pb2.InferenceSpecType(
+#           ai_platform_prediction_model_spec=model_spec_pb2
+#           .AIPlatformPredictionModelSpec(
+#               project_id='test-project',
+#               model_name='test-model',
+#           ))
 
-      try:
-        self._set_up_pipeline(inference_spec_type)
-        self._run_inference_with_beam()
-      except ValueError as exc:
-        actual_error_msg = str(exc)
-        self.assertTrue(actual_error_msg.startswith(error_msg))
-      else:
-        self.fail('Test was expected to throw ValueError exception')
+#       try:
+#         self._set_up_pipeline(inference_spec_type)
+#         self._run_inference_with_beam()
+#       except ValueError as exc:
+#         actual_error_msg = str(exc)
+#         self.assertTrue(actual_error_msg.startswith(error_msg))
+#       else:
+#         self.fail('Test was expected to throw ValueError exception')
 
-  def test_exception_raised_when_project_id_is_empty(self):
-    inference_spec_type = model_spec_pb2.InferenceSpecType(
-        ai_platform_prediction_model_spec=model_spec_pb2
-        .AIPlatformPredictionModelSpec(model_name='test-model',))
+#   def test_exception_raised_when_project_id_is_empty(self):
+#     inference_spec_type = model_spec_pb2.InferenceSpecType(
+#         ai_platform_prediction_model_spec=model_spec_pb2
+#         .AIPlatformPredictionModelSpec(model_name='test-model',))
 
-    with self.assertRaises(ValueError):
-      self._set_up_pipeline(inference_spec_type)
-      self._run_inference_with_beam()
+#     with self.assertRaises(ValueError):
+#       self._set_up_pipeline(inference_spec_type)
+#       self._run_inference_with_beam()
 
-  def test_request_body_with_binary_data(self):
-    example = text_format.Parse(
-        """
-      features {
-        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
-        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
-        feature { key: "y" value { int64_list { value: [1, 2] }}}
-      }
-      """, tf.train.Example())
-    result = list(
-        run_inference._RemotePredictDoFn._prepare_instances([example]))
-    self.assertEqual([
-        {
-            'x_bytes': {
-                'b64': 'QVNhOGFzZGY='
-            },
-            'x': 'JLK7ljk3',
-            'y': [1, 2]
-        },
-    ], result)
+#   def test_request_body_with_binary_data(self):
+#     example = text_format.Parse(
+#         """
+#       features {
+#         feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+#         feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+#         feature { key: "y" value { int64_list { value: [1, 2] }}}
+#       }
+#       """, tf.train.Example())
+#     result = list(
+#         run_inference._RemotePredictDoFn._prepare_instances([example]))
+#     self.assertEqual([
+#         {
+#             'x_bytes': {
+#                 'b64': 'QVNhOGFzZGY='
+#             },
+#             'x': 'JLK7ljk3',
+#             'y': [1, 2]
+#         },
+#     ], result)
 
 
 if __name__ == '__main__':

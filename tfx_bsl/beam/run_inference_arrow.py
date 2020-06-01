@@ -46,7 +46,7 @@ from tfx_bsl.beam import shared
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
-    Tuple, Union
+    Tuple, Union, Optional
 
 # TODO(b/140306674): stop using the internal TF API.
 from tensorflow.python.saved_model import loader_impl
@@ -99,15 +99,14 @@ class OperationType(object):
 # elif isinstance(element, tf.train.SequenceExample)
 
 
-# TODO (Maxine): Work on remote
-
 # TODO (Maxine): Union[bytes, pa.RecordBatch]?
 @beam.ptransform_fn
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInferenceImpl(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    process_column: Optional[str] = None
 ) -> beam.pvalue.PCollection:
   """Implementation of RunInference API.
 
@@ -126,14 +125,14 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
   batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
   operation_type = _get_operation_type(inference_spec_type)
   if operation_type == OperationType.CLASSIFICATION:
-    return batched_examples | 'Classify' >> _Classify(inference_spec_type)
+    return batched_examples | 'Classify' >> _Classify(inference_spec_type, process_column)
   elif operation_type == OperationType.REGRESSION:
-    return batched_examples | 'Regress' >> _Regress(inference_spec_type)
+    return batched_examples | 'Regress' >> _Regress(inference_spec_type, process_column)
   elif operation_type == OperationType.PREDICTION:
-    return batched_examples | 'Predict' >> _Predict(inference_spec_type)
+    return batched_examples | 'Predict' >> _Predict(inference_spec_type, process_column)
   elif operation_type == OperationType.MULTIHEAD:
     return (batched_examples
-            | 'MultiInference' >> _MultiInference(inference_spec_type))
+            | 'MultiInference' >> _MultiInference(inference_spec_type, process_column))
   else:
     raise ValueError('Unsupported operation_type %s' % operation_type)
 
@@ -149,12 +148,13 @@ _Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Classify(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
-              inference_spec_type: model_spec_pb2.InferenceSpecType):
+              inference_spec_type: model_spec_pb2.InferenceSpecType,
+              process_column: Optional[str] = None):
   """Performs classify PTransform."""
   if _using_in_process_inference(inference_spec_type):
     return (pcoll
             | 'Classify' >> beam.ParDo(
-                _BatchClassifyDoFn(inference_spec_type, shared.Shared()))
+                _BatchClassifyDoFn(inference_spec_type, process_column, shared.Shared()))
             | 'BuildPredictionLogForClassifications' >> beam.ParDo(
                 _BuildPredictionLogForClassificationsDoFn()))
   else:
@@ -165,12 +165,13 @@ def _Classify(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Regress(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
-             inference_spec_type: model_spec_pb2.InferenceSpecType):
+             inference_spec_type: model_spec_pb2.InferenceSpecType,
+             process_column: Optional[str] = None):
   """Performs regress PTransform."""
   if _using_in_process_inference(inference_spec_type):
     return (pcoll
             | 'Regress' >> beam.ParDo(
-                _BatchRegressDoFn(inference_spec_type, shared.Shared()))
+                _BatchRegressDoFn(inference_spec_type, process_column, shared.Shared()))
             | 'BuildPredictionLogForRegressions' >> beam.ParDo(
                 _BuildPredictionLogForRegressionsDoFn()))
   else:
@@ -181,13 +182,14 @@ def _Regress(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Predict(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
-             inference_spec_type: model_spec_pb2.InferenceSpecType):
+             inference_spec_type: model_spec_pb2.InferenceSpecType,
+             process_column: Optional[str] = None):
   """Performs predict PTransform."""
   if _using_in_process_inference(inference_spec_type):
     predictions = (
         pcoll
         | 'Predict' >> beam.ParDo(
-            _BatchPredictDoFn(inference_spec_type, shared.Shared())))
+            _BatchPredictDoFn(inference_spec_type, process_column, shared.Shared())))
   else:
     predictions = (
         pcoll
@@ -202,13 +204,14 @@ def _Predict(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _MultiInference(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
-                    inference_spec_type: model_spec_pb2.InferenceSpecType):
+                    inference_spec_type: model_spec_pb2.InferenceSpecType,
+                    process_column: Optional[str] = None):
   """Performs multi inference PTransform."""
   if _using_in_process_inference(inference_spec_type):
     return (
         pcoll
         | 'MultiInference' >> beam.ParDo(
-            _BatchMultiInferenceDoFn(inference_spec_type, shared.Shared()))
+            _BatchMultiInferenceDoFn(inference_spec_type, process_column, shared.Shared()))
         | 'BuildMultiInferenceLog' >> beam.ParDo(_BuildMultiInferenceLogDoFn()))
   else:
     raise NotImplementedError
@@ -271,9 +274,13 @@ class _BaseDoFn(beam.DoFn):
       self._inference_request_batch_byte_size.update(
           sum(element.ByteSize() for element in elements))
 
-  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
+  # TODO (Maxine): just one col for now, later, will do a list of str
+  def __init__(
+    self, inference_spec_type: model_spec_pb2.InferenceSpecType,
+    process_column: Optional[str] = None):
     super(_BaseDoFn, self).__init__()
     self._clock = None
+    self._process_column = process_column
     self._metrics_collector = self._MetricsCollector(inference_spec_type)
 
   def setup(self):
@@ -283,22 +290,39 @@ class _BaseDoFn(beam.DoFn):
       self, elements: pa.RecordBatch
   ) -> Iterable[Any]:
     batch_start_time = self._clock.get_current_time_in_microseconds()
-    # TODO (Maxine): set ARROW_INPUT_COLUMN or take as a parameter
+    # TODO (Maxine): take process as a parameter, should it be part of inference spec?
     # extract record batch from here, assuming first column
-    serialized_examples = elements.column(0)
+
+    # what would record batch look like? (flatten or not)
+    # vs np.asarray(elements.column(0))
+    if len(elements.columns) == 1: 
+      serialized_examples = elements.column(0).to_pylist()
+    else: 
+      if self._process_column is None:
+        raise ValueError('Must pass in a process column with multi-column RecordBatch')
+      serialized_examples = None
+
+    for column_name, column_array in zip(elements.schema.names, elements.columns):
+      column_type = column_array.type
+      if column_name == self._process_column:
+        serialized_examples = column_array.to_pylist()
+        break
 
     for element in serialized_examples:
       if not isinstance(element, str):
         raise ValueError('Expected a list of serialized examples (string type)')
 
+      # TODO (Maxine): Is there a better way?
       try:
         example = tf.train.Example.FromString(element)
-        sequenceExample = tf.train.sequenceExample.FromString(element)
       except:
-        raise ValueError(
-          'RecordBatch should contain a serialized example of the type \
-          tf.Train.Example or tf.Train.SequenceExample'
-        )
+        try: 
+          sequenceExample = tf.train.sequenceExample.FromString(element)
+        except:
+          raise ValueError(
+            'RecordBatch should contain a serialized example of the type \
+            tf.Train.Example or tf.Train.SequenceExample'
+          )
 
     outputs = self.run_inference(serialized_examples)
     result = self._post_process(serialized_examples, outputs)
@@ -504,9 +528,9 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
   def __init__(
       self,
       inference_spec_type: model_spec_pb2.InferenceSpecType,
-      shared_model_handle: shared.Shared,
+      shared_model_handle: shared.Shared, process_column: Optional[str] = None,
   ):
-    super(_BaseBatchSavedModelDoFn, self).__init__(inference_spec_type)
+    super(_BaseBatchSavedModelDoFn, self).__init__(inference_spec_type, process_column)
     self._inference_spec_type = inference_spec_type
     self._shared_model_handle = shared_model_handle
     self._model_path = inference_spec_type.saved_model_spec.model_path
@@ -776,7 +800,7 @@ class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-# TODO (Maxine): need to replace train example from this point on
+
 @beam.typehints.with_input_types(Tuple[str, classification_pb2.Classifications])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 class _BuildPredictionLogForClassificationsDoFn(beam.DoFn):
