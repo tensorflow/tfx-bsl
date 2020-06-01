@@ -48,10 +48,25 @@ _LEGACY_DEFAULT_VALUE_FOR_FEATURE_TYPE = {
         schema_pb2.TensorRepresentation.DefaultValue(float_value=-1.0),
 }
 
+
+def _GetSparseTensorRepresentationUsedColumns(
+    sparse_tensor_rep: schema_pb2.TensorRepresentation.SparseTensor
+) -> List[Text]:
+  result = list(sparse_tensor_rep.index_column_names)
+  if sparse_tensor_rep.HasField("value_column_name"):
+    result.append(sparse_tensor_rep.value_column_name)
+  return result
+
+
 _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER = {
-    "dense_tensor": lambda tr: [tr.dense_tensor.column_name],
-    "varlen_sparse_tensor": lambda tr: [tr.varlen_sparse_tensor.column_name],
-    None: lambda _: [],
+    "dense_tensor":
+        lambda tr: [tr.dense_tensor.column_name],
+    "varlen_sparse_tensor":
+        lambda tr: [tr.varlen_sparse_tensor.column_name],
+    "sparse_tensor":
+        lambda tr: _GetSparseTensorRepresentationUsedColumns(tr.sparse_tensor),
+    None:
+        lambda _: [],
 }
 
 

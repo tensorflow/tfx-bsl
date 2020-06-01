@@ -521,6 +521,17 @@ _GET_SOURCE_COLUMNS_TEST_CASES = [
          """,
         expected=['my_column'],
     ),
+    dict(
+        testcase_name='sparse_tensor',
+        pbtxt="""
+          sparse_tensor {
+            index_column_names: "idx1"
+            index_column_names: "idx2"
+            value_column_name: "value"
+          }
+        """,
+        expected=['idx1', 'idx2', 'value'],
+    ),
 ]
 
 
