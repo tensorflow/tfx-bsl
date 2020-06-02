@@ -442,21 +442,22 @@ class GetTotalByteSizeTest(parameterized.TestCase):
   @parameterized.named_parameters(*_GET_TOTAL_BYTE_SIZE_TEST_NAMED_PARAMS)
   def test_simple(self, factory):
     # 3 int64 values
-    # 4 int32 offsets
+    # 5 int32 offsets
     # 1 null bitmap byte for outer ListArray
     # 1 null bitmap byte for inner Int64Array
-    # 42 bytes in total.
-    list_array = pa.array([[1, 2], [3], None], type=pa.list_(pa.int64()))
+    # 46 bytes in total.
+    list_array = pa.array([[1, 2], [None], None, None],
+                          type=pa.list_(pa.int64()))
 
     # 1 null bitmap byte for outer StructArray.
     # 1 null bitmap byte for inner Int64Array.
-    # 3 int64 values.
-    # 26 bytes in total
-    struct_array = pa.array([{"a": 1}, {"a": 2}, {"a": 3}],
+    # 4 int64 values.
+    # 34 bytes in total
+    struct_array = pa.array([{"a": 1}, {"a": 2}, {"a": None}, None],
                             type=pa.struct([pa.field("a", pa.int64())]))
     entity = factory([list_array, struct_array], ["a1", "a2"])
 
-    self.assertEqual(42 + 26, table_util.TotalByteSize(entity))
+    self.assertEqual(46 + 34, table_util.TotalByteSize(entity))
 
 
 class RecordBatchTakeTest(parameterized.TestCase):

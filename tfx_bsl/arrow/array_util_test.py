@@ -431,6 +431,16 @@ class FillNullListsTest(parameterized.TestCase):
       array_util.FillNullLists(pa.array([[1]]), pa.array(["a"]))
 
 
+def _all_false_null_bitmap_size(size):
+  if pa.__version__ < "0.17":
+    return size
+  # starting from arrow 0.17, the array factory won't create a null bitmap if
+  # no element is null.
+  # TODO(zhuo): clean up this shim once tfx_bsl supports arrow 0.17+
+  # exclusively.
+  return 0
+
+
 def _get_numeric_byte_size_test_cases():
   result = []
   for array_type, sizeof in [
@@ -451,8 +461,8 @@ def _get_numeric_byte_size_test_cases():
             array=pa.array(range(9), type=array_type),
             slice_offset=2,
             slice_length=3,
-            expected_size=(2 + sizeof * 9),
-            expected_sliced_size=(1 + sizeof * 3)))
+            expected_size=(_all_false_null_bitmap_size(2) + sizeof * 9),
+            expected_sliced_size=(_all_false_null_bitmap_size(1) + sizeof * 3)))
   return result
 
 
@@ -470,17 +480,20 @@ def _get_binary_like_byte_size_test_cases():
             array=pa.array([
                 "a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg",
                 "hhhhhhhh", "iiiiiiiii"
-            ], type=array_type),
+            ],
+                           type=array_type),
             slice_offset=1,
             slice_length=3,
             # contents: 45
             # offsets: 10 * sizeof_offsets
             # null bitmap: 2
-            expected_size=(45 + sizeof_offsets * 10 + 2),
+            expected_size=(45 + sizeof_offsets * 10 +
+                           _all_false_null_bitmap_size(2)),
             # contents: 9
             # offsets: 4 * sizeof_offsets
             # null bitmap: 1
-            expected_sliced_size=(9 + sizeof_offsets * 4 + 1)))
+            expected_sliced_size=(9 + sizeof_offsets * 4 +
+                                  _all_false_null_bitmap_size(1))))
   return result
 
 
@@ -494,10 +507,10 @@ _GET_BYTE_SIZE_TEST_CASES = (
             slice_length=1,
             # contents: 2
             # null bitmap: 2
-            expected_size=(2 + 2),
+            expected_size=(_all_false_null_bitmap_size(2) + 2),
             # contents: 1
             # null bitmap: 1
-            expected_sliced_size=(1 + 1)),
+            expected_sliced_size=(_all_false_null_bitmap_size(1) + 1)),
         dict(
             testcase_name="list",
             array=pa.array([[1], [1, 1], [1, 1, 1], [1, 1, 1, 1]],
@@ -509,13 +522,14 @@ _GET_BYTE_SIZE_TEST_CASES = (
             # contents:
             #   null bitmap: 2
             #   contents: 10 * 8
-            expected_size=(5 * 4 + 1 + 2 + 10 * 8),
+            expected_size=(5 * 4 + _all_false_null_bitmap_size(1 + 2) + 10 * 8),
             # offsets: 3 * 4
             # null bitmap: 1
             # contents:
             #   null bitmap: 1
             #   contents: 5 * 8
-            expected_sliced_size=(3 * 4 + 1 + 1 + 5 * 8)),
+            expected_sliced_size=(3 * 4 + _all_false_null_bitmap_size(1 + 1)
+                                  + 5 * 8)),
         dict(
             testcase_name="large_list",
             array=pa.array([[1], [1, 1], [1, 1, 1], [1, 1, 1, 1]],
@@ -527,13 +541,14 @@ _GET_BYTE_SIZE_TEST_CASES = (
             # contents:
             #   null bitmap: 2
             #   contents: 10 * 8
-            expected_size=(5 * 8 + 1 + 2 + 10 * 8),
+            expected_size=(5 * 8 + _all_false_null_bitmap_size(1 + 2) + 10 * 8),
             # offsets: 3 * 8
             # null bitmap: 1
             # contents:
             #   null bitmap: 1
             #   contents: 5 * 8
-            expected_sliced_size=(3 * 8 + 1 + 1 + 5 * 8)),
+            expected_sliced_size=(
+                3 * 8 + _all_false_null_bitmap_size(1 + 1) + 5 * 8)),
         dict(
             testcase_name="deeply_nested_list",
             array=pa.array([[["aaa"], ["bb", ""], None],
@@ -546,11 +561,16 @@ _GET_BYTE_SIZE_TEST_CASES = (
             # innermost binary array: 1 + 11 + 8 * 4
             # mid list array: 1 + 8 * 4
             # outmost list array: 1 + 5 * 4
-            expected_size=98,
+            expected_size=(97 +
+                           # innermost binary array does not have null
+                           _all_false_null_bitmap_size(1)),
             # innermost binary array (["c", "def", "g"]): 1 + 5 + 4 * 4
             # mid list array: ([["c"], [], ["def, "g]]): 1 + 4 * 4
             # outmost list array: 1 + 3 * 4
-            expected_sliced_size=52),
+            expected_sliced_size=(
+                51 +
+                # innermost binary array does not have null
+                _all_false_null_bitmap_size(1))),
         dict(
             testcase_name="null",
             array=pa.array([None] * 1000),
@@ -570,8 +590,10 @@ _GET_BYTE_SIZE_TEST_CASES = (
                      pa.field("b", pa.int64())])),
             slice_offset=2,
             slice_length=1,
-            expected_size=(2 + (2 + 10 * 8) * 2),
-            expected_sliced_size=(1 + (1 + 8) * 2))
+            expected_size=(_all_false_null_bitmap_size(2) +
+                           (_all_false_null_bitmap_size(2) + 10 * 8) * 2),
+            expected_sliced_size=(_all_false_null_bitmap_size(1) +
+                                  (_all_false_null_bitmap_size(1) + 8) * 2))
     ])
 
 
