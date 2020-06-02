@@ -27,8 +27,14 @@ from absl.testing import absltest
 from absl.testing import parameterized
 
 
+# Used for constructing expected values for a distribution metric.
 _Distribution = collections.namedtuple(
     "_Distribution", ["min", "max", "count", "sum"])
+
+# Used for constructing expected values for a distribution metric. The tests
+# will not check the exact values in that distribution, instead, only check
+# for its presence.
+_IGNORE_VALUES = object()
 
 
 _LOGICAL_FORMAT = "some_df"
@@ -38,7 +44,6 @@ _PHYSICAL_FORMAT = "some_pf"
 def _GetMetricName(name):
   return "LogicalFormat[%s]-PhysicalFormat[%s]-%s" % (_LOGICAL_FORMAT,
                                                       _PHYSICAL_FORMAT, name)
-
 
 _PROFILE_RECORD_BATCHES_TEST_CASES = [
     dict(
@@ -50,8 +55,9 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
             pa.array([None, None, None, None], type=pa.null()),
         ], ["f1", "f2", "f3", "f4"]),
         expected_distributions={
-            _GetMetricName("record_batch_byte_size"):
-                _Distribution(min=137, max=137, count=1, sum=137),
+            # byte size of an arrow array may change over time. Do not test
+            # for exact values.
+            _GetMetricName("record_batch_byte_size"): _IGNORE_VALUES,
             _GetMetricName("num_columns"):
                 _Distribution(min=3, max=4, count=4, sum=15),
             _GetMetricName("num_feature_values"):
@@ -77,8 +83,7 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
         record_batch=pa.RecordBatch.from_arrays(
             [pa.array([[[[1, 2, 3], [4]], [[5]]], [[None, [1]]]])], ["f1"]),
         expected_distributions={
-            _GetMetricName("record_batch_byte_size"):
-                _Distribution(min=104, max=104, count=1, sum=104),
+            _GetMetricName("record_batch_byte_size"): _IGNORE_VALUES,
             _GetMetricName("num_columns"):
                 _Distribution(min=1, max=1, count=2, sum=2),
             # First row: 5 values; second row: 1 value
@@ -109,8 +114,7 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
             }]])
         ], ["f1"]),
         expected_distributions={
-            _GetMetricName("record_batch_byte_size"):
-                _Distribution(min=93, max=93, count=1, sum=93),
+            _GetMetricName("record_batch_byte_size"): _IGNORE_VALUES,
             _GetMetricName("num_columns"):
                 _Distribution(min=1, max=1, count=2, sum=2),
             # min came from the second row, number of int values.
@@ -135,6 +139,8 @@ class TelemetryTest(parameterized.TestCase):
 
   def _AssertDistributionEqual(
       self, beam_distribution_result, expected, msg=None):
+    if expected is _IGNORE_VALUES:
+      return
     try:
       self.assertEqual(beam_distribution_result.min, expected.min)
       self.assertEqual(beam_distribution_result.max, expected.max)
@@ -169,6 +175,7 @@ class TelemetryTest(parameterized.TestCase):
         beam.metrics.metric.MetricResults.DISTRIBUTIONS]
     self.assertLen(distributions, len(expected_distributions))
     for dist in distributions:
+      self.assertIn(dist.key.metric.name, expected_distributions)
       self._AssertDistributionEqual(
           dist.result, expected_distributions[dist.key.metric.name],
           dist.key.metric.name)
