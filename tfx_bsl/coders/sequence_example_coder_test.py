@@ -649,6 +649,26 @@ _DECODE_CASES = [
                 names=["sequence_a"]),
         ], ["context_a", _TEST_SEQUENCE_COLUMN_NAME])),
     dict(
+        testcase_name="schema_does_not_contain_sequence_feature",
+        schema_text_proto="""
+        feature {
+          name: "context_a"
+          type: BYTES
+        }
+        """,
+        sequence_examples_text_proto=[
+            """
+        context { feature { key: "context_a" value { } } }
+        feature_lists {
+          feature_list { key: 'sequence_a' value { } }
+        }
+        """
+        ],
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([None], type=list_factory(binary_type)),
+        ], ["context_a"])),
+    dict(
         testcase_name="feature_lists_with_no_sequence_features",
         schema_text_proto=None,
         sequence_examples_text_proto=["""
@@ -808,9 +828,8 @@ _INVALID_INPUT_CASES = [
 
 class SequenceExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
-  @parameterized.named_parameters(*_DECODE_CASES)
-  def test_decode(self, schema_text_proto, sequence_examples_text_proto,
-                  create_expected):
+  def _test_decode(self, schema_text_proto, sequence_examples_text_proto,
+                   create_expected, use_large_types):
     serialized_sequence_examples = [
         text_format.Parse(pbtxt,
                           tf.train.SequenceExample()).SerializeToString()
@@ -823,44 +842,37 @@ class SequenceExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
     if serialized_schema:
       coder = sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-          _TEST_SEQUENCE_COLUMN_NAME, serialized_schema)
+          _TEST_SEQUENCE_COLUMN_NAME,
+          serialized_schema,
+          use_large_types=use_large_types)
     else:
       coder = sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-          _TEST_SEQUENCE_COLUMN_NAME)
+          _TEST_SEQUENCE_COLUMN_NAME, use_large_types=use_large_types)
 
     result = coder.DecodeBatch(serialized_sequence_examples)
     self.assertIsInstance(result, pa.RecordBatch)
-    expected = create_expected(pa.list_, pa.binary())
+    if use_large_types:
+      expected = create_expected(pa.large_list, pa.large_binary())
+    else:
+      expected = create_expected(pa.list_, pa.binary())
     self.assertTrue(
         result.equals(expected),
         "actual: {}\n expected:{}".format(result, expected))
+
+    if serialized_schema is not None:
+      self.assertTrue(coder.ArrowSchema().equals(result.schema))
+
+  @parameterized.named_parameters(*_DECODE_CASES)
+  def test_decode(self, schema_text_proto, sequence_examples_text_proto,
+                  create_expected):
+    self._test_decode(schema_text_proto, sequence_examples_text_proto,
+                      create_expected, use_large_types=False)
 
   @parameterized.named_parameters(*_DECODE_CASES)
   def test_decode_large_types(self, schema_text_proto,
                               sequence_examples_text_proto, create_expected):
-    serialized_sequence_examples = [
-        text_format.Parse(pbtxt,
-                          tf.train.SequenceExample()).SerializeToString()
-        for pbtxt in sequence_examples_text_proto
-    ]
-    serialized_schema = None
-    if schema_text_proto is not None:
-      serialized_schema = text_format.Parse(
-          schema_text_proto, schema_pb2.Schema()).SerializeToString()
-
-    if serialized_schema:
-      coder = sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-          _TEST_SEQUENCE_COLUMN_NAME, serialized_schema, use_large_types=True)
-    else:
-      coder = sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-          _TEST_SEQUENCE_COLUMN_NAME, use_large_types=True)
-
-    result = coder.DecodeBatch(serialized_sequence_examples)
-    self.assertIsInstance(result, pa.RecordBatch)
-    expected = create_expected(pa.large_list, pa.large_binary())
-    self.assertTrue(
-        result.equals(expected),
-        "actual: {}\n expected:{}".format(result, expected))
+    self._test_decode(schema_text_proto, sequence_examples_text_proto,
+                      create_expected, use_large_types=True)
 
   @parameterized.named_parameters(*_INVALID_INPUT_CASES)
   def test_invalid_input(self, schema_text_proto, sequence_examples_text_proto,

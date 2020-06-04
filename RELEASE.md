@@ -5,6 +5,7 @@
 ## Major Features and Improvements
 
 *   Added SequenceExamplesToRecordBatchDecoder.
+*   Added a TFXIO implementation for SequenceExmaples on TFRecord.
 *   Added support for TensorAdapter to output tf.RaggedTensors.
 *   Improved performance of tf.Example and tf.SequenceExample coders.
 
