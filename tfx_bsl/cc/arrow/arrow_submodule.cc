@@ -184,27 +184,6 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
   auto m = arrow_module.def_submodule("table_util");
   m.doc() = "Arrow Table utilities.";
   m.def(
-      "MergeTables",
-      [](const std::vector<std::shared_ptr<arrow::Table>>& tables) {
-        std::shared_ptr<arrow::Table> result;
-        Status s = MergeTables(tables, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::doc(
-          "Merges a list of arrow tables into one. \n"
-          "The columns are concatenated (there will be only one chunk per "
-          "column). Columns of the same name must be of the same type, or be a "
-          "column of NullArrays. If a column in some tables are of type T, in "
-          "some other tables are of NullArrays, the concatenated column is of "
-          "type T, with nulls representing the rows from the table with "
-          "NullArrays. If a column appears in some tables but not in some "
-          "other tables, the concatenated column will contain nulls "
-          "representing the rows from the table with that column missing."),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
       "SliceTableByRowIndices",
       [](const std::shared_ptr<arrow::Table>& table,
          const std::shared_ptr<arrow::Array>& row_indices) {

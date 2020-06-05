@@ -243,55 +243,6 @@ _MERGE_TEST_CASES = [
 ]
 
 
-_MERGE_INVALID_INPUT_TEST_CASES = [
-    dict(
-        testcase_name="not_a_list_of_tables",
-        inputs=[pa.Table.from_arrays([pa.array([1])], ["f1"]), 1],
-        expected_error_regexp="incompatible function arguments",
-    ),
-    dict(
-        testcase_name="not_a_list",
-        inputs=1,
-        expected_error_regexp="incompatible function arguments",
-    ),
-    dict(
-        testcase_name="column_type_differs",
-        inputs=[
-            pa.Table.from_arrays([pa.array([1, 2, 3], type=pa.int32())],
-                                 ["f1"]),
-            pa.Table.from_arrays([pa.array([4, 5, 6], type=pa.int64())], ["f1"])
-        ],
-        expected_error_regexp="Trying to append a column of different type"),
-]
-
-
-class MergeTablesTest(parameterized.TestCase):
-
-  @parameterized.named_parameters(*_MERGE_INVALID_INPUT_TEST_CASES)
-  def test_invalid_inputs(self, inputs, expected_error_regexp):
-    with self.assertRaisesRegexp(Exception, expected_error_regexp):
-      _ = table_util.MergeTables(inputs)
-
-  @parameterized.named_parameters(*_MERGE_TEST_CASES)
-  def test_merge_tables(self, inputs, expected_output):
-    input_tables = [
-        pa.Table.from_arrays(list(in_dict.values()), list(in_dict.keys()))
-        for in_dict in inputs
-    ]
-    merged = table_util.MergeTables(input_tables)
-
-    self.assertLen(expected_output, merged.num_columns)
-    for column_name in merged.schema.names:
-      column = merged.column(column_name)
-      self.assertEqual(column.num_chunks, 1)
-      try:
-        self.assertTrue(expected_output[column_name].equals(
-            column.chunk(0)))
-      except AssertionError:
-        self.fail(msg="Column {}:\nexpected:{}\ngot: {}".format(
-            column_name, expected_output[column_name], column))
-
-
 class MergeRecordBatchesTest(parameterized.TestCase):
 
   @parameterized.named_parameters(*_MERGE_TEST_CASES)
@@ -420,15 +371,6 @@ class SliceTableByRowIndicesTest(parameterized.TestCase):
     with self.assertRaisesRegexp(expected_error_type, expected_error_regexp):
       table_util.SliceTableByRowIndices(
           pa.Table.from_arrays([pa.array([1])], ["f1"]), row_indices)
-
-  def test_always_make_a_copy(self):
-    table = pa.Table.from_arrays([
-        pa.array([[1], [2], [3]], type=pa.list_(pa.int64()))
-    ], ["f1"])
-    sliced = table_util.SliceTableByRowIndices(
-        table, pa.array([1, 2], type=pa.int32()))
-    self.assertEqual(1, sliced.columns[0].num_chunks)
-    self.assertEqual(0, sliced.columns[0].chunk(0).offset)
 
 
 _GET_TOTAL_BYTE_SIZE_TEST_NAMED_PARAMS = [

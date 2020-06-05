@@ -33,31 +33,9 @@ namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
 using ::arrow::ArrayVector;
-using ::arrow::ChunkedArray;
-using ::arrow::Concatenate;
-using ::arrow::Field;
 using ::arrow::RecordBatch;
-using ::arrow::Schema;
 using ::arrow::Table;
 using ::arrow::Type;
-
-// TODO(zhuo): remove this shim after tfx_bsl starts depending on pyarrow>=0.16.
-# if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR < 16)
-Status ConcatenateTablesShim(const std::vector<std::shared_ptr<Table>>& tables,
-                             std::shared_ptr<Table>* result) {
-  return FromArrowStatus(arrow::ConcatenateTables(tables, result));
-}
-#else
-Status ConcatenateTablesShim(const std::vector<std::shared_ptr<Table>>& tables,
-                             std::shared_ptr<Table>* result) {
-  auto status_or = arrow::ConcatenateTables(tables);
-  if (!status_or.ok()) {
-    return FromArrowStatus(status_or.status());
-  }
-  *result = std::move(status_or).ValueOrDie();
-  return Status::OK();
-}
-# endif
 
 // Returns an empty table that has the same schema as `table`.
 Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
@@ -70,87 +48,6 @@ Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
   *result = Table::Make(table.schema(), empty_arrays, 0);
   return Status::OK();
 }
-
-// Represents a field (i.e. column name and type) in the merged table.
-class FieldRep {
- public:
-  FieldRep(std::shared_ptr<Field> field, const int64_t leading_nulls)
-      : field_(std::move(field)) {
-    if (leading_nulls > 0) {
-      arrays_or_nulls_.push_back(leading_nulls);
-    }
-  }
-
-  // Appends `column` to the column of the field in merged table.
-  Status AppendColumn(const ChunkedArray& column) {
-    const auto& this_type = field_->type();
-    const auto& other_type = column.type();
-    if (other_type->id() == Type::NA) {
-      AppendNulls(column.length());
-      return Status::OK();
-    }
-    if (this_type->id() == Type::NA) {
-      field_ = arrow::field(field_->name(), other_type);
-    } else if (!this_type->Equals(other_type)) {
-      return errors::InvalidArgument(
-          absl::StrCat("Trying to append a column of different type. ",
-                       "Column name: ", field_->name(),
-                       " , Current type: ", this_type->ToString(),
-                       " , New type: ", other_type->ToString()));
-    }
-    arrays_or_nulls_.insert(arrays_or_nulls_.end(),
-                            column.chunks().begin(),
-                            column.chunks().end());
-    return Status::OK();
-  }
-
-  // Appends `num_nulls` nulls to the column of the field in the merged table.
-  void AppendNulls(const int64_t num_nulls) {
-    if (arrays_or_nulls_.empty() ||
-        absl::holds_alternative<std::shared_ptr<Array>>(
-            arrays_or_nulls_.back())) {
-      arrays_or_nulls_.push_back(num_nulls);
-    } else {
-      absl::get<int64_t>(arrays_or_nulls_.back()) += num_nulls;
-    }
-  }
-
-  const std::shared_ptr<Field>& field() const {
-    return field_;
-  }
-
-  // Makes a merged array out of columns and nulls appended that can form
-  // the column of the field in the merged table.
-  Status ToMergedArray(std::shared_ptr<Array>* merged_array) const {
-    if (field_->type()->id() == Type::NA) {
-      arrow::NullBuilder null_builder;
-      if (!arrays_or_nulls_.empty()) {
-        TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(null_builder.AppendNulls(
-            absl::get<int64_t>(arrays_or_nulls_.back()))));
-      }
-      TFX_BSL_RETURN_IF_ERROR(
-          FromArrowStatus(null_builder.Finish(merged_array)));
-    } else {
-      std::vector<std::shared_ptr<Array>> arrays_to_merge;
-      for (const auto& array_or_num_nulls : arrays_or_nulls_) {
-        std::shared_ptr<Array> array;
-        if (absl::holds_alternative<int64_t>(array_or_num_nulls)) {
-          TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::MakeArrayOfNull(
-              field_->type(), absl::get<int64_t>(array_or_num_nulls), &array)));
-        } else {
-          array = absl::get<std::shared_ptr<Array>>(array_or_num_nulls);
-        }
-        arrays_to_merge.push_back(std::move(array));
-      }
-      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(Concatenate(
-          arrays_to_merge, arrow::default_memory_pool(), merged_array)));
-    }
-    return Status::OK();
-  }
-
-  std::shared_ptr<Field> field_;
-  std::vector<absl::variant<std::shared_ptr<Array>, int64_t>> arrays_or_nulls_;
-};
 
 template <typename RowIndicesT>
 Status SliceTableByRowIndicesInternal(
@@ -182,69 +79,17 @@ Status SliceTableByRowIndicesInternal(
     begin = end;
   }
 
-  // Make sure to never return a table with non-zero offset (that is a slice
-  // of another table). This is needed because Array.flatten() is buggy and
-  // does not handle offsets correctly.
-  // TODO(zhuo): Remove once https://github.com/apache/arrow/pull/6006 is
-  // available.
-  if (table_slices.size() == 1) {
-    table_slices.emplace_back();
-    TFX_BSL_RETURN_IF_ERROR(GetEmptyTableLike(*table, &table_slices.back()));
+  auto status_or_concatenated = arrow::ConcatenateTables(table_slices);
+  if (!status_or_concatenated.ok()) {
+    return FromArrowStatus(status_or_concatenated.status());
   }
 
-  std::shared_ptr<Table> concatenated;
-  TFX_BSL_RETURN_IF_ERROR(ConcatenateTablesShim(table_slices, &concatenated));
-
   return FromArrowStatus(
-      concatenated->CombineChunks(arrow::default_memory_pool(), result));
+      status_or_concatenated.ValueOrDie()->CombineChunks(
+          arrow::default_memory_pool(), result));
 }
 
 }  // namespace
-
-// TODO(zhuo): This can be replaced by Table::ConcatenateTables with
-// promote_null_type = true in Arrow post 0.15. There is also a Python API.
-Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
-                   std::shared_ptr<Table>* result) {
-  absl::flat_hash_map<std::string, int> field_index_by_field_name;
-  std::vector<FieldRep> field_rep_by_field_index;
-  int64_t total_num_rows = 0;
-  for (const auto& t : tables) {
-    std::vector<bool> field_seen_by_field_index(field_rep_by_field_index.size(),
-                                                false);
-    for (int i = 0; i < t->schema()->num_fields(); ++i) {
-      const auto& f = t->schema()->field(i);
-      auto iter = field_index_by_field_name.find(f->name());
-      if (iter == field_index_by_field_name.end()) {
-        std::tie(iter, std::ignore) = field_index_by_field_name.insert(
-            std::make_pair(f->name(), field_rep_by_field_index.size()));
-        field_rep_by_field_index.emplace_back(f, total_num_rows);
-        field_seen_by_field_index.push_back(true);
-      }
-      field_seen_by_field_index[iter->second] = true;
-      FieldRep& field_rep = field_rep_by_field_index[iter->second];
-      TFX_BSL_RETURN_IF_ERROR(field_rep.AppendColumn(*t->column(i)));
-    }
-    for (int i = 0; i < field_seen_by_field_index.size(); ++i) {
-      if (!field_seen_by_field_index[i]) {
-        field_rep_by_field_index[i].AppendNulls(t->num_rows());
-      }
-    }
-    total_num_rows += t->num_rows();
-  }
-
-  std::vector<std::shared_ptr<Field>> fields;
-  ArrayVector merged_arrays;
-  for (const FieldRep& field_rep : field_rep_by_field_index) {
-    fields.push_back(field_rep.field());
-    std::shared_ptr<Array> merged_array;
-    TFX_BSL_RETURN_IF_ERROR(field_rep.ToMergedArray(&merged_array));
-    merged_arrays.push_back(std::move(merged_array));
-  }
-  *result =
-      Table::Make(std::make_shared<Schema>(std::move(fields)),
-                  merged_arrays, /*num_rows=*/total_num_rows);
-  return Status::OK();
-}
 
 Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
                               const std::shared_ptr<Array>& row_indices,
