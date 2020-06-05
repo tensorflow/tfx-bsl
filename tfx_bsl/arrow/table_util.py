@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-from typing import List, Optional, Text
+from typing import List, Optional, Text, Union
 import pandas as pd
 import pyarrow as pa
 from tfx_bsl.arrow import array_util
@@ -30,8 +30,7 @@ from tfx_bsl.arrow import array_util
 # See b/148667210 for why the ImportError is ignored.
 try:
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import RecordBatchTake
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import SliceTableByRowIndices
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import TotalByteSize
+  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import TotalByteSize as _TotalByteSize
 except ImportError as err:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.arrow.table_util. "
@@ -53,6 +52,18 @@ _NUMPY_KIND_TO_ARROW_TYPE = {
     "O": pa.binary(),
     "U": pa.binary(),
 }
+
+
+def TotalByteSize(table_or_batch: Union[pa.Table, pa.RecordBatch],
+                  ignore_unsupported=False):
+  """Returns the in-memory size of a record batch or a table."""
+  if isinstance(table_or_batch, pa.Table):
+    return sum([
+        _TotalByteSize(b, ignore_unsupported)
+        for b in table_or_batch.to_batches(max_chunksize=None)
+    ])
+  else:
+    return _TotalByteSize(table_or_batch, ignore_unsupported)
 
 
 def NumpyKindToArrowType(kind: Text) -> Optional[pa.DataType]:

@@ -16,6 +16,9 @@
 ## Breaking changes
 
 ## Deprecations
+*   Removed `arrow.table_util.SliceTableByRowIndices` (in favor of
+    `RecordBatchTake`)
+*   Removed `arrow.table_util.MergeTables` (available as native pyarrow API).
 
 # Release 0.22.0
 
