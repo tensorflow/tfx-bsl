@@ -323,7 +323,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     self._build_multihead_model(model_path)
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
-                'multi',
+        'multi',
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['regress_diff'])),
