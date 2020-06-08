@@ -18,8 +18,10 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
-from absl import logging
 from typing import List, Dict, Mapping, Optional, Text, Tuple, Union
+
+from absl import logging
+from tfx_bsl.arrow import path
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -48,10 +50,27 @@ _LEGACY_DEFAULT_VALUE_FOR_FEATURE_TYPE = {
         schema_pb2.TensorRepresentation.DefaultValue(float_value=-1.0),
 }
 
+
+def _GetSparseTensorRepresentationUsedColumns(
+    sparse_tensor_rep: schema_pb2.TensorRepresentation.SparseTensor
+) -> List[path.ColumnPath]:
+  result = [path.ColumnPath(c) for c in sparse_tensor_rep.index_column_names]
+  if sparse_tensor_rep.HasField("value_column_name"):
+    result.append(path.ColumnPath(sparse_tensor_rep.value_column_name))
+  return result
+
+
 _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER = {
-    "dense_tensor": lambda tr: [tr.dense_tensor.column_name],
-    "varlen_sparse_tensor": lambda tr: [tr.varlen_sparse_tensor.column_name],
-    None: lambda _: [],
+    "dense_tensor":
+        lambda tr: [path.ColumnPath(tr.dense_tensor.column_name)],
+    "varlen_sparse_tensor":
+        lambda tr: [path.ColumnPath(tr.varlen_sparse_tensor.column_name)],
+    "sparse_tensor":
+        lambda tr: _GetSparseTensorRepresentationUsedColumns(tr.sparse_tensor),
+    "ragged_tensor":
+        lambda tr: [path.ColumnPath.from_proto(tr.ragged_tensor.feature_path)],
+    None:
+        lambda _: [],
 }
 
 
@@ -105,7 +124,8 @@ def InferTensorRepresentationsFromSchema(
 
 
 def GetSourceColumnsFromTensorRepresentation(
-    tensor_representation: schema_pb2.TensorRepresentation) -> List[Text]:
+    tensor_representation: schema_pb2.TensorRepresentation
+    ) -> List[path.ColumnPath]:
   """Returns columns required by the given TensorRepresentation."""
 
   return _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER[

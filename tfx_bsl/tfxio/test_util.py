@@ -18,10 +18,11 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+from typing import List, Text
+
 import apache_beam as beam
 from tfx_bsl.tfxio import tf_example_record
 from tfx_bsl.tfxio import tfxio
-from typing import List, Text
 
 
 class InMemoryTFExampleRecord(tf_example_record._TFExampleRecordBase):  # pylint: disable=protected-access
@@ -33,7 +34,7 @@ class InMemoryTFExampleRecord(tf_example_record._TFExampleRecordBase):  # pylint
       beam.Create([serialized_example1, ...]) | tfxio.BeamSource())
   """
 
-  def _SerializedExamplesSource(self) -> beam.PTransform:
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
 
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(bytes)
