@@ -269,7 +269,7 @@ class MergeTablesTest(parameterized.TestCase):
 
   @parameterized.named_parameters(*_MERGE_INVALID_INPUT_TEST_CASES)
   def test_invalid_inputs(self, inputs, expected_error_regexp):
-    with self.assertRaisesRegexp(Exception, expected_error_regexp):
+    with self.assertRaisesRegex(Exception, expected_error_regexp):
       _ = table_util.MergeTables(inputs)
 
   @parameterized.named_parameters(*_MERGE_TEST_CASES)
@@ -310,127 +310,6 @@ class MergeRecordBatchesTest(parameterized.TestCase):
               column_name, expected_output[column_name], column))
 
 
-_SLICE_TEST_CASES = [
-    dict(
-        testcase_name="no_index",
-        row_indices=[],
-        expected_output=pa.Table.from_arrays([
-            pa.array([], type=pa.list_(pa.int32())),
-            pa.array([], type=pa.list_(pa.binary()))
-        ], ["f1", "f2"])),
-    dict(
-        testcase_name="one_index",
-        row_indices=[1],
-        expected_output=pa.Table.from_arrays([
-            pa.array([None], type=pa.list_(pa.int32())),
-            pa.array([["b", "c"]], type=pa.list_(pa.binary()))
-        ], ["f1", "f2"])),
-    dict(
-        testcase_name="consecutive_first_row_included",
-        row_indices=[0, 1, 2, 3],
-        expected_output=pa.Table.from_arrays(
-            [
-                pa.array([[1, 2, 3], None, [4], []], type=pa.list_(pa.int32())),
-                pa.array([["a"], ["b", "c"], None, []],
-                         type=pa.list_(pa.binary()))
-            ],
-            ["f1", "f2"],
-        )),
-    dict(
-        testcase_name="consecutive_last_row_included",
-        row_indices=[5, 6, 7, 8],
-        expected_output=pa.Table.from_arrays(
-            [
-                pa.array([[7], [8, 9], [10], []], type=pa.list_(pa.int32())),
-                pa.array([["d", "e"], ["f"], None, ["g"]],
-                         type=pa.list_(pa.binary()))
-            ],
-            ["f1", "f2"],
-        )),
-    dict(
-        testcase_name="inconsecutive",
-        row_indices=[1, 2, 3, 5],
-        expected_output=pa.Table.from_arrays(
-            [
-                pa.array([None, [4], [], [7]], type=pa.list_(pa.int32())),
-                pa.array([["b", "c"], None, [], ["d", "e"]],
-                         type=pa.list_(pa.binary()))
-            ],
-            ["f1", "f2"],
-        )),
-    dict(
-        testcase_name="inconsecutive_last_row_included",
-        row_indices=[2, 3, 4, 5, 7, 8],
-        expected_output=pa.Table.from_arrays(
-            [
-                pa.array([[4], [], [5, 6], [7], [10], []],
-                         type=pa.list_(pa.int32())),
-                pa.array([None, [], None, ["d", "e"], None, ["g"]],
-                         type=pa.list_(pa.binary()))
-            ],
-            ["f1", "f2"],
-        )),
-]
-
-_SLICE_INVALID_INPUT_TEST_CASES = [
-    dict(
-        testcase_name="row_indices_not_arrow",
-        row_indices=[0],
-        expected_error_type=TypeError,
-        expected_error_regexp="incompatible function arguments"),
-    dict(
-        testcase_name="row_indices_not_int32",
-        row_indices=pa.array([0], type=pa.int8()),
-        expected_error_type=RuntimeError,
-        expected_error_regexp="Expected row_indices to be an Int32Array or an "
-        "Int64Array"),
-    dict(
-        testcase_name="out_of_range",
-        row_indices=pa.array([1], type=pa.int32()),
-        expected_error_type=RuntimeError,
-        expected_error_regexp="out of range"),
-]
-
-
-class SliceTableByRowIndicesTest(parameterized.TestCase):
-
-  @parameterized.named_parameters(*_SLICE_TEST_CASES)
-  def test_success(self, row_indices, expected_output):
-    table = pa.Table.from_arrays([
-        pa.array([[1, 2, 3], None, [4], [], [5, 6], [7], [8, 9], [10], []],
-                 type=pa.list_(pa.int32())),
-        pa.array(
-            [["a"], ["b", "c"], None, [], None, ["d", "e"], ["f"], None, ["g"]],
-            type=pa.list_(pa.binary())),
-    ], ["f1", "f2"])
-
-    for row_indices_type in (pa.int32(), pa.int64()):
-      sliced = table_util.SliceTableByRowIndices(
-          table, pa.array(row_indices, type=row_indices_type))
-      self.assertTrue(
-          sliced.equals(expected_output),
-          "Expected {}, got {}".format(expected_output, sliced))
-      if sliced.num_rows > 0:
-        for c in sliced.columns:
-          self.assertEqual(c.num_chunks, 1)
-
-  @parameterized.named_parameters(*_SLICE_INVALID_INPUT_TEST_CASES)
-  def test_invalid_inputs(self, row_indices, expected_error_type,
-                          expected_error_regexp):
-    with self.assertRaisesRegexp(expected_error_type, expected_error_regexp):
-      table_util.SliceTableByRowIndices(
-          pa.Table.from_arrays([pa.array([1])], ["f1"]), row_indices)
-
-  def test_always_make_a_copy(self):
-    table = pa.Table.from_arrays([
-        pa.array([[1], [2], [3]], type=pa.list_(pa.int64()))
-    ], ["f1"])
-    sliced = table_util.SliceTableByRowIndices(
-        table, pa.array([1, 2], type=pa.int32()))
-    self.assertEqual(1, sliced.columns[0].num_chunks)
-    self.assertEqual(0, sliced.columns[0].chunk(0).offset)
-
-
 _GET_TOTAL_BYTE_SIZE_TEST_NAMED_PARAMS = [
     dict(testcase_name="table", factory=pa.Table.from_arrays),
     dict(testcase_name="record_batch", factory=pa.RecordBatch.from_arrays),
@@ -460,16 +339,87 @@ class GetTotalByteSizeTest(parameterized.TestCase):
     self.assertEqual(46 + 34, table_util.TotalByteSize(entity))
 
 
+_TAKE_TEST_CASES = [
+    dict(
+        testcase_name="no_index",
+        row_indices=[],
+        expected_output=pa.RecordBatch.from_arrays([
+            pa.array([], type=pa.list_(pa.int32())),
+            pa.array([], type=pa.list_(pa.binary()))
+        ], ["f1", "f2"])),
+    dict(
+        testcase_name="one_index",
+        row_indices=[1],
+        expected_output=pa.RecordBatch.from_arrays([
+            pa.array([None], type=pa.list_(pa.int32())),
+            pa.array([["b", "c"]], type=pa.list_(pa.binary()))
+        ], ["f1", "f2"])),
+    dict(
+        testcase_name="consecutive_first_row_included",
+        row_indices=[0, 1, 2, 3],
+        expected_output=pa.RecordBatch.from_arrays(
+            [
+                pa.array([[1, 2, 3], None, [4], []], type=pa.list_(pa.int32())),
+                pa.array([["a"], ["b", "c"], None, []],
+                         type=pa.list_(pa.binary()))
+            ],
+            ["f1", "f2"],
+        )),
+    dict(
+        testcase_name="consecutive_last_row_included",
+        row_indices=[5, 6, 7, 8],
+        expected_output=pa.RecordBatch.from_arrays(
+            [
+                pa.array([[7], [8, 9], [10], []], type=pa.list_(pa.int32())),
+                pa.array([["d", "e"], ["f"], None, ["g"]],
+                         type=pa.list_(pa.binary()))
+            ],
+            ["f1", "f2"],
+        )),
+    dict(
+        testcase_name="inconsecutive",
+        row_indices=[1, 2, 3, 5],
+        expected_output=pa.RecordBatch.from_arrays(
+            [
+                pa.array([None, [4], [], [7]], type=pa.list_(pa.int32())),
+                pa.array([["b", "c"], None, [], ["d", "e"]],
+                         type=pa.list_(pa.binary()))
+            ],
+            ["f1", "f2"],
+        )),
+    dict(
+        testcase_name="inconsecutive_last_row_included",
+        row_indices=[2, 3, 4, 5, 7, 8],
+        expected_output=pa.RecordBatch.from_arrays(
+            [
+                pa.array([[4], [], [5, 6], [7], [10], []],
+                         type=pa.list_(pa.int32())),
+                pa.array([None, [], None, ["d", "e"], None, ["g"]],
+                         type=pa.list_(pa.binary()))
+            ],
+            ["f1", "f2"],
+        )),
+]
+
+
 class RecordBatchTakeTest(parameterized.TestCase):
 
-  def test_simple(self):
-    record_batch = pa.RecordBatch.from_arrays(
-        [pa.array([[1, 2], None, [3]]),
-         pa.array([["a", "b"], ["c"], None])], ["a", "b"])
-    self.assertTrue(
-        table_util.RecordBatchTake(record_batch,
-                                   pa.array([1, 2]))
-        .equals(record_batch.slice(1)))
+  @parameterized.named_parameters(*_TAKE_TEST_CASES)
+  def test_success(self, row_indices, expected_output):
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.array([[1, 2, 3], None, [4], [], [5, 6], [7], [8, 9], [10], []],
+                 type=pa.list_(pa.int32())),
+        pa.array(
+            [["a"], ["b", "c"], None, [], None, ["d", "e"], ["f"], None, ["g"]],
+            type=pa.list_(pa.binary())),
+    ], ["f1", "f2"])
+
+    for row_indices_type in (pa.int32(), pa.int64()):
+      sliced = table_util.RecordBatchTake(
+          record_batch, pa.array(row_indices, type=row_indices_type))
+      self.assertTrue(
+          sliced.equals(expected_output),
+          "Expected {}, got {}".format(expected_output, sliced))
 
 
 class DataFrameToRecordBatchTest(parameterized.TestCase):

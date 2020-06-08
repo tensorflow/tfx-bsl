@@ -985,6 +985,11 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeBatch(
                              serialized_sequence_examples, record_batch);
 }
 
+std::shared_ptr<arrow::Schema>
+SequenceExamplesToRecordBatchDecoder::ArrowSchema() const {
+  return arrow_schema_;
+}
+
 Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
     const std::vector<absl::string_view>& serialized_sequence_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
@@ -1050,11 +1055,13 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
     }
   }
 
-  std::shared_ptr<arrow::StructArray> sequence_feature_array =
-      std::make_shared<arrow::StructArray>(sequence_features_struct_type_,
-                                           serialized_sequence_examples.size(),
-                                           sequence_feature_arrays);
-  arrays.push_back(sequence_feature_array);
+  if (sequence_features_struct_type_) {
+    std::shared_ptr<arrow::StructArray> sequence_feature_array =
+        std::make_shared<arrow::StructArray>(
+            sequence_features_struct_type_, serialized_sequence_examples.size(),
+            sequence_feature_arrays);
+    arrays.push_back(sequence_feature_array);
+  }
 
   *record_batch = arrow::RecordBatch::Make(
       arrow_schema_, serialized_sequence_examples.size(), arrays);

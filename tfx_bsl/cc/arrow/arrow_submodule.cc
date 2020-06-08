@@ -205,40 +205,6 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
           "representing the rows from the table with that column missing."),
       py::call_guard<py::gil_scoped_release>());
   m.def(
-      "SliceTableByRowIndices",
-      [](const std::shared_ptr<arrow::Table>& table,
-         const std::shared_ptr<arrow::Array>& row_indices) {
-        std::shared_ptr<arrow::Table> result;
-        Status s = SliceTableByRowIndices(table, row_indices, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::doc(
-          "Collects rows in `row_indices` from `table` and form a new Table."
-          "The new Table is guaranteed to contain only one chunk.\n"
-          "`row_indices` must be an Int32Array or Int64Array. And the indices "
-          "in it must be sorted in ascending order."),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
-      "TotalByteSize",
-      [](const std::shared_ptr<arrow::Table>& table,
-         const bool ignore_unsupported) {
-        size_t result;
-        Status s = TotalByteSize(*table, ignore_unsupported, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::arg("table"), py::arg("ignore_unsupported") = false,
-      py::doc(
-          "Returns the total byte size of all the buffers a table consists "
-          "of. This value might be larger than the actual memory occupied "
-          "by those buffers because buffers might share the underlying memory"),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
       "TotalByteSize",
       [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
          const bool ignore_unsupported) {

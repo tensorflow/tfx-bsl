@@ -22,9 +22,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
-#include "arrow/array/concatenate.h"
 #include "arrow/compute/api.h"
-#include "arrow/visitor_inline.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
@@ -32,7 +30,6 @@
 namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
-using ::arrow::ArrayVector;
 using ::arrow::ChunkedArray;
 using ::arrow::Concatenate;
 using ::arrow::Field;
@@ -41,35 +38,6 @@ using ::arrow::Schema;
 using ::arrow::Table;
 using ::arrow::Type;
 
-// TODO(zhuo): remove this shim after tfx_bsl starts depending on pyarrow>=0.16.
-# if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR < 16)
-Status ConcatenateTablesShim(const std::vector<std::shared_ptr<Table>>& tables,
-                             std::shared_ptr<Table>* result) {
-  return FromArrowStatus(arrow::ConcatenateTables(tables, result));
-}
-#else
-Status ConcatenateTablesShim(const std::vector<std::shared_ptr<Table>>& tables,
-                             std::shared_ptr<Table>* result) {
-  auto status_or = arrow::ConcatenateTables(tables);
-  if (!status_or.ok()) {
-    return FromArrowStatus(status_or.status());
-  }
-  *result = std::move(status_or).ValueOrDie();
-  return Status::OK();
-}
-# endif
-
-// Returns an empty table that has the same schema as `table`.
-Status GetEmptyTableLike(const Table& table, std::shared_ptr<Table>* result) {
-  std::vector<std::shared_ptr<Array>> empty_arrays;
-  for (const auto& f : table.schema()->fields()) {
-    empty_arrays.emplace_back();
-    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-        arrow::MakeArrayOfNull(f->type(), /*length=*/0, &empty_arrays.back())));
-  }
-  *result = Table::Make(table.schema(), empty_arrays, 0);
-  return Status::OK();
-}
 
 // Represents a field (i.e. column name and type) in the merged table.
 class FieldRep {
@@ -152,53 +120,6 @@ class FieldRep {
   std::vector<absl::variant<std::shared_ptr<Array>, int64_t>> arrays_or_nulls_;
 };
 
-template <typename RowIndicesT>
-Status SliceTableByRowIndicesInternal(
-    const std::shared_ptr<Table>& table,
-    const absl::Span<const RowIndicesT> row_indices_span,
-    std::shared_ptr<Table>* result) {
-  if (row_indices_span.empty()) {
-    return GetEmptyTableLike(*table, result);
-  }
-
-  if (row_indices_span.back() >= table->num_rows()) {
-    return errors::InvalidArgument("Row indices out of range.");
-  }
-
-  std::vector<std::shared_ptr<Table>> table_slices;
-  // The following loop essentially turns consecutive indices into
-  // ranges, and slice `table` by those ranges.
-  for (int64_t begin = 0, end = 1; end <= row_indices_span.size(); ++end) {
-    while (end < row_indices_span.size() &&
-           row_indices_span[end] == row_indices_span[end - 1] + 1) {
-      ++end;
-    }
-    // Verify that the row indices are sorted.
-    if (end < row_indices_span.size() &&
-        row_indices_span[begin] >= row_indices_span[end]) {
-      return errors::InvalidArgument("Row indices are not sorted.");
-    }
-    table_slices.push_back(table->Slice(row_indices_span[begin], end - begin));
-    begin = end;
-  }
-
-  // Make sure to never return a table with non-zero offset (that is a slice
-  // of another table). This is needed because Array.flatten() is buggy and
-  // does not handle offsets correctly.
-  // TODO(zhuo): Remove once https://github.com/apache/arrow/pull/6006 is
-  // available.
-  if (table_slices.size() == 1) {
-    table_slices.emplace_back();
-    TFX_BSL_RETURN_IF_ERROR(GetEmptyTableLike(*table, &table_slices.back()));
-  }
-
-  std::shared_ptr<Table> concatenated;
-  TFX_BSL_RETURN_IF_ERROR(ConcatenateTablesShim(table_slices, &concatenated));
-
-  return FromArrowStatus(
-      concatenated->CombineChunks(arrow::default_memory_pool(), result));
-}
-
 }  // namespace
 
 // TODO(zhuo): This can be replaced by Table::ConcatenateTables with
@@ -233,7 +154,7 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
   }
 
   std::vector<std::shared_ptr<Field>> fields;
-  ArrayVector merged_arrays;
+  arrow::ArrayVector merged_arrays;
   for (const FieldRep& field_rep : field_rep_by_field_index) {
     fields.push_back(field_rep.field());
     std::shared_ptr<Array> merged_array;
@@ -243,45 +164,6 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
   *result =
       Table::Make(std::make_shared<Schema>(std::move(fields)),
                   merged_arrays, /*num_rows=*/total_num_rows);
-  return Status::OK();
-}
-
-Status SliceTableByRowIndices(const std::shared_ptr<Table>& table,
-                              const std::shared_ptr<Array>& row_indices,
-                              std::shared_ptr<Table>* result) {
-  if (row_indices->type()->id() == arrow::Type::INT32) {
-    const arrow::Int32Array* row_indices_array =
-        static_cast<const arrow::Int32Array*>(row_indices.get());
-    absl::Span<const int32_t> row_indices_span(
-        row_indices_array->raw_values(), row_indices_array->length());
-    return SliceTableByRowIndicesInternal(table, row_indices_span, result);
-  } else if (row_indices->type()->id() == arrow::Type::INT64) {
-    const arrow::Int64Array* row_indices_array =
-        static_cast<const arrow::Int64Array*>(row_indices.get());
-    absl::Span<const int64_t> row_indices_span(row_indices_array->raw_values(),
-                                               row_indices_array->length());
-    return SliceTableByRowIndicesInternal(table, row_indices_span, result);
-  } else {
-    return errors::InvalidArgument(
-        "Expected row_indices to be an Int32Array or an Int64Array");
-  }
-}
-
-Status TotalByteSize(const Table& table, const bool ignore_unsupported,
-                     size_t* result) {
-  *result = 0;
-  for (int i = 0; i < table.num_columns(); ++i) {
-    auto chunked_array = table.column(i);
-    for (int j = 0; j < chunked_array->num_chunks(); ++j) {
-      size_t array_size;
-      auto status = GetByteSize(*chunked_array->chunk(j), &array_size);
-      if (ignore_unsupported && status.code() == error::UNIMPLEMENTED) {
-        continue;
-      }
-      TFX_BSL_RETURN_IF_ERROR(status);
-      *result += array_size;
-    }
-  }
   return Status::OK();
 }
 
@@ -305,16 +187,8 @@ Status RecordBatchTake(const RecordBatch& record_batch, const Array& indices,
                        std::shared_ptr<RecordBatch>* result) {
   arrow::compute::FunctionContext ctx;
   arrow::compute::TakeOptions options;
-  // TODO(zhuo): Take() can take RecordBatch starting from arrow 0.16.
-  std::vector<std::shared_ptr<Array>> columns;
-  for (int i = 0; i < record_batch.num_columns(); ++i) {
-    columns.emplace_back();
-    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::compute::Take(
-        &ctx, *record_batch.column(i), indices, options, &columns.back())));
-  }
-  *result = RecordBatch::Make(record_batch.schema(), indices.length(),
-                              std::move(columns));
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
+      arrow::compute::Take(&ctx, record_batch, indices, options, result)));
   return Status::OK();
 }
-
 }  // namespace tfx_bsl

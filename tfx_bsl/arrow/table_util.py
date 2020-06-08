@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-from typing import List, Optional, Text
+from typing import List, Optional, Text, Union
 import pandas as pd
 import pyarrow as pa
 from tfx_bsl.arrow import array_util
@@ -31,8 +31,7 @@ from tfx_bsl.arrow import array_util
 try:
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import MergeTables
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import RecordBatchTake
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import SliceTableByRowIndices
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import TotalByteSize
+  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import TotalByteSize as _TotalByteSize
 except ImportError as err:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.arrow.table_util. "
@@ -56,6 +55,18 @@ _NUMPY_KIND_TO_ARROW_TYPE = {
 }
 
 
+def TotalByteSize(table_or_batch: Union[pa.Table, pa.RecordBatch],
+                  ignore_unsupported=False):
+  """Returns the in-memory size of a record batch or a table."""
+  if isinstance(table_or_batch, pa.Table):
+    return sum([
+        _TotalByteSize(b, ignore_unsupported)
+        for b in table_or_batch.to_batches(max_chunksize=None)
+    ])
+  else:
+    return _TotalByteSize(table_or_batch, ignore_unsupported)
+
+
 def NumpyKindToArrowType(kind: Text) -> Optional[pa.DataType]:
   return _NUMPY_KIND_TO_ARROW_TYPE.get(kind)
 
@@ -70,6 +81,9 @@ def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
   if all([r.schema.equals(first_schema) for r in record_batches[1:]]):
     one_chunk_table = pa.Table.from_batches(record_batches).combine_chunks()
   else:
+    # TODO(zhuo, b/158335158): switch to pa.Table.concat_tables(promote=True)
+    # once the upstream bug is fixed:
+    # https://jira.apache.org/jira/browse/ARROW-9071
     one_chunk_table = MergeTables(
         [pa.Table.from_batches([r]) for r in record_batches])
 
