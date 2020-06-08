@@ -443,7 +443,7 @@ class _RemotePredictDoFn(_BaseDoFn):
     elif attr_name == 'bytes_list':
       return [x.decode() for x in values]
     else:
-      return values
+      return list(values)
 
   def run_inference(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
