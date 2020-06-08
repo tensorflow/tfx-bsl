@@ -18,10 +18,45 @@
 
 #include <memory>
 
-#include "arrow/api.h"
 #include "arrow/python/pyarrow.h"
 #include "pybind11/cast.h"
 #include "pybind11/pybind11.h"
+#include "arrow/api.h"
+
+namespace tfx_bsl {
+namespace internal {
+// TODO(zhuo): remove this shim once tfx-bsl builds exclusively against
+// arrow 0.17+.
+# if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR < 17)
+inline PyObject* WrapRecordBatch(
+    const std::shared_ptr<arrow::RecordBatch>& record_batch) {
+  return arrow::py::wrap_record_batch(record_batch);
+}
+
+inline arrow::Status UnwrapRecordBatch(
+    PyObject* py_record_batch, std::shared_ptr<arrow::RecordBatch>*
+    unwrapped) {
+  return arrow::py::unwrap_record_batch(py_record_batch, unwrapped);
+}
+
+# else
+
+inline PyObject* WrapRecordBatch(
+    const std::shared_ptr<arrow::RecordBatch>& record_batch) {
+  return arrow::py::wrap_batch(record_batch);
+}
+
+inline arrow::Status UnwrapRecordBatch(
+    PyObject* py_record_batch, std::shared_ptr<arrow::RecordBatch>* unwrapped) {
+  auto arrow_result = arrow::py::unwrap_batch(py_record_batch);
+  ARROW_RETURN_NOT_OK(arrow_result);
+  *unwrapped = std::move(arrow_result).ValueOrDie();
+  return arrow::Status::OK();
+}
+
+# endif
+}  // namespace internal
+}  // namespace tfx_bsl
 
 namespace pybind11 {
 namespace detail {
@@ -66,30 +101,13 @@ struct type_caster<std::shared_ptr<arrow::RecordBatch>> {
                        _<std::shared_ptr<arrow::RecordBatch>>());
 
   bool load(handle src, bool unused_implicit_conversion) {
-    return arrow::py::unwrap_record_batch(src.ptr(), &value).ok();
+    return tfx_bsl::internal::UnwrapRecordBatch(src.ptr(), &value).ok();
   }
 
   static handle cast(const std::shared_ptr<arrow::RecordBatch>& src,
                      return_value_policy unused_return_value_policy,
                      handle unused_handle) {
-    return arrow::py::wrap_record_batch(src);
-  }
-};
-
-template <>
-struct type_caster<std::shared_ptr<arrow::Table>> {
- public:
-  PYBIND11_TYPE_CASTER(std::shared_ptr<arrow::Table>,
-                       _<std::shared_ptr<arrow::Table>>());
-
-  bool load(handle src, bool unused_implicit_conversion) {
-    return arrow::py::unwrap_table(src.ptr(), &value).ok();
-  }
-
-  static handle cast(const std::shared_ptr<arrow::Table>& src,
-                     return_value_policy unused_return_value_policy,
-                     handle unused_handle) {
-    return arrow::py::wrap_table(src);
+    return tfx_bsl::internal::WrapRecordBatch(src);
   }
 };
 

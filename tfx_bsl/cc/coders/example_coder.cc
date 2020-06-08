@@ -18,6 +18,7 @@
 #include <functional>
 #include <memory>
 
+#include <google/protobuf/arena.h>
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/memory/memory.h"
@@ -51,7 +52,7 @@ absl::string_view KindToStr(tensorflow::Feature::KindCase kind) {
 }
 
 // Implementation notes:
-// a ~5x improvement in parsing performance (which is ~70% of
+// A large (perhaps ~5x?) improvement in parsing performance (which is ~70% of
 // parsing+arrow_building) is possible if we directly use
 // proto2::io::CodedInputSteam and bypass the creation of the Example objects.
 Status ParseExample(const absl::string_view serialized_example,
@@ -220,8 +221,7 @@ class FeatureDecoder {
   virtual ~FeatureDecoder() {}
 
   // Called if the feature is present in the Example.
-  Status DecodeFeature(
-      const tensorflow::Feature& feature) {
+  Status DecodeFeature(const tensorflow::Feature& feature) {
     if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
       TFX_BSL_RETURN_IF_ERROR(list_builder_->AppendNull());
     } else {
@@ -237,9 +237,7 @@ class FeatureDecoder {
     return Status::OK();
   }
 
-  Status AppendNull() {
-    return list_builder_->AppendNull();
-  }
+  Status AppendNull() { return list_builder_->AppendNull(); }
 
   // Called after a (possible) call to DecodeFeature. If DecodeFeature was
   // called, this will do nothing. Otherwise, it will add to the null count.
@@ -256,8 +254,7 @@ class FeatureDecoder {
   }
 
  protected:
-  virtual Status DecodeFeatureValues(
-      const tensorflow::Feature& feature) = 0;
+  virtual Status DecodeFeatureValues(const tensorflow::Feature& feature) = 0;
 
  private:
   std::unique_ptr<ListBuilderInterface> list_builder_;
@@ -273,8 +270,7 @@ class FloatDecoder : public FeatureDecoder {
   }
 
  protected:
-  Status DecodeFeatureValues(
-      const tensorflow::Feature& feature) override {
+  Status DecodeFeatureValues(const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kFloatList) {
       return errors::InvalidArgument(
           absl::StrCat("Feature had wrong type, expected float_list, found ",
@@ -295,7 +291,6 @@ class FloatDecoder : public FeatureDecoder {
   std::shared_ptr<arrow::FloatBuilder> values_builder_;
 };
 
-
 class IntDecoder : public FeatureDecoder {
  public:
   static IntDecoder* Make(const bool large_list) {
@@ -305,8 +300,7 @@ class IntDecoder : public FeatureDecoder {
   }
 
  protected:
-  Status DecodeFeatureValues(
-      const tensorflow::Feature& feature) override {
+  Status DecodeFeatureValues(const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kInt64List) {
       return errors::InvalidArgument(
           absl::StrCat("Feature had wrong type, expected in64_list, found ",
@@ -327,7 +321,6 @@ class IntDecoder : public FeatureDecoder {
   std::shared_ptr<arrow::Int64Builder> values_builder_;
 };
 
-
 class BytesDecoder : public FeatureDecoder {
  public:
   static BytesDecoder* Make(const bool large_list, const bool large_binary) {
@@ -337,8 +330,7 @@ class BytesDecoder : public FeatureDecoder {
   }
 
  protected:
-  Status DecodeFeatureValues(
-      const tensorflow::Feature& feature) override {
+  Status DecodeFeatureValues(const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kBytesList) {
       return errors::InvalidArgument(
           absl::StrCat("Feature had wrong type, expected bytes_list, found ",
@@ -804,10 +796,12 @@ std::shared_ptr<arrow::Schema> ExamplesToRecordBatchDecoder::ArrowSchema()
 Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
-  tensorflow::Example example;
+  google::protobuf::Arena arena;
   for (int i = 0; i < serialized_examples.size(); ++i) {
-    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], &example));
-    for (const auto& p : example.features().feature()) {
+    arena.Reset();
+    auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
+    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
+    for (const auto& p : example->features().feature()) {
       const std::string& feature_name = p.first;
       const tensorflow::Feature& feature = p.second;
       const auto it = feature_decoders_->find(feature_name);
@@ -826,6 +820,7 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
   }
 
   std::vector<std::shared_ptr<arrow::Array>> arrays;
+  arrays.reserve(arrow_schema_->fields().size());
   for (const std::shared_ptr<arrow::Field>& field : arrow_schema_->fields()) {
     FeatureDecoder& decoder = *feature_decoders_->at(field->name());
     arrays.emplace_back();
@@ -847,15 +842,17 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
   // created.
   absl::flat_hash_set<std::string> all_features;
 
-  tensorflow::Example example;
+  google::protobuf::Arena arena;
   for (int i = 0; i < serialized_examples.size(); ++i) {
-    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], &example));
+    arena.Reset();
+    auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
+    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
     TFX_BSL_RETURN_IF_ERROR(
-        DecodeTopLevelFeatures(example.features().feature(), all_features,
+        DecodeTopLevelFeatures(example->features().feature(), all_features,
                                use_large_types_, i, feature_decoders));
   }
-  std::vector<std::shared_ptr<::arrow::Array>> arrays;
-  std::vector<std::shared_ptr<::arrow::Field>> fields;
+  std::vector<std::shared_ptr<arrow::Array>> arrays;
+  std::vector<std::shared_ptr<arrow::Field>> fields;
   TFX_BSL_RETURN_IF_ERROR(FinishTopLevelFeatures(all_features, feature_decoders,
                                                  serialized_examples.size(),
                                                  &arrays, &fields));
@@ -988,14 +985,22 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeBatch(
                              serialized_sequence_examples, record_batch);
 }
 
+std::shared_ptr<arrow::Schema>
+SequenceExamplesToRecordBatchDecoder::ArrowSchema() const {
+  return arrow_schema_;
+}
+
 Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
     const std::vector<absl::string_view>& serialized_sequence_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
-  tensorflow::SequenceExample sequence_example;
+  google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
+    arena.Reset();
+    auto* sequence_example =
+        google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
-        serialized_sequence_examples[i], &sequence_example));
-    for (const auto& p : sequence_example.context().feature()) {
+        serialized_sequence_examples[i], sequence_example));
+    for (const auto& p : sequence_example->context().feature()) {
       const std::string& context_feature_name = p.first;
       const tensorflow::Feature& context_feature = p.second;
       const auto it = context_feature_decoders_->find(context_feature_name);
@@ -1012,7 +1017,7 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
       TFX_BSL_RETURN_IF_ERROR(p.second->FinishFeature());
     }
 
-    for (const auto& p : sequence_example.feature_lists().feature_list()) {
+    for (const auto& p : sequence_example->feature_lists().feature_list()) {
       const std::string& feature_list_name = p.first;
       const tensorflow::FeatureList& feature_list = p.second;
       const auto it = sequence_feature_decoders_->find(feature_list_name);
@@ -1050,11 +1055,13 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
     }
   }
 
-  std::shared_ptr<arrow::StructArray> sequence_feature_array =
-      std::make_shared<arrow::StructArray>(sequence_features_struct_type_,
-                                           serialized_sequence_examples.size(),
-                                           sequence_feature_arrays);
-  arrays.push_back(sequence_feature_array);
+  if (sequence_features_struct_type_) {
+    std::shared_ptr<arrow::StructArray> sequence_feature_array =
+        std::make_shared<arrow::StructArray>(
+            sequence_features_struct_type_, serialized_sequence_examples.size(),
+            sequence_feature_arrays);
+    arrays.push_back(sequence_feature_array);
+  }
 
   *record_batch = arrow::RecordBatch::Make(
       arrow_schema_, serialized_sequence_examples.size(), arrays);
@@ -1083,17 +1090,20 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
   // feature_lists have been observed.
   bool feature_lists_observed = false;
 
-  tensorflow::SequenceExample sequence_example;
+  google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
+    arena.Reset();
+    auto* sequence_example =
+        google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
-        serialized_sequence_examples[i], &sequence_example));
+        serialized_sequence_examples[i], sequence_example));
     TFX_BSL_RETURN_IF_ERROR(DecodeTopLevelFeatures(
-        sequence_example.context().feature(), all_context_features,
+        sequence_example->context().feature(), all_context_features,
         use_large_types_, i, context_feature_decoders));
-    if (sequence_example.has_feature_lists()) {
+    if (sequence_example->has_feature_lists()) {
       feature_lists_observed = true;
     }
-    for (const auto& p : sequence_example.feature_lists().feature_list()) {
+    for (const auto& p : sequence_example->feature_lists().feature_list()) {
       const std::string& sequence_feature_name = p.first;
       const tensorflow::FeatureList& sequence_feature_list = p.second;
       FeatureListDecoder* sequence_feature_decoder = nullptr;
@@ -1289,6 +1299,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
 // Encoder
 
 namespace {
+
 class FeatureEncoder {
  public:
   FeatureEncoder(const std::shared_ptr<arrow::ListArray>& list_array)
@@ -1401,31 +1412,31 @@ Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
                              std::vector<std::string>* serialized_examples) {
   std::vector<std::pair<std::string, std::unique_ptr<FeatureEncoder>>>
       feature_encoders;
-
+  feature_encoders.reserve(record_batch.num_columns());
   for (int column_index = 0; column_index < record_batch.num_columns();
        ++column_index) {
     const std::shared_ptr<arrow::Array> array =
         record_batch.column(column_index);
-    feature_encoders.emplace_back(std::make_pair(
-        record_batch.schema()->field(column_index)->name(), nullptr));
+    feature_encoders.emplace_back(
+        record_batch.schema()->field(column_index)->name(), nullptr);
     TFX_BSL_RETURN_IF_ERROR(
         MakeFeatureEncoder(array, &feature_encoders.back().second));
   }
-  std::vector<tensorflow::Example> examples;
-  examples.reserve(record_batch.num_rows());
+
+  google::protobuf::Arena arena;
+  serialized_examples->resize(record_batch.num_rows());
   for (int example_index = 0; example_index < record_batch.num_rows();
        ++example_index) {
-    examples.emplace_back();
-    auto* feature_map = examples.back().mutable_features()->mutable_feature();
+    arena.Reset();
+    auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
+    auto* feature_map = example->mutable_features()->mutable_feature();
     for (const auto& p : feature_encoders) {
       tensorflow::Feature* feature = &(*feature_map)[p.first];
       TFX_BSL_RETURN_IF_ERROR(p.second->EncodeFeature(example_index, feature));
     }
-  }
-  serialized_examples->clear();
-  serialized_examples->reserve(examples.size());
-  for (const auto& e : examples) {
-    serialized_examples->push_back(e.SerializeAsString());
+    if (!example->SerializeToString(&(*serialized_examples)[example_index])) {
+      return errors::DataLoss("Unable to serialize example");
+    }
   }
 
   return Status::OK();

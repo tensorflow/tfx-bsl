@@ -5,6 +5,9 @@
 ## Major Features and Improvements
 
 *   Added SequenceExamplesToRecordBatchDecoder.
+*   Added a TFXIO implementation for SequenceExmaples on TFRecord.
+*   Added support for TensorAdapter to output tf.RaggedTensors.
+*   Improved performance of tf.Example and tf.SequenceExample coders.
 
 ## Bug Fixes and Other Changes
 
@@ -13,6 +16,9 @@
 ## Breaking changes
 
 ## Deprecations
+*   Removed `arrow.table_util.SliceTableByRowIndices` (in favor of
+    `RecordBatchTake`)
+*   Removed `arrow.table_util.MergeTables` (available as native pyarrow API).
 
 # Release 0.22.0
 

@@ -184,61 +184,6 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
   auto m = arrow_module.def_submodule("table_util");
   m.doc() = "Arrow Table utilities.";
   m.def(
-      "MergeTables",
-      [](const std::vector<std::shared_ptr<arrow::Table>>& tables) {
-        std::shared_ptr<arrow::Table> result;
-        Status s = MergeTables(tables, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::doc(
-          "Merges a list of arrow tables into one. \n"
-          "The columns are concatenated (there will be only one chunk per "
-          "column). Columns of the same name must be of the same type, or be a "
-          "column of NullArrays. If a column in some tables are of type T, in "
-          "some other tables are of NullArrays, the concatenated column is of "
-          "type T, with nulls representing the rows from the table with "
-          "NullArrays. If a column appears in some tables but not in some "
-          "other tables, the concatenated column will contain nulls "
-          "representing the rows from the table with that column missing."),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
-      "SliceTableByRowIndices",
-      [](const std::shared_ptr<arrow::Table>& table,
-         const std::shared_ptr<arrow::Array>& row_indices) {
-        std::shared_ptr<arrow::Table> result;
-        Status s = SliceTableByRowIndices(table, row_indices, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::doc(
-          "Collects rows in `row_indices` from `table` and form a new Table."
-          "The new Table is guaranteed to contain only one chunk.\n"
-          "`row_indices` must be an Int32Array or Int64Array. And the indices "
-          "in it must be sorted in ascending order."),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
-      "TotalByteSize",
-      [](const std::shared_ptr<arrow::Table>& table,
-         const bool ignore_unsupported) {
-        size_t result;
-        Status s = TotalByteSize(*table, ignore_unsupported, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::arg("table"), py::arg("ignore_unsupported") = false,
-      py::doc(
-          "Returns the total byte size of all the buffers a table consists "
-          "of. This value might be larger than the actual memory occupied "
-          "by those buffers because buffers might share the underlying memory"),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
       "TotalByteSize",
       [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
          const bool ignore_unsupported) {

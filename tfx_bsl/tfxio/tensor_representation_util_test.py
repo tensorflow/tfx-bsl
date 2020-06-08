@@ -20,6 +20,7 @@ from __future__ import print_function
 import sys
 
 import six
+from tfx_bsl.arrow import path
 from tfx_bsl.tfxio import tensor_representation_util
 
 from google.protobuf import text_format
@@ -510,7 +511,7 @@ _GET_SOURCE_COLUMNS_TEST_CASES = [
               }
             }
         """,
-        expected=['my_column'],
+        expected=[['my_column']],
     ),
     dict(
         testcase_name='varlen_sparse_tensor',
@@ -519,7 +520,18 @@ _GET_SOURCE_COLUMNS_TEST_CASES = [
            column_name: "my_column"
          }
          """,
-        expected=['my_column'],
+        expected=[['my_column']],
+    ),
+    dict(
+        testcase_name='sparse_tensor',
+        pbtxt="""
+          sparse_tensor {
+            index_column_names: "idx1"
+            index_column_names: "idx2"
+            value_column_name: "value"
+          }
+        """,
+        expected=[['idx1'], ['idx2'], ['value']],
     ),
 ]
 
@@ -582,7 +594,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase):
   @parameterized.named_parameters(*_GET_SOURCE_COLUMNS_TEST_CASES)
   def testGetSourceColumnsFromTensorRepresentation(self, pbtxt, expected):
     self.assertEqual(
-        expected,
+        [path.ColumnPath(e) for e in expected],
         tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
             text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())))
 

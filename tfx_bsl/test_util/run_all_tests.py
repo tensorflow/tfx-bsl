@@ -28,12 +28,12 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import Dict, List, Optional, Text
 
 from absl import app
 from absl import flags
 from absl import logging
 import six
-from typing import Dict, List, Optional, Text
 
 
 flags.DEFINE_list(
@@ -79,6 +79,9 @@ class _Test(object):
     self.stderr = tempfile.TemporaryFile()
     self.begin_time = time.time()
     env = os.environ.copy()
+    # Give each test program a separate test_tmpdir so they don't overwrite
+    # each other when running in parallel.
+    env["TEST_TMPDIR"] = tempfile.mkdtemp()
     # Bazel's test sharding protocol:
     # https://docs.bazel.build/versions/master/test-encyclopedia.html
     if self.total_shards > 1:
