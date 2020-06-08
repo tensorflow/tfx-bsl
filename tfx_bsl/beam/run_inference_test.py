@@ -558,19 +558,19 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
         feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
         feature { key: "y" value { int64_list { value: [1, 2] }}}
-        feature { key: "z" value { float_list { value: [1.1, 2.2, 3.3] }}}
+        feature { key: "z" value { float_list { value: [4.5, 5, 5.5] }}}
       }
       """, tf.train.Example())
     result = list(
         run_inference._RemotePredictDoFn._prepare_instances([example]))
-    self.assertAllClose([
+    self.assertEqual([
         {
             'x_bytes': {
                 'b64': 'QVNhOGFzZGY='
             },
             'x': 'JLK7ljk3',
             'y': [1, 2],
-            'z': [1.1, 2.2, 3.3]
+            'z': [4.5, 5, 5.5]
         },
     ], result)
     self.assertIsInstance(result[0]['y'], list)
