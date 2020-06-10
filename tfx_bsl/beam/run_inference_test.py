@@ -573,8 +573,6 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             'z': [4.5, 5, 5.5]
         },
     ], result)
-    self.assertIsInstance(result[0]['y'], list)
-    self.assertIsInstance(result[0]['z'], list)
 
 
 if __name__ == '__main__':

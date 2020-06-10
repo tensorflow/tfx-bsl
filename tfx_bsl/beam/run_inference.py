@@ -427,7 +427,7 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   @staticmethod
   def _parse_feature_content(values: Sequence[Any], attr_name: Text,
-                             as_binary: bool) -> Sequence[Any]:
+                             as_binary: bool) -> List[Any]:
     """Parse the content of tf.train.Feature object.
 
     If bytes_list, parse a list of bytes-like objects to a list of strings so
