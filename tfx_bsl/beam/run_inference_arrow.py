@@ -65,6 +65,7 @@ try:
 except ImportError:
   pass
 
+_RECORDBATCH_COLUMN = '__RAW_RECORD__'
 _DEFAULT_INPUT_KEY = 'examples'
 _METRICS_DESCRIPTOR_INFERENCE = 'BulkInferrer'
 _METRICS_DESCRIPTOR_IN_PROCESS = 'InProcess'
@@ -442,6 +443,8 @@ class _RemotePredictDoFn(_BaseDoFn):
 
       instance = {}
       tfexample = tf.train.Example.FromString(example)
+
+      # TODO (Maxine): consider leveraging recordbatch columns
       for input_name, feature in tfexample.features.feature.items():
         attr_name = feature.WhichOneof('kind')
         if attr_name is None:
@@ -654,9 +657,8 @@ class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
     super(_BatchClassifyDoFn, self).setup()
 
   def _check_elements(self, elements: List[Union[str, bytes]]) -> None:
-    for element in elements:
-      if self._data_type != DataType.EXAMPLE:
-        raise ValueError('Classify only supports tf.train.Example')
+    if self._data_type != DataType.EXAMPLE:
+      raise ValueError('Classify only supports tf.train.Example')
 
   def _post_process(
       self, elements: Sequence[Union[str, bytes]], 
@@ -677,9 +679,8 @@ class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
     super(_BatchRegressDoFn, self).setup()
 
   def _check_elements(self, elements: List[Union[str, bytes]]) -> None:
-    for element in elements:
-      if self._data_type != DataType.EXAMPLE:
-        raise ValueError('Regress only supports tf.train.Example')
+    if self._data_type != DataType.EXAMPLE:
+      raise ValueError('Regress only supports tf.train.Example')
 
   def _post_process(
       self, elements: Sequence[Union[str, bytes]], 
@@ -750,9 +751,8 @@ class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on multi-head model."""
 
   def _check_elements(self, elements: List[Union[str, bytes]]) -> None:
-    for element in elements:
-      if self._data_type != DataType.EXAMPLE:
-        raise ValueError('Multi-inference only supports tf.train.Example')
+    if self._data_type != DataType.EXAMPLE:
+      raise ValueError('Multi-inference only supports tf.train.Example')
 
   def _post_process(
       self, elements: Sequence[Union[str, bytes]], 
@@ -862,6 +862,7 @@ class _BuildMultiInferenceLogDoFn(beam.DoFn):
       .CopyFrom(tf.train.Example.FromString(train_example)))
     result.multi_inference_log.response.CopyFrom(multi_inference_response)
     yield result
+
 
 
 def _post_process_classify(
