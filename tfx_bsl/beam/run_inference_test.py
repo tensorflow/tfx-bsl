@@ -18,6 +18,7 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+import base64
 import json
 import os
 try:
@@ -560,8 +561,16 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         feature { key: "y" value { int64_list { value: [1, 2] }}}
       }
       """, tf.train.Example())
-    result = list(
-        run_inference._RemotePredictDoFn._prepare_instances([example]))
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+      ai_platform_prediction_model_spec=model_spec_pb2.
+      AIPlatformPredictionModelSpec(
+        project_id='example',
+        model_name='example',
+        version_name='example'
+      )
+    )
+    remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
+    result = list(remote_predict._prepare_instances([example]))
     self.assertEqual([
         {
             'x_bytes': {
@@ -572,6 +581,56 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         },
     ], result)
 
+  def test_request_serialized_example(self):
+    example = text_format.Parse(
+        """
+      features {
+        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+        feature { key: "y" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.Example())
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+      ai_platform_prediction_model_spec=model_spec_pb2.
+      AIPlatformPredictionModelSpec(
+        project_id='example',
+        model_name='example',
+        version_name='example',
+        serialization_config=model_spec_pb2.
+        AIPlatformPredictionSerializationConfig(
+          input_name='input'
+        )
+      )
+    )
+    remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
+    result = list(remote_predict._prepare_instances([example]))
+    self.assertEqual([
+        {
+          'input': {'b64': base64.b64encode(example.SerializeToString()).decode()}
+        },
+    ], result)
+
+  def test_exception_raised_when_serialization_config_input_name_is_empty(self):
+    example = text_format.Parse(
+        """
+      features {
+        feature { key: "my_tensor" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.Example())
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+      ai_platform_prediction_model_spec=model_spec_pb2.
+      AIPlatformPredictionModelSpec(
+        project_id='example',
+        model_name='example',
+        version_name='example',
+        serialization_config=model_spec_pb2.
+        AIPlatformPredictionSerializationConfig()
+      )
+    )
+    remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
+
+    with self.assertRaises(ValueError):
+      result = list(remote_predict._prepare_instances([example]))
 
 if __name__ == '__main__':
   tf.test.main()
