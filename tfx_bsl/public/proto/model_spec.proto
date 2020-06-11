@@ -94,12 +94,8 @@ message AIPlatformPredictionModelSpec {
 //
 // For example:
 // instances = [
-//  {'<input_name>': {'b64': '<base64 encoded serialized TFExample>'}},
+//  {'b64': '<base64 encoded serialized TFExample 1>'},
+//  {'b64': '<base64 encoded serialized TFExample 2>'},
 //  ...
 // ]
-message AIPlatformPredictionSerializationConfig {
-  // Required.
-  // The name of the input tensor.
-  // This tensor should accept a single string that contains a serialized TFExample
-  string input_name = 1;
-}
+message AIPlatformPredictionSerializationConfig {}

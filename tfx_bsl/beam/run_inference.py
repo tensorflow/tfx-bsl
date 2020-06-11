@@ -423,14 +423,12 @@ class _RemotePredictDoFn(_BaseDoFn):
       yield instance
 
   def _prepare_instances_serialized(
-      self, elements: List[tf.train.Example], input_name: Text
+      self, elements: List[tf.train.Example]
   ) -> Generator[Mapping[Text, Any], None, None]:
     """Prepare instances by base64 encoding serialized examples"""
     for example in elements:
       instance = {
-        input_name: {
-          'b64': base64.b64encode(example.SerializeToString()).decode()
-        }
+        'b64': base64.b64encode(example.SerializeToString()).decode()
       }
       yield instance
 
@@ -438,12 +436,7 @@ class _RemotePredictDoFn(_BaseDoFn):
       self, elements: List[tf.train.Example]
   ) -> Generator[Mapping[Text, Any], None, None]:
     if self._ai_platform_prediction_model_spec.HasField('serialization_config'):
-      input_name = (
-        self._ai_platform_prediction_model_spec.serialization_config.input_name)
-      if not input_name:
-        raise ValueError('"input_name" must be provided when using '
-                         'AIPlatformPredictionSerializationConfig')
-      return self._prepare_instances_serialized(elements, input_name)
+      return self._prepare_instances_serialized(elements)
     else:
       return self._prepare_instances_dict(elements)
 
