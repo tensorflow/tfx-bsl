@@ -387,6 +387,7 @@ class _RemotePredictDoFn(_BaseDoFn):
                pipeline_options: PipelineOptions, data_type):
     super(_RemotePredictDoFn, self).__init__(inference_spec_type)
     self._api_client = None
+    self._data_type = data_type
 
     project_id = (
         inference_spec_type.ai_platform_prediction_model_spec.project_id or
@@ -437,10 +438,6 @@ class _RemotePredictDoFn(_BaseDoFn):
       cls, elements: List[Union[str, bytes]]
   ) -> Generator[Mapping[Text, Any], None, None]:
     for example in elements:
-      # TODO(b/151468119): support tf.train.SequenceExample
-      if data_type != DataType.EXAMPLE:
-        raise ValueError('Remote prediction only supports tf.train.Example')
-
       instance = {}
       tfexample = tf.train.Example.FromString(example)
 
@@ -482,8 +479,14 @@ class _RemotePredictDoFn(_BaseDoFn):
     else:
       return values
 
+  def _check_elements(self, elements: List[Union[str, bytes]]) -> None:
+    # TODO(b/151468119): support tf.train.SequenceExample
+    if self._data_type != DataType.EXAMPLE:
+      raise ValueError('Remote prediction only supports tf.train.Example')
+
   def run_inference(
     self, elements: List[Union[str, bytes]]) -> Sequence[Mapping[Text, Any]]:
+    self._check_elements(elements)
     body = {'instances': list(self._prepare_instances(elements))}
     request = self._make_request(body)
     response = self._execute_request(request)
