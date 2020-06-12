@@ -18,6 +18,7 @@
 ## Deprecations
 *   Removed `arrow.table_util.SliceTableByRowIndices` (in favor of
     `RecordBatchTake`)
+*   Removed `arrow.table_util.MergeTables` (in favor of `MergeRecordBatches`)
 
 # Release 0.22.0
 

@@ -50,11 +50,11 @@ class FieldRep {
   }
 
   // Appends `column` to the column of the field in merged table.
-  Status AppendColumn(const ChunkedArray& column) {
+  Status AppendColumn(const std::shared_ptr<Array>& column) {
     const auto& this_type = field_->type();
-    const auto& other_type = column.type();
+    const auto& other_type = column->type();
     if (other_type->id() == Type::NA) {
-      AppendNulls(column.length());
+      AppendNulls(column->length());
       return Status::OK();
     }
     if (this_type->id() == Type::NA) {
@@ -66,9 +66,7 @@ class FieldRep {
                        " , Current type: ", this_type->ToString(),
                        " , New type: ", other_type->ToString()));
     }
-    arrays_or_nulls_.insert(arrays_or_nulls_.end(),
-                            column.chunks().begin(),
-                            column.chunks().end());
+    arrays_or_nulls_.push_back(column);
     return Status::OK();
   }
 
@@ -122,18 +120,22 @@ class FieldRep {
 
 }  // namespace
 
-// TODO(zhuo): This can be replaced by Table::ConcatenateTables with
-// promote_null_type = true in Arrow post 0.15. There is also a Python API.
-Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
-                   std::shared_ptr<Table>* result) {
+// TODO(zhuo): This can be replaced by
+// pa.concat_tables(tables_from_rbs, promote=True)
+//   .combine_chunks()
+//   .to_batches()[0].
+// Post arrow 0.17
+Status MergeRecordBatches(
+    const std::vector<std::shared_ptr<RecordBatch>>& record_batches,
+    std::shared_ptr<RecordBatch>* result) {
   absl::flat_hash_map<std::string, int> field_index_by_field_name;
   std::vector<FieldRep> field_rep_by_field_index;
   int64_t total_num_rows = 0;
-  for (const auto& t : tables) {
+  for (const auto& rb : record_batches) {
     std::vector<bool> field_seen_by_field_index(field_rep_by_field_index.size(),
                                                 false);
-    for (int i = 0; i < t->schema()->num_fields(); ++i) {
-      const auto& f = t->schema()->field(i);
+    for (int i = 0; i < rb->schema()->num_fields(); ++i) {
+      const auto& f = rb->schema()->field(i);
       auto iter = field_index_by_field_name.find(f->name());
       if (iter == field_index_by_field_name.end()) {
         std::tie(iter, std::ignore) = field_index_by_field_name.insert(
@@ -143,14 +145,14 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
       }
       field_seen_by_field_index[iter->second] = true;
       FieldRep& field_rep = field_rep_by_field_index[iter->second];
-      TFX_BSL_RETURN_IF_ERROR(field_rep.AppendColumn(*t->column(i)));
+      TFX_BSL_RETURN_IF_ERROR(field_rep.AppendColumn(rb->column(i)));
     }
     for (int i = 0; i < field_seen_by_field_index.size(); ++i) {
       if (!field_seen_by_field_index[i]) {
-        field_rep_by_field_index[i].AppendNulls(t->num_rows());
+        field_rep_by_field_index[i].AppendNulls(rb->num_rows());
       }
     }
-    total_num_rows += t->num_rows();
+    total_num_rows += rb->num_rows();
   }
 
   std::vector<std::shared_ptr<Field>> fields;
@@ -161,9 +163,8 @@ Status MergeTables(const std::vector<std::shared_ptr<Table>>& tables,
     TFX_BSL_RETURN_IF_ERROR(field_rep.ToMergedArray(&merged_array));
     merged_arrays.push_back(std::move(merged_array));
   }
-  *result =
-      Table::Make(std::make_shared<Schema>(std::move(fields)),
-                  merged_arrays, /*num_rows=*/total_num_rows);
+  *result = RecordBatch::Make(std::make_shared<Schema>(std::move(fields)),
+                              total_num_rows, merged_arrays);
   return Status::OK();
 }
 

@@ -29,8 +29,8 @@ from tfx_bsl.arrow import array_util
 # pylint: disable=g-import-not-at-top
 # See b/148667210 for why the ImportError is ignored.
 try:
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import MergeTables
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import RecordBatchTake
+  from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import MergeRecordBatches as _MergeRecordBatches
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import TotalByteSize as _TotalByteSize
 except ImportError as err:
   import sys
@@ -80,16 +80,14 @@ def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
       "Unable to merge empty RecordBatches.")
   if all([r.schema.equals(first_schema) for r in record_batches[1:]]):
     one_chunk_table = pa.Table.from_batches(record_batches).combine_chunks()
+    batches = one_chunk_table.to_batches(max_chunksize=None)
+    assert len(batches) == 1
+    return batches[0]
   else:
     # TODO(zhuo, b/158335158): switch to pa.Table.concat_tables(promote=True)
     # once the upstream bug is fixed:
     # https://jira.apache.org/jira/browse/ARROW-9071
-    one_chunk_table = MergeTables(
-        [pa.Table.from_batches([r]) for r in record_batches])
-
-  batches = one_chunk_table.to_batches(max_chunksize=None)
-  assert len(batches) == 1
-  return batches[0]
+    return _MergeRecordBatches(record_batches)
 
 
 def DataFrameToRecordBatch(

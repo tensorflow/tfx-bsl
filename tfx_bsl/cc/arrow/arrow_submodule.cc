@@ -184,17 +184,18 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
   auto m = arrow_module.def_submodule("table_util");
   m.doc() = "Arrow Table utilities.";
   m.def(
-      "MergeTables",
-      [](const std::vector<std::shared_ptr<arrow::Table>>& tables) {
-        std::shared_ptr<arrow::Table> result;
-        Status s = MergeTables(tables, &result);
+      "MergeRecordBatches",
+      [](const std::vector<std::shared_ptr<arrow::RecordBatch>>&
+             record_batches) {
+        std::shared_ptr<arrow::RecordBatch> result;
+        Status s = MergeRecordBatches(record_batches, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
         return result;
       },
       py::doc(
-          "Merges a list of arrow tables into one. \n"
+          "Merges a list of arrow record batches into one. \n"
           "The columns are concatenated (there will be only one chunk per "
           "column). Columns of the same name must be of the same type, or be a "
           "column of NullArrays. If a column in some tables are of type T, in "

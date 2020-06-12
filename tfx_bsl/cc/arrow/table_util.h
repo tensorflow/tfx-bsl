@@ -24,12 +24,11 @@
 
 namespace arrow {
 class Array;
-class Table;
 class RecordBatch;
 }  // namespace arrow
 
 namespace tfx_bsl {
-// Merges a list of arrow tables into one.
+// Merges a list of record batches into one.
 // The columns are concatenated (there will be only one chunk per column).
 // Columns of the same name must be of the same type, or be a column of
 // NullArrays.
@@ -39,17 +38,9 @@ namespace tfx_bsl {
 // If a column appears in some tables but not in some other tables, the
 // concatenated column will contain nulls representing the rows from the table
 // with that column missing.
-Status MergeTables(const std::vector<std::shared_ptr<arrow::Table>>& tables,
-                   std::shared_ptr<arrow::Table>* result);
-
-// Collects rows in `row_indices` from `table` and form a new Table.
-// The new Table is guaranteed to contain only one chunk.
-// `row_indices` must be an arrow::Int32Array or Int64Array. And the indices in
-// it must be sorted in ascending order.
-// TODO(zhuo): Investigate arrow::compute::Take.
-Status SliceTableByRowIndices(const std::shared_ptr<arrow::Table>& table,
-                              const std::shared_ptr<arrow::Array>& row_indices,
-                              std::shared_ptr<arrow::Table>* result);
+Status MergeRecordBatches(
+    const std::vector<std::shared_ptr<arrow::RecordBatch>>& record_batches,
+    std::shared_ptr<arrow::RecordBatch>* result);
 
 // Returns the total byte size of all the Arrays a table or a record batch
 // consists of. Slicing offsets are taken consideration, but buffer sharing
@@ -58,8 +49,6 @@ Status SliceTableByRowIndices(const std::shared_ptr<arrow::Table>& table,
 // If `ignore_unsupported` is true, these functions will not return an error
 // when encountering unsupported columns and the result won't include
 // the size of them, otherwise an error will be returned.
-Status TotalByteSize(const arrow::Table& table, bool ignore_unsupported,
-                     size_t* result);
 Status TotalByteSize(const arrow::RecordBatch& record_batch,
                      bool ignore_unsupported, size_t* result);
 
