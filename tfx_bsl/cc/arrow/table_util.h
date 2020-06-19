@@ -29,15 +29,23 @@ class RecordBatch;
 
 namespace tfx_bsl {
 // Merges a list of record batches into one.
-// The columns are concatenated (there will be only one chunk per column).
-// Columns of the same name must be of the same type, or be a column of
-// NullArrays.
-// If a column in some tables are of type T, in some other tables are of
-// NullArrays, the concatenated column is of type T, with nulls representing
-// the rows from the table with NullArrays.
-// If a column appears in some tables but not in some other tables, the
-// concatenated column will contain nulls representing the rows from the table
-// with that column missing.
+// The columns are concatenated. Columns of the same name must be of compatible
+// types. Two types are compatible if:
+//   - they are equal, or
+//   - one of them is Null
+//   - both are list<> or large_list<>, and their child types are compatible
+//     (note that large_list<> and list<> are not compatible), or
+//   - both are struct<>, and their children of the same name are compatible.
+//     they don't need to have the same set of children.
+// Rules for concatanating two compatible but not equal arrays:
+//   1. if one of them is Null, then the result is of the other type, with
+//      nulls representing elements from the NullArray.
+//   2. two compatible list<> arrays are concatenated recursively.
+//   3. two compatible struct<> arrays will result in a struct<> that contains
+//      children from both arrays. If on array is missing a child, it is
+//      considered as if it had that child as a NullArray. Child arrays are
+//      concatenated recusrively.
+// Returns an error if there's any incompatibility.
 Status MergeRecordBatches(
     const std::vector<std::shared_ptr<arrow::RecordBatch>>& record_batches,
     std::shared_ptr<arrow::RecordBatch>* result);

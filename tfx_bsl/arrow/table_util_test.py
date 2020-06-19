@@ -240,8 +240,126 @@ _MERGE_TEST_CASES = [
                              pa.field("f2", pa.list_(pa.int32()))
                          ])),
         }),
+    dict(
+        testcase_name="merge_list_of_null_and_list_of_list",
+        inputs=[{
+            "f": pa.array([[None, None], None], type=pa.list_(pa.null()))
+        }, {
+            "f": pa.array([[[123]], None], type=pa.list_(pa.list_(pa.int32())))
+        }],
+        expected_output={
+            "f":
+                pa.array([[None, None], None, [[123]], None],
+                         type=pa.list_(pa.list_(pa.int32())))
+        }),
+    dict(
+        testcase_name="merge_large_list_of_null_and_list_of_list",
+        inputs=[{
+            "f": pa.array([[None, None], None], type=pa.large_list(pa.null()))
+        }, {
+            "f": pa.array([[[123]], None],
+                          type=pa.large_list(pa.large_list(pa.int32())))
+        }],
+        expected_output={
+            "f":
+                pa.array([[None, None], None, [[123]], None],
+                         type=pa.large_list(pa.large_list(pa.int32())))
+        }),
+    dict(
+        testcase_name="merge_sliced_list_of_null_and_list_of_list",
+        inputs=[{
+            "f": pa.array(
+                [None, [None, None], None], type=pa.list_(pa.null())).slice(1)
+        }, {
+            "f": pa.array([[[123]], None], type=pa.list_(pa.list_(pa.int32())))
+        }],
+        expected_output={
+            "f":
+                pa.array([[None, None], None, [[123]], None],
+                         type=pa.list_(pa.list_(pa.int32())))
+        }),
+    dict(
+        testcase_name="merge_list_of_list_and_list_of_null",
+        inputs=[{
+            "f": pa.array([[[123]], None], type=pa.list_(pa.list_(pa.int32())))
+        }, {
+            "f": pa.array([[None, None], None], type=pa.list_(pa.null()))
+        }],
+        expected_output={
+            "f":
+                pa.array([[[123]], None, [None, None], None],
+                         type=pa.list_(pa.list_(pa.int32())))
+        }),
+    dict(
+        testcase_name="merge_list_of_null_and_null",
+        inputs=[{
+            "f": pa.array([None], type=pa.null())
+        }, {
+            "f": pa.array([[None, None], None], type=pa.list_(pa.null()))
+        }],
+        expected_output={
+            "f": pa.array([None, [None, None], None], type=pa.list_(pa.null()))
+        }),
+    dict(
+        testcase_name="merge_compatible_struct_missing_field",
+        inputs=[{
+            "f": pa.array([{"a": [1]}, {"a": [2, 3]}]),
+        }, {
+            "f": pa.array([{"b": [1.0]}]),
+        }],
+        expected_output={
+            "f": pa.array([
+                {"a": [1], "b": None},
+                {"a": [2, 3], "b": None},
+                {"a": None, "b": [1.0]}])
+        }),
+    dict(
+        testcase_name="merge_compatible_struct_null_type",
+        inputs=[{
+            "f":
+                pa.array([{"a": [[1]]}],
+                         type=pa.struct([
+                             pa.field("a",
+                                      pa.large_list(pa.large_list(pa.int32())))
+                         ])),
+        }, {
+            "f":
+                pa.array([{"a": None}, {"a": None}],
+                         type=pa.struct([pa.field("a", pa.null())])),
+        }],
+        expected_output={
+            "f":
+                pa.array([{"a": [[1]]},
+                          {"a": None},
+                          {"a": None}],
+                         type=pa.struct([
+                             pa.field("a",
+                                      pa.large_list(pa.large_list(pa.int32())))
+                         ]))
+        }),
+    dict(
+        testcase_name="merge_compatible_struct_in_struct",
+        inputs=[{
+            "f": pa.array([{}, {}]),
+        }, {
+            "f": pa.array([
+                {"a": [{"b": 1}]},
+                {"a": [{"b": 2}]},
+            ])
+        }, {
+            "f": pa.array([
+                {"a": [{"b": 3, "c": 1}]},
+            ])
+        }],
+        expected_output={
+            "f": pa.array([
+                {"a": None},
+                {"a": None},
+                {"a": [{"b": 1, "c": None}]},
+                {"a": [{"b": 2, "c": None}]},
+                {"a": [{"b": 3, "c": 1}]}])
+        })
 ]
-
 
 _MERGE_INVALID_INPUT_TEST_CASES = [
     dict(
@@ -252,7 +370,7 @@ _MERGE_INVALID_INPUT_TEST_CASES = [
             pa.RecordBatch.from_arrays([pa.array([4, 5, 6], type=pa.int64())],
                                        ["f1"])
         ],
-        expected_error_regexp="Trying to append a column of different type"),
+        expected_error_regexp="Unable to merge incompatible type"),
 ]
 
 
