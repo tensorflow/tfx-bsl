@@ -36,10 +36,12 @@ from six.moves import http_client
 import tensorflow as tf
 from tfx_bsl.beam import run_inference_arrow
 from tfx_bsl.public.proto import model_spec_pb2
-from tfx_bsl.tfxio import raw_tf_record
+from tfx_bsl.tfxio import test_util
+from tfx_bsl.tfxio import tensor_adapter
 
 from google.protobuf import text_format
 from tensorflow_serving.apis import prediction_log_pb2
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 
 class RunInferenceArrowFixture(tf.test.TestCase):
@@ -57,10 +59,27 @@ class RunInferenceArrowFixture(tf.test.TestCase):
 
     serialized_example = []
     for example in self._predict_examples:
-      serialized_example.append(example.SerializeToString())
+      serialized_example.append([example.SerializeToString()])
     self.record_batch = pa.RecordBatch.from_arrays(
-      [serialized_example, ], ["__RAW_RECORD__", ]
-    )
+    [
+        pa.array([[0]], type=pa.list_(pa.float32())),
+        serialized_example
+    ],
+    ['input1', '__RAW_RECORD__']
+)
+
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema=text_format.Parse(
+        """
+        feature {
+          name: "input1"
+          type: FLOAT
+        }
+        """, schema_pb2.Schema()),
+      raw_record_column_name='__RAW_RECORD__')
+    self.tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=tfxio.ArrowSchema(),
+        tensor_representations=tfxio.TensorRepresentations())
 
   def _get_output_data_dir(self, sub_dir=None):
     test_dir = self._testMethodName
@@ -96,6 +115,32 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
               }
               """, tf.train.Example()),
     ]
+
+    serialized_example = []
+    for example in self._predict_examples:
+      serialized_example.append([example.SerializeToString()])
+    self.record_batch = pa.RecordBatch.from_arrays(
+      [
+        pa.array([[0], [1]], type=pa.list_(pa.float32())),
+        serialized_example
+      ],
+      ['input1', '__RAW_RECORD__']
+    )
+
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema=text_format.Parse(
+        """
+        feature {
+          name: "input1"
+          type: FLOAT
+        }
+        """, schema_pb2.Schema()),
+      raw_record_column_name='__RAW_RECORD__')
+    self.tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=tfxio.ArrowSchema(),
+        tensor_representations=tfxio.TensorRepresentations())
+
+
     self._multihead_examples = [
         text_format.Parse(
             """
@@ -113,20 +158,34 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
             """, tf.train.Example()),
     ]
 
-
-    serialized_example = []
-    for example in self._predict_examples:
-      serialized_example.append(example.SerializeToString())
-    self.record_batch = pa.RecordBatch.from_arrays(
-      [serialized_example, ], ["__RAW_RECORD__", ]
-    )
-
     serialized_example_multi = []
     for example in self._multihead_examples:
-      serialized_example_multi.append(example.SerializeToString())
+      serialized_example_multi.append([example.SerializeToString()])
     self.record_batch_multihead = pa.RecordBatch.from_arrays(
-      [serialized_example_multi, ], ["__RAW_RECORD__", ]
+      [
+        pa.array([[0.8], [0.6]], type=pa.list_(pa.float32())),
+        pa.array([[0.2], [0.1]], type=pa.list_(pa.float32())),
+        serialized_example_multi
+      ],
+      ['x', 'y', '__RAW_RECORD__']
     )
+
+    tfxio_multi = test_util.InMemoryTFExampleRecord(
+      schema=text_format.Parse(
+        """
+          feature {
+            name: "x"
+            type: FLOAT
+          }
+          feature {
+            name: "y"
+            type: FLOAT
+          }
+        """, schema_pb2.Schema()),
+      raw_record_column_name='__RAW_RECORD__')
+    self.tensor_adapter_config_multihead = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=tfxio_multi.ArrowSchema(),
+        tensor_representations=tfxio_multi.TensorRepresentations())
 
 
   def _prepare_multihead_examples(self, example_path):
@@ -235,7 +294,8 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         _ = (
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch_multihead])
-          | 'RunInference' >> run_inference_arrow.RunInferenceImpl(inference_spec_type)
+          | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
+                inference_spec_type, self.tensor_adapter_config_multihead)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -244,7 +304,8 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         _ = (
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch])
-          | 'RunInference' >> run_inference_arrow.RunInferenceImpl(inference_spec_type)
+          | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
+                inference_spec_type, self.tensor_adapter_config)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -260,8 +321,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     return results
 
   def testModelPathInvalid(self):
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
     with self.assertRaisesRegexp(IOError, 'SavedModel file does not exist.*'):
       self._run_inference_with_beam(
@@ -271,8 +330,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
                   model_path=self._get_output_data_dir())), prediction_log_path)
 
   def testEstimatorModelPredict(self):
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_predict_examples(example_path)
     model_path = self._get_output_data_dir('model')
     self._build_predict_model(model_path)
     prediction_log_path = self._get_output_data_dir('predictions')
@@ -300,8 +357,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         1)
 
   def testClassifyModel(self):
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
     self._build_multihead_model(model_path)
     prediction_log_path = self._get_output_data_dir('predictions')
@@ -324,8 +379,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         classify_log.response.result.classifications[0].classes[0].score, 1.0)
 
   def testRegressModel(self):
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
     self._build_multihead_model(model_path)
     prediction_log_path = self._get_output_data_dir('predictions')
@@ -347,8 +400,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
                            0.6)
 
   def testMultiInferenceModel(self):
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
     self._build_multihead_model(model_path)
     prediction_log_path = self._get_output_data_dir('predictions')
@@ -421,8 +472,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     tf.compat.v1.keras.experimental.export_saved_model(
         model, model_path, serving_only=True)
 
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         'predict',
@@ -434,8 +483,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     self.assertLen(results, 2)
 
   def testTelemetry(self):
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
     self._build_multihead_model(model_path)
     inference_spec_type = model_spec_pb2.InferenceSpecType(
@@ -445,7 +492,8 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     _ = (
         pipeline 
         | "createRecordBatch" >> beam.Create([self.record_batch_multihead])
-        | 'RunInference' >> run_inference_arrow.RunInferenceImpl(inference_spec_type))
+        | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
+              inference_spec_type, self.tensor_adapter_config_multihead))
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -484,8 +532,6 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
 
   def setUp(self):
     super(RunRemoteInferenceArrowTest, self).setUp()
-    self.example_path = self._get_output_data_dir('example')
-    self._prepare_predict_examples(self.example_path)
     # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
     self._discovery_testdata_dir = os.path.join(
         os.path.join(os.path.dirname(__file__), 'testdata'),
@@ -504,7 +550,8 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
     self.pcoll = (
         self.pipeline
         | "createRecordBatch" >> beam.Create([self.record_batch])
-        | 'RunInference' >> run_inference_arrow.RunInferenceImpl(inference_spec_type))
+        | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
+              inference_spec_type, self.tensor_adapter_config))
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()
@@ -582,7 +629,7 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
 
   def test_request_body_with_binary_data(self):
     example = text_format.Parse(
-        """
+      """
       features {
         feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
         feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
