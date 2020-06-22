@@ -11,7 +11,7 @@
 
 ## Bug Fixes and Other Changes
 
-*   Depends on `pandas>=0.24,<1`.
+*   Depends on `pandas>=0.24,<2`.
 
 ## Breaking changes
 
