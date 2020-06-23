@@ -1,6 +1,6 @@
 # `tfx_bsl` release notes
 
-# Current version (not yet released; still in development)
+# Version 0.22.1
 
 ## Major Features and Improvements
 
@@ -12,6 +12,8 @@
 ## Bug Fixes and Other Changes
 
 *   Depends on `pandas>=0.24,<2`.
+*   Depends on `tensorflow-metadata>=0.22.2,<0.23.0`.
+*   Depends on `tensorflow>=1.15,!=2.0.*,<3`.
 
 ## Breaking changes
 
