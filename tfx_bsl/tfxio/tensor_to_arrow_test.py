@@ -184,4 +184,6 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
 
 
 if __name__ == "__main__":
-  absltest.main()
+  # Do not run these tests under TF1.x -- TensorToArrow does not support TF 1.x.
+  if tf.__version__ >= "2":
+    absltest.main()

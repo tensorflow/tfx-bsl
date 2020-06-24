@@ -21,6 +21,7 @@ from __future__ import print_function
 import abc
 from typing import Dict, List, Text, Tuple, Union
 
+from absl import logging
 import pyarrow as pa
 import six
 import tensorflow as tf
@@ -28,6 +29,11 @@ import tensorflow as tf
 # CompositeTensor is not public yet.
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_metadata.proto.v0 import schema_pb2
+
+
+if tf.__version__ < "2":
+  logging.warning("tfx_bsl.tfxio.tensor_to_arrow will not work correctly with "
+                  "TF 1.x.")
 
 
 TensorAlike = Union[tf.Tensor, composite_tensor.CompositeTensor]
