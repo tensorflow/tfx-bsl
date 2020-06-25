@@ -92,10 +92,6 @@ class RunInferenceArrowFixture(tf.test.TestCase):
       path = os.path.join(path, sub_dir)
     return path
 
-  def _prepare_predict_examples(self, example_path):
-    with tf.io.TFRecordWriter(example_path) as output_file:
-      for example in self._predict_examples:
-        output_file.write(example.SerializeToString())
 
 class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
 
@@ -187,11 +183,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         arrow_schema=tfxio_multi.ArrowSchema(),
         tensor_representations=tfxio_multi.TensorRepresentations())
 
-
-  def _prepare_multihead_examples(self, example_path):
-    with tf.io.TFRecordWriter(example_path) as output_file:
-      for example in self._multihead_examples:
-        output_file.write(example.SerializeToString())
 
   def _build_predict_model(self, model_path):
     """Exports the dummy sum predict model."""
@@ -295,7 +286,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch_multihead])
           | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-                inference_spec_type, self.tensor_adapter_config_multihead)
+                inference_spec_type)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -305,7 +296,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch])
           | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-                inference_spec_type, self.tensor_adapter_config)
+                inference_spec_type)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -493,7 +484,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         pipeline 
         | "createRecordBatch" >> beam.Create([self.record_batch_multihead])
         | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-              inference_spec_type, self.tensor_adapter_config_multihead))
+              inference_spec_type))
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -551,7 +542,7 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
         self.pipeline
         | "createRecordBatch" >> beam.Create([self.record_batch])
         | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-              inference_spec_type, self.tensor_adapter_config))
+              inference_spec_type))
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()
