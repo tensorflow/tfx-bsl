@@ -5,6 +5,7 @@
 ## Major Features and Improvements
 
 ## Bug Fixes and Other Changes
+*  Starting from this version, the windows wheel will be built with VS 2015.
 
 ## Breaking changes
 
