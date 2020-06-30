@@ -13,32 +13,83 @@
 // limitations under the License.
 
 #include "tfx_bsl/cc/sketches/kmv_sketch.h"
-
 #include <gtest/gtest.h>
 #include "tfx_bsl/cc/util/status.h"
 #include "absl/strings/str_format.h"
 
 namespace tfx_bsl {
 namespace sketches {
+
 // Tests to assess the accuracy of the KMV sketch.
 // TODO(monicadsong@): Convert these tests to python.
-TEST(KmvSketchTest, AddSimple) {
+
+TEST(KmvSketchTest, AddSimpleLargeBinary) {
   KmvSketch kmv(128);
-  string s1 = "foo";
-  string s2 = "bar";
-  kmv.Add(s1);
-  kmv.Add(s2);
-  kmv.Add(s2);
+
+  arrow::LargeBinaryBuilder builder;
+  ASSERT_TRUE(builder.Append("foo").ok());
+  ASSERT_TRUE(builder.Append("foo").ok());
+  ASSERT_TRUE(builder.Append("bar").ok());
+  std::shared_ptr<arrow::LargeBinaryArray> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());;
   EXPECT_EQ(2, kmv.Estimate());
 }
 
+TEST(KmvSketchTest, AddSimpleBinary) {
+  KmvSketch kmv(128);
+
+  arrow::BinaryBuilder builder;
+  ASSERT_TRUE(builder.Append("foo").ok());
+  ASSERT_TRUE(builder.Append("foo").ok());
+  ASSERT_TRUE(builder.Append("bar").ok());
+  std::shared_ptr<arrow::BinaryArray> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());;
+  EXPECT_EQ(2, kmv.Estimate());
+}
+
+TEST(KmvSketchTest, AddSimpleString) {
+  KmvSketch kmv(128);
+
+  arrow::StringBuilder builder;
+  ASSERT_TRUE(builder.Append("foo").ok());
+  ASSERT_TRUE(builder.Append("foo").ok());
+  ASSERT_TRUE(builder.Append("bar").ok());
+  std::shared_ptr<arrow::StringArray> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());;
+  EXPECT_EQ(2, kmv.Estimate());
+}
+
+TEST(KmvSketchTest, AddSimpleInt64) {
+  KmvSketch kmv(128);
+
+  arrow::Int64Builder builder;
+  ASSERT_TRUE(builder.Append(1).ok());
+  ASSERT_TRUE(builder.Append(1).ok());
+  ASSERT_TRUE(builder.Append(2).ok());
+  std::shared_ptr<arrow::Int64Array> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());;
+  EXPECT_EQ(2, kmv.Estimate());
+}
+
+
 TEST(KmvSketchTest, MergeSimple) {
   KmvSketch kmv1(128);
-  string s1 = "foo";
-  kmv1.Add(s1);
+  arrow::LargeBinaryBuilder builder;
+  ASSERT_TRUE(builder.Append("foo").ok());
+  std::shared_ptr<arrow::LargeBinaryArray> array1;
+  ASSERT_TRUE(builder.Finish(&array1).ok());
+  ASSERT_TRUE(kmv1.AddValues(*array1).ok());;
+
   KmvSketch kmv2(128);
-  string s2 = "bar";
-  kmv2.Add(s2);
+  arrow::LargeBinaryBuilder builder2;
+  ASSERT_TRUE(builder2.Append("bar").ok());
+  std::shared_ptr<arrow::LargeBinaryArray> array2;
+  ASSERT_TRUE(builder2.Finish(&array2).ok());
+  ASSERT_TRUE(kmv2.AddValues(*array2).ok());;
 
   Status status = kmv1.Merge(kmv2);
   ASSERT_TRUE(status.ok());
@@ -48,9 +99,13 @@ TEST(KmvSketchTest, MergeSimple) {
 TEST(KmvSketchTest, AddManyValues) {
   KmvSketch kmv(128);
   for (int batch = 0; batch < 10; batch++) {
+    arrow::Int64Builder builder;
     for (int i = 0; i < 1000; i++) {
-      kmv.Add(absl::StrFormat("%d", batch*1000+i));
+      ASSERT_TRUE(builder.Append(batch*1000+i).ok());
     }
+    std::shared_ptr<arrow::Int64Array> array;
+    ASSERT_TRUE(builder.Finish(&array).ok());
+    ASSERT_TRUE(kmv.AddValues(*array).ok());;
     uint64_t distinct_estimate = kmv.Estimate();
     int64_t distinct_true = 1000 * (batch + 1);
     int64_t expected_error = 1 / sqrt(128) * distinct_true;
@@ -66,9 +121,13 @@ TEST(KmvSketchTest, MergeManyValues) {
   int num_trials = 10;
   for (int trial = 0; trial < num_trials; trial++) {
     KmvSketch new_kmv(128);
+    arrow::LargeBinaryBuilder builder;
     for (int i = 0; i < 1000; i++) {
-      new_kmv.Add(absl::StrFormat("%d", trial*1000+i));
+      ASSERT_TRUE(builder.Append(absl::StrFormat("%d", trial*1000+i)).ok());
     }
+    std::shared_ptr<arrow::LargeBinaryArray> array;
+    ASSERT_TRUE(builder.Finish(&array).ok());
+    ASSERT_TRUE(new_kmv.AddValues(*array).ok());;
     Status status = kmv.Merge(new_kmv);
     ASSERT_TRUE(status.ok());
   }
@@ -83,9 +142,13 @@ TEST(KmvSketchTest, MergeManyValues) {
 TEST(KmvSketchTest, SerializationPreservesAccuracy) {
   KmvSketch kmv(128);
   for (int batch = 0; batch < 10; batch++) {
+    arrow::Int64Builder builder;
     for (int i = 0; i < 1000; i++) {
-      kmv.Add(absl::StrFormat("%d", batch*1000+i));
+      ASSERT_TRUE(builder.Append(batch*1000+i).ok());
     }
+    std::shared_ptr<arrow::Int64Array> array;
+    ASSERT_TRUE(builder.Finish(&array).ok());
+    ASSERT_TRUE(kmv.AddValues(*array).ok());;
     std::string serialized_sketch = kmv.Serialize();
     KmvSketch kmv_recovered = KmvSketch::Deserialize(serialized_sketch);
 
@@ -101,12 +164,16 @@ TEST(KmvSketchTest, SerializationPreservesAccuracy) {
 }
 
 TEST(KmvSketchTest, MergeDifferentNumBuckets) {
+  arrow::Int64Builder builder;
+  ASSERT_TRUE(builder.Append(1).ok());
+  ASSERT_TRUE(builder.Append(2).ok());
+  std::shared_ptr<arrow::Int64Array> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+
   KmvSketch kmv1(128);
-  string s1 = "foo";
-  kmv1.Add(s1);
+  ASSERT_TRUE(kmv1.AddValues(*array).ok());;
   KmvSketch kmv2(64);
-  string s2 = "bar";
-  kmv2.Add(s2);
+  ASSERT_TRUE(kmv2.AddValues(*array).ok());;
 
   Status status = kmv1.Merge(kmv2);
   ASSERT_FALSE(status.ok());

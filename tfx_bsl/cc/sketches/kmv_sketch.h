@@ -21,6 +21,7 @@
 
 #include "absl/strings/string_view.h"
 #include "tfx_bsl/cc/util/status.h"
+#include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
 
 namespace tfx_bsl {
@@ -45,9 +46,9 @@ class KmvSketch {
   // KmvSketch is copyable and movable.
   KmvSketch(int num_buckets);
   ~KmvSketch() = default;
-  // Updates the sketch with a single value. TODO(monicadsong@): change Add to
-  // accept arrays of values.
-  void Add(absl::string_view value);
+  // Updates the sketch with an Arrow array of values. Supports numeric arrays
+  // of all integral types, binary arrays, and string arrays.
+  Status AddValues(const arrow::Array& array);
   // Merges the sketch from another object into this sketch. Returns error if
   // the other sketch has a different number of buckets than this sketch.
   Status Merge(KmvSketch& other);

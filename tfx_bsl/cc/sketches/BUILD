@@ -13,6 +13,8 @@ cc_library(
     deps = [
         ":sketches_cc_proto",
         "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
+        "@arrow",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@farmhash_archive//:farmhash",
@@ -32,6 +34,7 @@ cc_test(
     deps = [
         ":kmv_sketch",
         "//tfx_bsl/cc/util:status",
+        "@arrow",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
