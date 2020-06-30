@@ -5,7 +5,9 @@
 ## Major Features and Improvements
 
 ## Bug Fixes and Other Changes
-*  Starting from this version, the windows wheel will be built with VS 2015.
+
+*   Starting from this version, the windows wheel will be built with VS 2015.
+*   Depends on `avro-python3>=1.8.1,<1.9.2` for Python3.5 + MacOS.
 
 ## Breaking changes
 
