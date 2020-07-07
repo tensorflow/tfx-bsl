@@ -229,10 +229,9 @@ class ColumnTypeInferrer(beam.CombineFn):
       # Get the already inferred type of the feature.
       previous_type = accumulator.get(column_name, None)
       if column_name in self._multivalent_columns:
-        current_type = max([
-            _InferValueType(value)
-            for value in self._multivalent_reader.ReadLine(cell)
-        ])
+        values = self._multivalent_reader.ReadLine(cell)
+        current_type = max([_InferValueType(value) for value in values
+                           ]) if values else ColumnType.UNKNOWN
       else:
         current_type = _InferValueType(cell)
 
