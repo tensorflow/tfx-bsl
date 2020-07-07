@@ -552,7 +552,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       self._run_inference_with_beam()
 
   def test_can_format_requests(self):
-    # ensure _RemotePredictDoFn._prepare_instances produces JSON-serializeable objects
+    # ensure _RemotePredictDoFn._prepare_instances produces JSON-serializable objects
     builder = http.RequestMockBuilder({
         'ml.projects.predict':
             (None, self._make_response_body([], successful=True))
