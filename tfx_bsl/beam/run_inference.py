@@ -443,6 +443,7 @@ class _RemotePredictDoFn(_BaseDoFn):
     elif attr_name == 'bytes_list':
       return [x.decode() for x in values]
     else:
+      # convert proto RepeatedScalarContainer to list so it is JSON-serializeable
       return list(values)
 
   def run_inference(

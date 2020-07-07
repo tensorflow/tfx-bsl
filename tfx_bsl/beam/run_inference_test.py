@@ -551,6 +551,45 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       self._set_up_pipeline(inference_spec_type)
       self._run_inference_with_beam()
 
+  def test_can_format_requests(self):
+    # ensure _RemotePredictDoFn._prepare_instances produces JSON-serializeable objects
+    builder = http.RequestMockBuilder({
+        'ml.projects.predict':
+            (None, self._make_response_body([], successful=True))
+    })
+    resource = discovery.build(
+        'ml',
+        'v1',
+        http=http.HttpMock(self._discovery_testdata_dir,
+                           {'status': http_client.OK}),
+        requestBuilder=builder)
+    with mock.patch('googleapiclient.discovery.' 'build') as response_mock:
+      response_mock.side_effect = lambda service, version: resource
+      inference_spec_type = model_spec_pb2.InferenceSpecType(
+          ai_platform_prediction_model_spec=model_spec_pb2
+          .AIPlatformPredictionModelSpec(
+              project_id='test-project',
+              model_name='test-model',
+          ))
+
+      example = text_format.Parse(
+        """
+        features {
+          feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+          feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+          feature { key: "y" value { int64_list { value: [1, 2] }}}
+          feature { key: "z" value { float_list { value: [4.5, 5, 5.5] }}}
+        }
+        """, tf.train.Example())
+
+      self.pipeline = beam.Pipeline()
+      self.pcoll = (
+          self.pipeline
+          | 'ReadExamples' >> beam.Create([example])
+          | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
+
+      self._run_inference_with_beam()
+
   def test_request_body_with_binary_data(self):
     example = text_format.Parse(
         """
