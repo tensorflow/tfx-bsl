@@ -7,7 +7,7 @@
 ## Bug Fixes and Other Changes
 
 *   Starting from this version, the windows wheel will be built with VS 2015.
-*   Depends on `avro-python3>=1.8.1,<1.9.2` for Python3.5 + MacOS.
+*   Stopped requiring `avro-python3`.
 *   Depends on `apache-beam[gcp]>=2.22,<3`.
 
 ## Breaking changes
