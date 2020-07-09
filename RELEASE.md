@@ -9,6 +9,9 @@
 *   Starting from this version, the windows wheel will be built with VS 2015.
 *   Stopped requiring `avro-python3`.
 *   Depends on `apache-beam[gcp]>=2.22,<3`.
+*   Example coders will ignore duplicate feature names in the TFMD schema
+    (only the first one counts). It is a temporary measure until TFDV can
+    check and prevent duplications. DO NOT rely on this behavior.
 
 ## Breaking changes
 
