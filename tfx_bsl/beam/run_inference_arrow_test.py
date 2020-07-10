@@ -65,21 +65,8 @@ class RunInferenceArrowFixture(tf.test.TestCase):
         pa.array([[0]], type=pa.list_(pa.float32())),
         serialized_example
     ],
-    ['input1', '__RAW_RECORD__']
-)
+    ['input1', '__RAW_RECORD__'])
 
-    tfxio = test_util.InMemoryTFExampleRecord(
-      schema=text_format.Parse(
-        """
-        feature {
-          name: "input1"
-          type: FLOAT
-        }
-        """, schema_pb2.Schema()),
-      raw_record_column_name='__RAW_RECORD__')
-    self.tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-        arrow_schema=tfxio.ArrowSchema(),
-        tensor_representations=tfxio.TensorRepresentations())
 
   def _get_output_data_dir(self, sub_dir=None):
     test_dir = self._testMethodName
@@ -123,19 +110,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
       ['input1', '__RAW_RECORD__']
     )
 
-    tfxio = test_util.InMemoryTFExampleRecord(
-      schema=text_format.Parse(
-        """
-        feature {
-          name: "input1"
-          type: FLOAT
-        }
-        """, schema_pb2.Schema()),
-      raw_record_column_name='__RAW_RECORD__')
-    self.tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-        arrow_schema=tfxio.ArrowSchema(),
-        tensor_representations=tfxio.TensorRepresentations())
-
 
     self._multihead_examples = [
         text_format.Parse(
@@ -166,22 +140,75 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
       ['x', 'y', '__RAW_RECORD__']
     )
 
-    tfxio_multi = test_util.InMemoryTFExampleRecord(
-      schema=text_format.Parse(
+
+    self._multi_input_examples = [
+        text_format.Parse(
+            """
+            features {
+              feature {key: "x" value { float_list { value: 0.8 }}}
+              feature {key: "y" value { float_list { value: 0.2 }}}
+            }
+            """, tf.train.Example()),
+        text_format.Parse(
+            """
+            features {
+              feature {key: "x" value { float_list { value: 0.6 }}}
+              feature {key: "y" value { float_list { value: 0.1 }}}
+            }
+            """, tf.train.Example()),
+    ]
+
+    serialized_example_multi_input = []
+    for example in self._multi_input_examples:
+      serialized_example_multi_input.append([example.SerializeToString()])
+    self.record_batch_multi_input = pa.RecordBatch.from_arrays(
+      [
+        pa.array([[0.8], [0.6]], type=pa.list_(pa.float32())),
+        pa.array([[0.2], [0.1]], type=pa.list_(pa.float32())),
+        serialized_example_multi_input
+      ],
+      ['x', 'y', '__RAW_RECORD__']
+    )
+
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema = text_format.Parse(
         """
-          feature {
-            name: "x"
-            type: FLOAT
+        tensor_representation_group {
+          key: ""
+          value {
+            tensor_representation {
+              key: "x"
+              value {
+                dense_tensor {
+                  column_name: "x"
+                  shape { dim { size: 1 } }
+                }
+              }
+            }
+            tensor_representation {
+              key: "y"
+              value {
+                dense_tensor {
+                  column_name: "y"
+                  shape { dim { size: 1 } }
+                }
+              }
+            }
           }
-          feature {
-            name: "y"
-            type: FLOAT
-          }
+        }
+        feature {
+          name: "x"
+          type: FLOAT
+        }
+        feature {
+          name: "y"
+          type: FLOAT
+        }
         """, schema_pb2.Schema()),
       raw_record_column_name='__RAW_RECORD__')
-    self.tensor_adapter_config_multihead = tensor_adapter.TensorAdapterConfig(
-        arrow_schema=tfxio_multi.ArrowSchema(),
-        tensor_representations=tfxio_multi.TensorRepresentations())
+    self.tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=tfxio.ArrowSchema(),
+        tensor_representations=tfxio.TensorRepresentations())
 
 
   def _build_predict_model(self, model_path):
@@ -279,8 +306,18 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
       builder.save()
 
   def _run_inference_with_beam(self, example_type, inference_spec_type,
-                               prediction_log_path):
-    if example_type == 'multi':
+                               prediction_log_path, include_config = False):
+    if include_config:
+      with beam.Pipeline() as pipeline:
+        _ = (
+          pipeline
+          | "createRecordBatch" >> beam.Create([self.record_batch_multi_input])
+          | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
+                inference_spec_type, self.tensor_adapter_config)
+          | 'WritePredictions' >> beam.io.WriteToTFRecord(
+              prediction_log_path,
+              coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
+    elif example_type == 'multi':
       with beam.Pipeline() as pipeline:
         _ = (
           pipeline
@@ -435,7 +472,6 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     inference_model = tf.keras.models.Model(inputs, [output1, output2])
 
     class TestKerasModel(tf.keras.Model):
-
       def __init__(self, inference_model):
         super(TestKerasModel, self).__init__(name='test_keras_model')
         self.inference_model = inference_model
@@ -445,10 +481,9 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
       ])
       def call(self, serialized_example):
         features = {
-            'input1':
-                tf.compat.v1.io.FixedLenFeature([1],
-                                                dtype=tf.float32,
-                                                default_value=0)
+            'input1': tf.compat.v1.io.FixedLenFeature(
+              [1], dtype=tf.float32,
+              default_value=0)
         }
         input_tensor_dict = tf.io.parse_example(serialized_example, features)
         return inference_model(input_tensor_dict['input1'])
@@ -470,8 +505,35 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path)), prediction_log_path)
 
+    results = self._get_results(prediction_log_path)git st
+    self.assertLen(results, 2)
+
+  def testKerasModelPredictMultiTensor(self):
+    input1 = tf.keras.layers.Input((1,), name='x')
+    input2 = tf.keras.layers.Input((1,), name='y')
+
+    x1 = tf.keras.layers.Dense(10)(input1)
+    x2 = tf.keras.layers.Dense(10)(input2)
+    output = tf.keras.layers.Dense(5, name='output')(x2)
+
+    model = tf.keras.models.Model([input1, input2], output)
+    model_path = self._get_output_data_dir('model')
+    tf.compat.v1.keras.experimental.export_saved_model(
+        model, model_path, serving_only=True)
+
+    prediction_log_path = self._get_output_data_dir('predictions')
+    self._run_inference_with_beam(
+        'multi',
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(
+                model_path=model_path)),
+              prediction_log_path, include_config = True)
+
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
+    for result in results: 
+      self.assertLen(result.predict_log.request.inputs, 2)
+      self.assertEqual(list(result.predict_log.request.inputs), list(['x','y']))
 
   def testTelemetry(self):
     model_path = self._get_output_data_dir('model')

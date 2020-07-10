@@ -40,6 +40,7 @@ import googleapiclient
 from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
+import json
 import six
 import tensorflow as tf
 from tfx_bsl.beam import shared
@@ -55,7 +56,7 @@ from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_serving.apis import regression_pb2
-
+from tensorflow_model_analysis import model_util
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
 # pylint: disable=g-import-not-at-top
@@ -65,6 +66,7 @@ try:
   from tensorflow.contrib.boosted_trees.python.ops import quantile_ops as _  # pylint: disable=unused-import
 except ImportError:
   pass
+
 
 _RECORDBATCH_COLUMN = '__RAW_RECORD__'
 _DEFAULT_INPUT_KEY = 'examples'
@@ -269,6 +271,7 @@ class _BaseDoFn(beam.DoFn):
         self._model_byte_size.update(self.model_byte_size_cache)
         self.model_byte_size_cache = None
 
+    # For feature inputs, using serialized example for batch size
     def update(
       self, elements: List[Union[str, bytes]], latency_micro_secs: int) -> None:
       self._inference_batch_latency_micro_secs.update(latency_micro_secs)
@@ -300,7 +303,9 @@ class _BaseDoFn(beam.DoFn):
       if column_name == _RECORDBATCH_COLUMN:
         column_type = column_array.flatten().type
         if not (pa.types.is_binary(column_type) or pa.types.is_string(column_type)):
-          raise ValueError('Expected a list of serialized examples in bytes or as a string, got %s' % type(example))
+          raise ValueError(
+            'Expected a list of serialized examples in bytes or as a string, got %s' % 
+            type(example))
         serialized_examples = column_array.flatten().to_pylist()
         break
 
@@ -315,19 +320,25 @@ class _BaseDoFn(beam.DoFn):
     else:
       if (self._tensor_adapter_config is None):
         raise ValueError('Tensor adaptor config is required with a multi-input model')
+    
+      input_tensor_names = self._io_tensor_spec.input_tensor_names
+      input_tensor_alias = self._io_tensor_spec.input_tensor_alias
       _tensor_adapter = tensor_adapter.TensorAdapter(self._tensor_adapter_config)
-      dict_of_tensors = self._tensor_adapter.ToBatchTensors(elements)
-      if self._io_tensor_spec:
-        model_input = model_util.filter_tensors_by_input_names(
-          dict_of_tensors, self._io_tensor_spec.input_tensor_names)
+      dict_of_tensors = _tensor_adapter.ToBatchTensors(
+        elements, produce_eager_tensors = False)
+      filtered_tensors = model_util.filter_tensors_by_input_names(
+        dict_of_tensors, input_tensor_alias)
 
+      model_input = {}
+      for feature, tensor_name in zip(input_tensor_alias, input_tensor_names):
+        model_input[tensor_name] = filtered_tensors[feature]
     return serialized_examples, model_input
 
   def process(self, elements: pa.RecordBatch) -> Iterable[Any]:
     batch_start_time = self._clock.get_current_time_in_microseconds()
     serialized_examples, model_input = self._extract_from_recordBatch(elements)
     outputs = self.run_inference(model_input)
-    result = self._post_process(serialized_examples, outputs)
+    result = self._post_process(model_input, outputs)
     self._metrics_collector.update(
         serialized_examples,
         self._clock.get_current_time_in_microseconds() - batch_start_time)
@@ -667,12 +678,14 @@ class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
       raise ValueError('Classify only supports tf.train.Example')
 
   def _post_process(
-      self, elements: Sequence[Union[str, bytes]], 
+      self, elements: Mapping[Any, Any],
       outputs: Mapping[Text, np.ndarray]
   ) -> Iterable[Tuple[Union[str, bytes], classification_pb2.Classifications]]:
+    serialized_examples, = elements.values()
     classifications = _post_process_classify(
-        self._io_tensor_spec.output_alias_tensor_names, elements, outputs)
-    return zip(elements, classifications)
+        self._io_tensor_spec.output_alias_tensor_names,
+        serialized_examples, outputs)
+    return zip(serialized_examples, classifications)
 
 
 @beam.typehints.with_input_types(pa.RecordBatch)
@@ -689,11 +702,12 @@ class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
       raise ValueError('Regress only supports tf.train.Example')
 
   def _post_process(
-      self, elements: Sequence[Union[str, bytes]], 
+      self, elements: Mapping[Any, Any],
       outputs: Mapping[Text, np.ndarray]
   ) -> Iterable[Tuple[Union[str, bytes], regression_pb2.Regression]]:
-    regressions = _post_process_regress(elements, outputs)
-    return zip(elements, regressions)
+    serialized_examples, = elements.values()
+    regressions = _post_process_regress(serialized_examples, outputs)
+    return zip(serialized_examples, regressions)
 
 
 @beam.typehints.with_input_types(pa.RecordBatch)
@@ -714,14 +728,37 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
     pass
 
   def _post_process(
-      self, elements: Sequence[Union[str, bytes]],
+      self, elements: Mapping[Any, Any],
       outputs: Mapping[Text, np.ndarray]
   ) -> Iterable[prediction_log_pb2.PredictLog]:
     if not self._io_tensor_spec.input_tensor_types:
       raise ValueError('No valid tensor types.')
+    input_tensor_names = self._io_tensor_spec.input_tensor_names
+    input_tensor_alias = self._io_tensor_spec.input_tensor_alias
     input_tensor_types = self._io_tensor_spec.input_tensor_types
     signature_name = self._signatures[0].name
-    batch_size = len(elements)
+
+    if len(input_tensor_alias) != len(input_tensor_names):
+      raise ValueError('Expected to have one name and one alias per tensor')
+
+    include_request = True
+    if len(input_tensor_names) == 1:
+      serialized_examples, = elements.values()
+      batch_size = len(serialized_examples)
+      process_elements = serialized_examples
+    else:
+      # Only include request in the predictLog when the all tensors are dense
+      # is there a better way to check this? 
+      for tensor_name, tensor in elements.items():
+        if not isinstance(tensor, np.ndarray):
+          include_request = False
+          break
+
+      if include_request:
+        batch_size = len(elements[input_tensor_names[0]])
+      else:
+        batch_size = elements[input_tensor_names[0]].shape[0]
+
     for output_alias, output in outputs.items():
       if len(output.shape) < 1 or output.shape[0] != batch_size:
         raise ValueError(
@@ -735,13 +772,22 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
     for alias, tensor_type in input_tensor_types.items():
       input_tensor_proto = predict_log_tmpl.request.inputs[alias]
       input_tensor_proto.dtype = tf.as_dtype(tensor_type).as_datatype_enum
+      # TODO (Maxine): fix dimension?
       input_tensor_proto.tensor_shape.dim.add().size = 1
-    # TODO (Maxine): Fix here
+
     result = []
     for i in range(batch_size):
       predict_log = prediction_log_pb2.PredictLog()
       predict_log.CopyFrom(predict_log_tmpl)
-      predict_log.request.inputs[list(input_tensor_types)[0]].string_val.append(elements[i])
+
+      if include_request:
+        if len(input_tensor_alias) == 1:
+          alias = input_tensor_alias[0]
+          predict_log.request.inputs[alias].string_val.append(process_elements[i])
+        else:
+          for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
+            predict_log.request.inputs[alias].float_val.append(elements[tensor_name][i])
+
       for output_alias, output in outputs.items():
         # Mimic tensor::Split
         tensor_proto = tf.make_tensor_proto(
@@ -764,23 +810,25 @@ class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
       raise ValueError('Multi-inference only supports tf.train.Example')
 
   def _post_process(
-      self, elements: Sequence[Union[str, bytes]], 
+      self, elements: Mapping[Any, Any],
       outputs: Mapping[Text, np.ndarray]
   ) -> Iterable[Tuple[Union[str, bytes], inference_pb2.MultiInferenceResponse]]:
     classifications = None
     regressions = None
+    serialized_examples, = elements.values()
     for signature in self._signatures:
       signature_def = signature.signature_def
       if signature_def.method_name == tf.saved_model.CLASSIFY_METHOD_NAME:
         classifications = _post_process_classify(
-            self._io_tensor_spec.output_alias_tensor_names, elements, outputs)
+            self._io_tensor_spec.output_alias_tensor_names,
+            serialized_examples, outputs)
       elif signature_def.method_name == tf.saved_model.REGRESS_METHOD_NAME:
-        regressions = _post_process_regress(elements, outputs)
+        regressions = _post_process_regress(serialized_examples, outputs)
       else:
         raise ValueError('Signature method %s is not supported for '
                          'multi inference' % signature_def.method_name)
     result = []
-    for i in range(len(elements)):
+    for i in range(len(serialized_examples)):
       response = inference_pb2.MultiInferenceResponse()
       for signature in self._signatures:
         signature_def = signature.signature_def
@@ -801,7 +849,7 @@ class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
       if len(response.results) != len(self._signatures):
         raise RuntimeError('Multi inference response result length does not '
                            'match the number of signatures')
-      result.append((elements[i], response))
+      result.append((serialized_examples[i], response))
     return result
 
 
@@ -980,7 +1028,7 @@ def _signature_pre_process(signature: _SignatureDef) -> _IOTensorSpec:
       'With 1 input, dtype is expected to be %s, got %s' %
       tf.string.as_datatype_enum,
       list(signature.inputs.values())[0].dtype)
-  input_tensor_alias = [signature.inputs.keys()]
+  input_tensor_alias = [alias for alias in signature.inputs.keys()]
   if signature.method_name == tf.saved_model.CLASSIFY_METHOD_NAME:
     input_tensor_names, input_tensor_types, output_alias_tensor_names = (
       _signature_pre_process_classify(signature))
