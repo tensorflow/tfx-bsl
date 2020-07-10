@@ -7,6 +7,7 @@
 ## Bug Fixes and Other Changes
 
 *   Starting from this version, the windows wheel will be built with VS 2015.
+*   `run_all_tests` will fail with exit code -2 if no tests are discovered.
 *   Stopped requiring `avro-python3`.
 *   Depends on `apache-beam[gcp]>=2.22,<3`.
 *   Example coders will ignore duplicate feature names in the TFMD schema
