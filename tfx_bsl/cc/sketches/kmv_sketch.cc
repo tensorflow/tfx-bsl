@@ -174,7 +174,7 @@ std::string KmvSketch::Serialize() const {
 KmvSketch KmvSketch::Deserialize(absl::string_view encoded) {
   Kmv kmv_proto;
   kmv_proto.ParseFromArray(encoded.data(), encoded.size());
-  const google::protobuf::RepeatedField<google::protobuf::uint64>& proto_hashes = kmv_proto.hashes();
+  const auto proto_hashes = kmv_proto.hashes();
 
   KmvSketch kmv_new{kmv_proto.num_buckets()};
 
