@@ -22,15 +22,14 @@
 #include "arrow/api.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
-#include "third_party/farmhash/farmhash_fingerprint.h"
+#include <farmhash.h>
 
 
 namespace tfx_bsl {
 namespace sketches {
 namespace {
 
-// Creates a vector of hash values that is the same length as the input Arrow
-// array.
+// Creates a vector of the hash values of the non-null values in the array.
 class GetHashesVisitor : public arrow::ArrayVisitor {
  public:
   GetHashesVisitor() = default;
@@ -77,21 +76,25 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
   std::vector<uint64_t> result_;
   template<typename T>
   arrow::Status VisitInternal(const arrow::NumericArray<T>& numeric_array) {
-    result_.reserve(numeric_array.length());
+    result_.reserve(numeric_array.length() - numeric_array.null_count());
     for (int i = 0; i < numeric_array.length(); i++) {
-      auto value = numeric_array.Value(i);
-      result_.push_back(farmhash::Fingerprint64(absl::StrCat(value)));
+      if (!numeric_array.IsNull(i)) {
+        auto value = numeric_array.Value(i);
+        result_.push_back(::util::Fingerprint64(absl::StrCat(value)));
+      }
     }
     return arrow::Status::OK();
   }
 
   template<typename T>
   arrow::Status VisitInternal(const arrow::BaseBinaryArray<T>& binary_array) {
-    result_.reserve(binary_array.length());
+    result_.reserve(binary_array.length() - binary_array.null_count());
     for (int i = 0; i < binary_array.length(); i++) {
-      auto string_view = binary_array.GetView(i);
-      result_.push_back(
-          farmhash::Fingerprint64(string_view.data(), string_view.size()));
+      if (!binary_array.IsNull(i)) {
+        auto string_view = binary_array.GetView(i);
+        result_.push_back(
+            ::util::Fingerprint64(string_view.data(), string_view.size()));
+      }
     }
     return arrow::Status::OK();
   }
@@ -171,7 +174,7 @@ std::string KmvSketch::Serialize() const {
 KmvSketch KmvSketch::Deserialize(absl::string_view encoded) {
   Kmv kmv_proto;
   kmv_proto.ParseFromArray(encoded.data(), encoded.size());
-  const proto2::RepeatedField<uint64>& proto_hashes = kmv_proto.hashes();
+  const google::protobuf::RepeatedField<google::protobuf::uint64>& proto_hashes = kmv_proto.hashes();
 
   KmvSketch kmv_new{kmv_proto.num_buckets()};
 

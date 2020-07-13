@@ -11,7 +11,7 @@ cc_library(
     srcs = ["kmv_sketch.cc"],
     hdrs = ["kmv_sketch.h"],
     deps = [
-        ":sketches_cc_proto",
+        ":sketches_proto",
         "//tfx_bsl/cc/util:status",
         "//tfx_bsl/cc/util:status_util",
         "@arrow",
@@ -37,5 +37,25 @@ cc_test(
         "@arrow",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "sketches_submodule",
+    srcs = ["sketches_submodule.cc"],
+    hdrs = ["sketches_submodule.h"],
+    copts = [
+        "-fexceptions",
+    ],
+    features = ["-use_header_modules"],
+    visibility = [
+        "//tfx_bsl/cc:__pkg__",
+    ],
+    deps = [
+        ":kmv_sketch",
+        "//tfx_bsl/cc/pybind11:absl_casters",
+        "//tfx_bsl/cc/pybind11:arrow_casters",
+        "@com_google_absl//absl/strings",
+        "@pybind11",
     ],
 )
