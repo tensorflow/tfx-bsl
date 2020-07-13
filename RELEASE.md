@@ -13,6 +13,8 @@
 *   Example coders will ignore duplicate feature names in the TFMD schema
     (only the first one counts). It is a temporary measure until TFDV can
     check and prevent duplications. DO NOT rely on this behavior.
+*   CsvTFXIO now allows skipping CSV headers (`set skip_header_lines`).
+*   CsvTFXIO now requires `telemetry_descriptors` to construct.
 
 ## Breaking changes
 
