@@ -24,7 +24,7 @@ import pyarrow as pa
 import pandas as pd
 import typing
 import json
-from typing import Dict
+from typing import List, Text
 
 
 _RECORDBATCH_COLUMN = '__RAW_RECORD__'
@@ -45,7 +45,7 @@ class JSONAdapter(object):
     """
 
 
-    def ToJSON(self, record_batch: pa.RecordBatch) -> Dict[Text, Any]:
+    def ToJSON(self, record_batch: pa.RecordBatch) -> List[Text]:
         """Returns a JSON string translated from `record_batch`.
 
         Args:

@@ -44,6 +44,7 @@ import json
 import six
 import tensorflow as tf
 from tfx_bsl.beam import shared
+from tfx_bsl.beam import inference_util
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 from tfx_bsl.tfxio import tensor_adapter
@@ -314,6 +315,8 @@ class _BaseDoFn(beam.DoFn):
 
     model_input = None
     if self._io_tensor_spec is None:    # Case when we are running remote inference
+      # _jsonAdaptor = inference_util.JSONAdapter()
+      # model_input = _jsonAdaptor.ToJSON(elements)
       model_input = serialized_examples
     elif (len(self._io_tensor_spec.input_tensor_names) == 1):
       model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
@@ -355,7 +358,7 @@ class _BaseDoFn(beam.DoFn):
 
   @abc.abstractmethod
   def _post_process(
-    self, elements: List[Union[str, bytes]], outputs: Any) -> Iterable[Any]:
+    self, elements: Mapping[Any, Any], outputs: Any) -> Iterable[Any]:
     raise NotImplementedError
 
 

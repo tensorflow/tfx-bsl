@@ -505,7 +505,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path)), prediction_log_path)
 
-    results = self._get_results(prediction_log_path)git st
+    results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
 
   def testKerasModelPredictMultiTensor(self):
