@@ -191,7 +191,66 @@ class _VarLenSparseTensorHandler(_TypeHandler):
         type_spec.dtype != tf.bool)
 
 
-_ALL_HANDLERS_CLS = [_VarLenSparseTensorHandler]
+class _RaggedTensorHandler(_TypeHandler):
+  """Handles ragged tensor."""
+
+  __slots__ = ["_values_arrow_type", "_row_partition_dtype"]
+
+  def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
+    super(_RaggedTensorHandler, self).__init__(tensor_name, type_spec)
+
+    # TODO(b/159717195): clean up protected-access
+    # pylint: disable=protected-access
+    self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec._dtype)
+    self._row_partition_dtype = type_spec._row_splits_dtype
+    # pylint: enable=protected-access
+
+  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+
+    def _create_nested_list(tensor: TensorAlike) -> pa.Array:
+      """Recursively constructs nested arrow arrays from a tensor."""
+      if isinstance(tensor, tf.RaggedTensor):
+        values = tensor.values
+        row_splits = tensor.row_splits.numpy()
+        return pa.ListArray.from_arrays(
+            offsets=row_splits, values=_create_nested_list(values))
+      else:
+        return pa.array(tensor.numpy())
+
+    return [_create_nested_list(tensor)]
+
+  def arrow_fields(self) -> List[pa.Field]:
+    # TODO(b/159717195): clean up protected-access
+    arrow_type = pa.list_(_tf_dtype_to_arrow_type(self._type_spec._dtype))  # pylint: disable=protected-access
+    for _ in range(self._type_spec._ragged_rank - 1):  # pylint: disable=protected-access
+      arrow_type = pa.list_(arrow_type)
+    return [
+        pa.field(self._tensor_name, arrow_type)
+    ]
+
+  def tensor_representation(self) -> schema_pb2.TensorRepresentation:
+    result = schema_pb2.TensorRepresentation()
+    result.ragged_tensor.feature_path.step.append(self._tensor_name)
+    row_partition_dtype = (
+        schema_pb2.TensorRepresentation.RowPartitionDType.INT32
+        if self._row_partition_dtype == tf.int32 else
+        schema_pb2.TensorRepresentation.RowPartitionDType.INT64)
+    result.ragged_tensor.row_partition_dtype = row_partition_dtype
+
+    return result
+
+  @staticmethod
+  def can_handle(type_spec: tf.TypeSpec) -> bool:
+    if not isinstance(type_spec, tf.RaggedTensorSpec):
+      return False
+    # TODO(b/159717195): clean up protected-access
+    if len(type_spec._shape) - type_spec._ragged_rank > 1:  # pylint: disable=protected-access
+      # We currently do not handle leaf value tensors that are not 1-D.
+      return False
+    return type_spec._dtype != tf.bool  # pylint: disable=protected-access
+
+
+_ALL_HANDLERS_CLS = [_VarLenSparseTensorHandler, _RaggedTensorHandler]
 
 
 def _tf_dtype_to_arrow_type(dtype: tf.DType):
@@ -216,10 +275,8 @@ def _get_type_spec(tensor_alike: TensorAlike):
 
 def _make_handlers(
     type_specs: Dict[Text, tf.TypeSpec]) -> List[Tuple[Text, _TypeHandler]]:
-  return [
-      (tensor_name, _get_handler(tensor_name, type_spec))
-      for tensor_name, type_spec in sorted(type_specs.items())
-  ]
+  return [(tensor_name, _get_handler(tensor_name, type_spec))
+          for tensor_name, type_spec in sorted(type_specs.items())]
 
 
 def _get_handler(

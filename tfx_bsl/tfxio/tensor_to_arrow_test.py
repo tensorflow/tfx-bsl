@@ -17,6 +17,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.tfxio import tensor_adapter
@@ -25,7 +26,6 @@ from google.protobuf import text_format
 from absl.testing import absltest
 from absl.testing import parameterized
 from tensorflow_metadata.proto.v0 import schema_pb2
-
 
 _TF_TYPE_TO_ARROW_TYPE = {
     tf.int8: pa.int8(),
@@ -41,6 +41,11 @@ _TF_TYPE_TO_ARROW_TYPE = {
     tf.string: pa.binary(),
 }
 
+_ROW_PARTITION_DTYPES = {
+    "INT64": np.int64,
+    "INT32": np.int32
+}
+
 
 def _make_2d_varlen_sparse_tensor_test_cases():
   result = []
@@ -53,27 +58,77 @@ def _make_2d_varlen_sparse_tensor_test_cases():
       values = tf.constant([1, 2, 3], dtype=tf_type)
       expected_array = pa.array([[1], [], [2, 3], []],
                                 type=pa.list_(arrow_type))
-    result.append(dict(
-        testcase_name="2d_varlen_sparse_tensor_%s" % tf_type.name,
-        type_specs={"sp": tf.SparseTensorSpec([None, None], tf_type)},
-        expected_schema={
-            "sp": pa.list_(arrow_type)
-        },
-        expected_tensor_representations={
-            "sp": """varlen_sparse_tensor { column_name: "sp" }""",
-        },
-        tensor_input={
-            "sp":
-                tf.SparseTensor(
-                    values=values,
-                    indices=[[0, 0], [2, 0], [2, 1]],
-                    dense_shape=[4, 2]),
-        },
-        expected_record_batch={
-            "sp": expected_array
-        }
-        ))
+    result.append(
+        dict(
+            testcase_name="2d_varlen_sparse_tensor_%s" % tf_type.name,
+            type_specs={"sp": tf.SparseTensorSpec([None, None], tf_type)},
+            expected_schema={"sp": pa.list_(arrow_type)},
+            expected_tensor_representations={
+                "sp": """varlen_sparse_tensor { column_name: "sp" }""",
+            },
+            tensor_input={
+                "sp":
+                    tf.SparseTensor(
+                        values=values,
+                        indices=[[0, 0], [2, 0], [2, 1]],
+                        dense_shape=[4, 2]),
+            },
+            expected_record_batch={"sp": expected_array}))
   return result
+
+
+def _make_3d_ragged_tensor_test_cases():
+  result = []
+  for row_partition_dtype in _ROW_PARTITION_DTYPES:
+    row_partition_numpy_type = _ROW_PARTITION_DTYPES[row_partition_dtype]
+    for tf_type, arrow_type in _TF_TYPE_TO_ARROW_TYPE.items():
+      if tf_type == tf.string:
+        values = tf.RaggedTensor.from_row_splits(
+            values=tf.constant([b"1", b"2", b"3"], dtype=tf_type),
+            row_splits=np.asarray([0, 1, 1, 3, 3],
+                                  dtype=row_partition_numpy_type))
+        expected_array = pa.array([[[b"1"], [], [b"2", b"3"]], [[]]],
+                                  type=pa.list_(pa.list_(arrow_type)))
+      else:
+        values = tf.RaggedTensor.from_row_splits(
+            values=tf.constant([1, 2, 3], dtype=tf_type),
+            row_splits=np.asarray([0, 1, 1, 3, 3],
+                                  dtype=row_partition_numpy_type))
+        expected_array = pa.array([[[1], [], [2, 3]], [[]]],
+                                  type=pa.list_(pa.list_(arrow_type)))
+      result.append(
+          dict(
+              testcase_name="3d_ragged_tensor_%s_row_partition_dtype_%s" %
+              (tf_type.name, row_partition_dtype),
+              type_specs={
+                  "sp":
+                      tf.RaggedTensorSpec(
+                          tf.TensorShape([2, None, None]),
+                          tf_type,
+                          ragged_rank=2,
+                          row_splits_dtype=tf.dtypes.as_dtype(
+                              row_partition_numpy_type))
+              },
+              expected_schema={"sp": pa.list_(pa.list_(arrow_type))},
+              expected_tensor_representations={
+                  "sp":
+                      """ragged_tensor {
+                          feature_path {
+                            step: "sp"
+                          }
+                          row_partition_dtype: %s
+                        }""" % row_partition_dtype,
+              },
+              tensor_input={
+                  "sp":
+                      tf.RaggedTensor.from_row_splits(
+                          values=values,
+                          row_splits=np.asarray([0, 3, 4],
+                                                dtype=row_partition_numpy_type))
+              },
+              expected_record_batch={"sp": expected_array}))
+  return result
+
 
 _CONVERT_TEST_CASES = [
     dict(
@@ -108,8 +163,59 @@ _CONVERT_TEST_CASES = [
             "sp2":
                 pa.array([[], [], [b"aa", b"bb"], []],
                          type=pa.list_(pa.binary()))
+        }),
+    dict(
+        testcase_name="ragged_tensors",
+        type_specs={
+            "sp1":
+                tf.RaggedTensorSpec(
+                    tf.TensorShape([2, None]),
+                    tf.int64,
+                    ragged_rank=1,
+                    row_splits_dtype=tf.int64),
+            "sp2":
+                tf.RaggedTensorSpec(
+                    tf.TensorShape([2, None]),
+                    tf.string,
+                    ragged_rank=1,
+                    row_splits_dtype=tf.int64),
+        },
+        expected_schema={
+            "sp1": pa.list_(pa.int64()),
+            "sp2": pa.list_(pa.binary()),
+        },
+        expected_tensor_representations={
+            "sp1":
+                """ragged_tensor {
+                        feature_path {
+                          step: "sp1"
+                        }
+                        row_partition_dtype: INT64
+                      }""",
+            "sp2":
+                """ragged_tensor {
+                        feature_path {
+                          step: "sp2"
+                        }
+                        row_partition_dtype: INT64
+                      }""",
+        },
+        tensor_input={
+            "sp1":
+                tf.RaggedTensor.from_row_splits(
+                    values=np.asarray([1, 5, 9], dtype=np.int64),
+                    row_splits=np.asarray([0, 2, 3], dtype=np.int64)),
+            "sp2":
+                tf.RaggedTensor.from_row_splits(
+                    values=np.asarray([b"x", b"y", b"z"], dtype=np.str),
+                    row_splits=np.asarray([0, 2, 3], dtype=np.int64))
+        },
+        expected_record_batch={
+            "sp1": pa.array([[1, 5], [9]], type=pa.list_(pa.int32())),
+            "sp2": pa.array([[b"x", b"y"], [b"z"]], type=pa.list_(pa.binary())),
         })
-] + _make_2d_varlen_sparse_tensor_test_cases()
+] + _make_2d_varlen_sparse_tensor_test_cases(
+) + _make_3d_ragged_tensor_test_cases()
 
 
 class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
@@ -180,6 +286,29 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
                   indices=[[0, 1]],
                   values=tf.constant([0], dtype=tf.int64),
                   dense_shape=[4, 1])
+      })
+
+  def test_unable_to_handle_ragged(self):
+    # This case is for a value tensor of bool type
+    with self.assertRaisesRegex(ValueError, "No handler found"):
+      tensor_to_arrow.TensorsToRecordBatchConverter({
+          "sp":
+              tf.RaggedTensorSpec(
+                  shape=[2, None, None],
+                  dtype=tf.bool,
+                  ragged_rank=2,
+                  row_splits_dtype=tf.int64)
+      })
+
+    # This case is for a 2D leaf values tensor.
+    with self.assertRaisesRegex(ValueError, "No handler found"):
+      tensor_to_arrow.TensorsToRecordBatchConverter({
+          "sp":
+              tf.RaggedTensorSpec(
+                  shape=[2, None, None],
+                  dtype=tf.int32,
+                  ragged_rank=1,
+                  row_splits_dtype=tf.int64)
       })
 
 
