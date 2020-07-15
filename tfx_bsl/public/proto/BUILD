@@ -3,10 +3,8 @@ load("//tfx_bsl:build_macros.bzl", "tfx_bsl_proto_library", "tfx_bsl_py_proto_li
 
 package(default_visibility = [
     "//learning/tfx/pipeline:__subpackages__",
-    "//third_party/py/tfx/components:__subpackages__",
     "//tfx_bsl:__subpackages__",
-    # TODO(b/144818712): Delete this entry after moving tfx directory.
-    "//third_party/tfx/components:__subpackages__",
+    "//third_party/py/tfx/components:__subpackages__",
 ])
 
 licenses(["notice"])  # Apache 2.0
