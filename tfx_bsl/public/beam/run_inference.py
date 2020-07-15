@@ -21,11 +21,19 @@ from __future__ import print_function
 
 import apache_beam as beam
 import tensorflow as tf
+import pyarrow as pa
+from typing import Union, Optional
+from tfx_bsl.tfxio import test_util
+from tfx_bsl.tfxio import tensor_adapter
+from tfx_bsl.tfxio import raw_tf_record
 from tfx_bsl.beam import run_inference
+from tfx_bsl.beam import run_inference_arrow
 from tfx_bsl.public.proto import model_spec_pb2
-from typing import Union
 from tensorflow_serving.apis import prediction_log_pb2
+from tensorflow_metadata.proto.v0 import schema_pb2
 
+
+_RECORDBATCH_COLUMN = '__RAW_RECORD__'
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(Union[tf.train.Example,
@@ -60,3 +68,73 @@ def RunInference(  # pylint: disable=invalid-name
   return (
       examples |
       'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(Union[tf.train.Example,
+                                       tf.train.SequenceExample])
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def RunInferenceArrow(  # pylint: disable=invalid-name
+    file_path,
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    schema: Optional[schema_pb2.Schema] = None
+) -> beam.pvalue.PCollection:
+  """Run inference with a model.
+
+   There are two types of inference you can perform using this PTransform:
+   1. In-process inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_spec_type`.
+   2. Remote inference by using a service endpoint. Used when
+     `ai_platform_prediction_model_spec` field is set in
+     `inference_spec_type`.
+
+  Args:
+    file_path: File Path for which the examples are stored.
+    inference_spec_type: Model inference endpoint.
+
+  Returns:
+    A PCollection containing prediction logs.
+  """
+  with beam.Pipeline(options=PipelineOptions()) as pipeline:
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
+    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+      arrow_schema=tfxio.ArrowSchema(),
+      tensor_representations=tfxio.TensorRepresentations())
+    converter = raw_tf_record.RawTfRecordTFXIO(
+      file_path, raw_record_column_name=_RECORDBATCH_COLUMN)
+
+    return (pipeline
+            | "GetRawRecordAndConvertToRecordBatch" >> converter.BeamSource()
+            | "RunInferenceImpl" >> run_inference_arrow.RunInferenceImpl(
+                    inference_spec_type, tensor_adapter_config=tensor_adapter_config))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(pa.RecordBatch)
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def RunInferenceRecord(  # pylint: disable=invalid-name
+    examples: beam.pvalue.PCollection,
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None
+) -> beam.pvalue.PCollection:
+  """Run inference with a model.
+
+   There are two types of inference you can perform using this PTransform:
+   1. In-process inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_spec_type`.
+   2. Remote inference by using a service endpoint. Used when
+     `ai_platform_prediction_model_spec` field is set in
+     `inference_spec_type`.
+
+  Args:
+    examples: A PCollection containing RecordBatch.
+    inference_spec_type: Model inference endpoint.
+
+  Returns:
+    A PCollection containing prediction logs.
+  """
+
+  return (
+      examples | 'RunInferenceImpl' >> run_inference_arrow.RunInferenceImpl(
+                        inference_spec_type, tensor_adapter_config))

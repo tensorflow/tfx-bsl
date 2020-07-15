@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
-import base64
 import collections
 import os
 import platform
@@ -315,9 +314,8 @@ class _BaseDoFn(beam.DoFn):
 
     model_input = None
     if self._io_tensor_spec is None:    # Case when we are running remote inference
-      # _jsonAdaptor = inference_util.JSONAdapter()
-      # model_input = _jsonAdaptor.ToJSON(elements)
-      model_input = serialized_examples
+      _jsonAdaptor = inference_util.JSONAdapter()
+      model_input = _jsonAdaptor.ToJSON(elements)
     elif (len(self._io_tensor_spec.input_tensor_names) == 1):
       model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
     else:
@@ -459,46 +457,8 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _prepare_instances(
       cls, elements: List[Union[str, bytes]]
   ) -> Generator[Mapping[Text, Any], None, None]:
-    for example in elements:
-      instance = {}
-      tfexample = tf.train.Example.FromString(example)
-
-      for input_name, feature in tfexample.features.feature.items():
-        attr_name = feature.WhichOneof('kind')
-        if attr_name is None:
-          continue
-        attr = getattr(feature, attr_name)
-        values = cls._parse_feature_content(attr.value, attr_name,
-                                            cls._sending_as_binary(input_name))
-        # Flatten a sequence if its length is 1
-        values = (values[0] if len(values) == 1 else values)
-        instance[input_name] = values
+    for instance in elements:
       yield instance
-
-  @staticmethod
-  def _sending_as_binary(input_name: Text) -> bool:
-    """Whether data should be sent as binary."""
-    return input_name.endswith('_bytes')
-
-  @staticmethod
-  def _parse_feature_content(values: Sequence[Any], attr_name: Text,
-                             as_binary: bool) -> Sequence[Any]:
-    """Parse the content of tf.train.Feature object.
-
-    If bytes_list, parse a list of bytes-like objects to a list of strings so
-    that it would be JSON serializable.
-
-    If float_list or int64_list, do nothing.
-
-    If data should be sent as binary, mark it as binary by replacing it with
-    a single attribute named 'b64'.
-    """
-    if as_binary:
-      return [{'b64': base64.b64encode(x).decode()} for x in values]
-    elif attr_name == 'bytes_list':
-      return [x.decode() for x in values]
-    else:
-      return values
 
   def _check_elements(self) -> None:
     # TODO(b/151468119): support tf.train.SequenceExample

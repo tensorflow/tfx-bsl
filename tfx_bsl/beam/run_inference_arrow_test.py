@@ -35,6 +35,7 @@ from googleapiclient import http
 from six.moves import http_client
 import tensorflow as tf
 from tfx_bsl.beam import run_inference_arrow
+from tfx_bsl.beam import inference_util
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
@@ -533,7 +534,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
     self.assertLen(results, 2)
     for result in results: 
       self.assertLen(result.predict_log.request.inputs, 2)
-      self.assertEqual(list(result.predict_log.request.inputs), list(['x','y']))
+      self.assertAllInSet(list(result.predict_log.request.inputs), list(['x','y']))
 
   def testTelemetry(self):
     model_path = self._get_output_data_dir('model')
@@ -689,8 +690,19 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
         feature { key: "y" value { int64_list { value: [1, 2] }}}
       }
       """, tf.train.Example())
-    result = list(
-        run_inference_arrow._RemotePredictDoFn._prepare_instances([example.SerializeToString()]))
+
+    serialized_example_remote = [example.SerializeToString()]
+    record_batch_remote = pa.RecordBatch.from_arrays(
+      [
+        pa.array(["ASa8asdf"], type=pa.binary()),
+        pa.array(["JLK7ljk3"], type=pa.utf8()),
+        pa.array([[1, 2]], type=pa.list_(pa.float32())),
+      ],
+      ['x_bytes', 'x', 'y']
+    )
+
+    _jsonAdaptor = inference_util.JSONAdapter()
+    result = list(_jsonAdaptor.ToJSON(record_batch_remote))
     self.assertEqual([
         {
             'x_bytes': {

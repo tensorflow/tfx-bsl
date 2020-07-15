@@ -22,8 +22,9 @@ from __future__ import print_function
 import numpy as np
 import pyarrow as pa
 import pandas as pd
-import typing
+import base64
 import json
+import typing
 from typing import List, Text
 
 
@@ -53,6 +54,8 @@ class JSONAdapter(object):
         """
 
         df = record_batch.to_pandas()
+        as_binary = df.columns.str.endswith("_bytes")
+        df.loc[:, as_binary] = df.loc[:, as_binary].applymap(lambda x: {'b64': base64.b64encode(x).decode()})
         if _RECORDBATCH_COLUMN in df.columns:
             df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
 
