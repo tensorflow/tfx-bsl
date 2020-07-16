@@ -91,19 +91,22 @@ def RunInferenceArrow(  # pylint: disable=invalid-name
   Args:
     file_path: File Path for which the examples are stored.
     inference_spec_type: Model inference endpoint.
+    Schema [optional]: required for models that requires 
+      multi-tensor inputs.
 
   Returns:
     A PCollection containing prediction logs.
   """
-  with beam.Pipeline(options=PipelineOptions()) as pipeline:
+  converter = raw_tf_record.RawTfRecordTFXIO(
+    file_path, raw_record_column_name=_RECORDBATCH_COLUMN)
+  if schema:
     tfxio = test_util.InMemoryTFExampleRecord(
       schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
     tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
       arrow_schema=tfxio.ArrowSchema(),
       tensor_representations=tfxio.TensorRepresentations())
-    converter = raw_tf_record.RawTfRecordTFXIO(
-      file_path, raw_record_column_name=_RECORDBATCH_COLUMN)
 
+  with beam.Pipeline() as pipeline:
     return (pipeline
             | "GetRawRecordAndConvertToRecordBatch" >> converter.BeamSource()
             | "RunInferenceImpl" >> run_inference_arrow.RunInferenceImpl(
