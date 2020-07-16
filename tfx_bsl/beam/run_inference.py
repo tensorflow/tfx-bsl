@@ -427,10 +427,7 @@ class _RemotePredictDoFn(_BaseDoFn):
   ) -> Generator[Mapping[Text, Any], None, None]:
     """Prepare instances by base64 encoding serialized examples"""
     for example in elements:
-      instance = {
-        'b64': base64.b64encode(example.SerializeToString()).decode()
-      }
-      yield instance
+      yield {'b64': base64.b64encode(example.SerializeToString()).decode()}
 
   def _prepare_instances(
       self, elements: List[tf.train.Example]

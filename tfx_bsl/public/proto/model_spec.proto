@@ -84,7 +84,7 @@ message AIPlatformPredictionModelSpec {
   // Configures how examples are converted to API requests.
   // If not specified, example features are directly converted to json dicts according to feature type.
   oneof example_config {
-    // Use AIPlatformPredictionSerializationConfig if the model accepts a single serialized TFExample as input
+    // Use AIPlatformPredictionSerializationConfig if the model accepts a single serialized example as input
     AIPlatformPredictionSerializationConfig serialization_config = 4;
   }
 }
@@ -94,8 +94,8 @@ message AIPlatformPredictionModelSpec {
 //
 // For example:
 // instances = [
-//  {'b64': '<base64 encoded serialized TFExample 1>'},
-//  {'b64': '<base64 encoded serialized TFExample 2>'},
+//  {'b64': '<base64 encoded serialized example 1>'},
+//  {'b64': '<base64 encoded serialized example 2>'},
 //  ...
 // ]
 message AIPlatformPredictionSerializationConfig {}
