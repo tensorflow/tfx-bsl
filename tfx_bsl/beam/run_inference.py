@@ -403,7 +403,7 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _prepare_instances_dict(
       self, elements: List[tf.train.Example]
   ) -> Generator[Mapping[Text, Any], None, None]:
-    """Prepare instances by converting features to dictionary"""
+    """Prepare instances by converting features to dictionary."""
     for example in elements:
       # TODO(b/151468119): support tf.train.SequenceExample
       if not isinstance(example, tf.train.Example):
@@ -425,7 +425,7 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _prepare_instances_serialized(
       self, elements: List[tf.train.Example]
   ) -> Generator[Mapping[Text, Any], None, None]:
-    """Prepare instances by base64 encoding serialized examples"""
+    """Prepare instances by base64 encoding serialized examples."""
     for example in elements:
       yield {'b64': base64.b64encode(example.SerializeToString()).decode()}
 

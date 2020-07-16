@@ -84,7 +84,7 @@ message AIPlatformPredictionModelSpec {
   // Configures how examples are converted to API requests.
   // If not specified, example features are directly converted to json dicts according to feature type.
   oneof example_config {
-    // Use AIPlatformPredictionSerializationConfig if the model accepts a single serialized example as input
+    // Use AIPlatformPredictionSerializationConfig if the model accepts a single serialized example as input.
     AIPlatformPredictionSerializationConfig serialization_config = 4;
   }
 }

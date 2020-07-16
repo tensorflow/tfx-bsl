@@ -564,14 +564,14 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     inference_spec_type = model_spec_pb2.InferenceSpecType(
       ai_platform_prediction_model_spec=model_spec_pb2.
       AIPlatformPredictionModelSpec(
-        project_id='example',
-        model_name='example',
-        version_name='example'
+        project_id='test_project',
+        model_name='test_model',
+        version_name='test_version'
       )
     )
     remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
     result = list(remote_predict._prepare_instances([example]))
-    self.assertEqual([
+    self.assertEqual(result, [
         {
             'x_bytes': {
                 'b64': 'QVNhOGFzZGY='
@@ -579,7 +579,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             'x': 'JLK7ljk3',
             'y': [1, 2]
         },
-    ], result)
+    ])
 
   def test_request_serialized_example(self):
     example = text_format.Parse(
@@ -593,18 +593,18 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     inference_spec_type = model_spec_pb2.InferenceSpecType(
       ai_platform_prediction_model_spec=model_spec_pb2.
       AIPlatformPredictionModelSpec(
-        project_id='example',
-        model_name='example',
-        version_name='example',
+        project_id='test_project',
+        model_name='test_model',
+        version_name='test_version',
         serialization_config=model_spec_pb2.
         AIPlatformPredictionSerializationConfig()
       )
     )
     remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
     result = list(remote_predict._prepare_instances([example]))
-    self.assertEqual([
+    self.assertEqual(result, [
       {'b64': base64.b64encode(example.SerializeToString()).decode()}
-    ], result)
+    ])
 
 if __name__ == '__main__':
   tf.test.main()
