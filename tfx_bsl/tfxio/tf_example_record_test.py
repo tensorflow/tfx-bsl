@@ -306,5 +306,36 @@ class TfExampleRecordTest(absltest.TestCase):
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
 
+class TFExampleBeamRecordTest(absltest.TestCase):
+
+  def testE2E(self):
+    raw_record_column_name = "raw_record"
+    tfxio = tf_example_record.TFExampleBeamRecord(
+        physical_format="inmem",
+        telemetry_descriptors=["some", "component"],
+        schema=_SCHEMA,
+        raw_record_column_name=raw_record_column_name,
+    )
+
+    def _AssertFn(record_batches):
+      self.assertLen(record_batches, 1)
+      record_batch = record_batches[0]
+      self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
+      tensor_adapter = tfxio.TensorAdapter()
+      dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
+      self.assertLen(dict_of_tensors, 3)
+      self.assertIn("int_feature", dict_of_tensors)
+      self.assertIn("float_feature", dict_of_tensors)
+      self.assertIn("string_feature", dict_of_tensors)
+
+    with beam.Pipeline() as p:
+      record_batch_pcoll = (
+          p
+          | "CreateInMemRecords" >> beam.Create(_SERIALIZED_EXAMPLES)
+          | "BeamSource" >>
+          tfxio.BeamSource(batch_size=len(_SERIALIZED_EXAMPLES)))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+
 if __name__ == "__main__":
   absltest.main()

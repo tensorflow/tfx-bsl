@@ -138,6 +138,56 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
             if self._schema_for_decoding is None else self._schema_for_decoding)
 
 
+class TFExampleBeamRecord(_TFExampleRecordBase):
+  """TFXIO implementation for serialized tf.Examples in pcoll[bytes].
+
+  This is a special TFXIO that does not actually do I/O -- it relies on the
+  caller to prepare a PCollection of bytes (serialized tf.Examples).
+  """
+
+  def __init__(self,
+               physical_format: Text,
+               telemetry_descriptors: List[Text],
+               schema: Optional[schema_pb2.Schema] = None,
+               raw_record_column_name: Optional[Text] = None):
+    """Initializer.
+
+    Args:
+      physical_format: The physical format that describes where the input
+        pcoll[bytes] comes from. Used for telemetry purposes. Examples: "text",
+        "tfrecord".
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
+      schema: A TFMD Schema describing the dataset.
+      raw_record_column_name: If not None, the generated Arrow RecordBatches
+        will contain a column of the given name that contains serialized
+        records.
+    """
+    super(TFExampleBeamRecord, self).__init__(
+        schema=schema, raw_record_column_name=raw_record_column_name,
+        telemetry_descriptors=telemetry_descriptors,
+        physical_format=physical_format)
+
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
+    return (beam.ptransform_fn(lambda x: x)()
+            .with_input_types(bytes)
+            .with_output_types(bytes))
+
+  def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
+    projected_schema = self._ProjectTfmdSchema(tensor_names)
+    return TFExampleBeamRecord(self._physical_format,
+                               self.telemetry_descriptors, projected_schema,
+                               self.raw_record_column_name)
+
+  def TensorFlowDataset(self):
+    raise NotImplementedError(
+        "TFExampleBeamRecord is unable to provide a TensorFlowDataset "
+        "because it does not do I/O")
+
+
 class TFExampleRecord(_TFExampleRecordBase):
   """TFXIO implementation for tf.Example on TFRecord."""
 

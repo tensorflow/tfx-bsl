@@ -22,7 +22,7 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
-from typing import List, Optional, Text
+from typing import Any, List, Optional, Text
 
 import apache_beam as beam
 import numpy as np
@@ -104,10 +104,11 @@ class RecordBasedTFXIO(tfxio.TFXIO):
     record_batch = raw_record | tfxio.RawRecordToRecordBatch()
     """
 
-    @beam.typehints.with_input_types(beam.Pipeline)
+    @beam.typehints.with_input_types(Any)
     @beam.typehints.with_output_types(bytes)
-    def _PTransformFn(pipeline: beam.Pipeline):
-      return (pipeline | "ReadRawRecords" >> self._RawRecordBeamSourceInternal()
+    def _PTransformFn(pcoll_or_pipeline: Any):
+      return (pcoll_or_pipeline
+              | "ReadRawRecords" >> self._RawRecordBeamSourceInternal()
               | "CollectRawRecordTelemetry" >> telemetry.ProfileRawRecords(
                   self._telemetry_descriptors, self._logical_format,
                   self._physical_format))
@@ -177,12 +178,12 @@ class RecordBasedTFXIO(tfxio.TFXIO):
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
 
-    @beam.typehints.with_input_types(beam.Pipeline)
+    @beam.typehints.with_input_types(Any)
     @beam.typehints.with_output_types(pa.RecordBatch)
-    def _PTransformFn(pipeline: beam.pvalue.PCollection):
+    def _PTransformFn(pcoll_or_pipeline: Any):
       """Converts raw records to RecordBatches."""
       return (
-          pipeline
+          pcoll_or_pipeline
           | "RawRecordBeamSource" >> self.RawRecordBeamSource()
           | "RawRecordToRecordBatch" >> self.RawRecordToRecordBatch(batch_size))
 

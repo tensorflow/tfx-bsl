@@ -63,10 +63,39 @@ _SCHEMA = text_format.Parse(
   }
 """, schema_pb2.Schema())
 
+_UNORDERED_SCHEMA = text_format.Parse(
+    """
+  feature {
+    name: "string_feature"
+    type: BYTES
+    value_count {
+      min: 0
+      max: 2
+    }
+  }
+  feature {
+    name: "int_feature"
+    type: INT
+    value_count {
+      min: 0
+      max: 2
+    }
+  }
+  feature {
+    name: "float_feature"
+    type: FLOAT
+    value_count {
+      min: 0
+      max: 2
+    }
+  }
+""", schema_pb2.Schema())
+
 _TELEMETRY_DESCRIPTORS = ["Some", "Component"]
 
 _ROWS = [b'1,2.0,"abc"\n', b'2,3.0,"xyz"\n']
 _RAW_RECORDS = [b'1,2.0,"abc"', b'2,3.0,"xyz"']
+_EXPECTED_PHYSICAL_FORMAT = "text"
 
 _SCHEMA_TEST_CASES = [
     dict(
@@ -145,6 +174,12 @@ def _WriteInputs(filename, include_header_line=False):
       out_file.write(row)
 
 
+_CSV_TFXIO_IMPL_TEST_CASES = [
+    dict(testcase_name="csv_tfxio", use_beam_record_csv_tfxio=False),
+    dict(testcase_name="beam_record_csv_tfxio", use_beam_record_csv_tfxio=True),
+]
+
+
 class CsvRecordTest(parameterized.TestCase):
 
   @classmethod
@@ -160,17 +195,34 @@ class CsvRecordTest(parameterized.TestCase):
                  include_header_line=True)
 
   def _MakeTFXIO(self, column_names, schema=None, raw_record_column_name=None,
-                 skip_header_lines=0, use_input_with_header_line=False):
+                 skip_header_lines=0, use_input_with_header_line=False,
+                 make_beam_record_tfxio=False):
+    assert not make_beam_record_tfxio or not use_input_with_header_line, (
+        "Invalid _MakeTFXIO parameter combination")
+    if make_beam_record_tfxio:
+      return csv_tfxio.BeamRecordCsvTFXIO(
+          physical_format=_EXPECTED_PHYSICAL_FORMAT,
+          column_names=column_names,
+          schema=schema,
+          raw_record_column_name=raw_record_column_name,
+          telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
+
     input_file = (
         self._example_file_with_header_line
         if use_input_with_header_line else self._example_file)
     return csv_tfxio.CsvTFXIO(
-        input_file,
+        file_pattern=input_file,
         column_names=column_names,
         schema=schema,
         raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=_TELEMETRY_DESCRIPTORS,
         skip_header_lines=skip_header_lines)
+
+  def _MakePipelineInputs(self, pipeline, use_beam_record_csv_tfxio=False):
+    if use_beam_record_csv_tfxio:
+      return pipeline | "CreateCSVLines" >> beam.Create(
+          _RAW_RECORDS, reshuffle=False)
+    return pipeline
 
   def _ValidateRecordBatch(self,
                            tfxio,
@@ -199,9 +251,11 @@ class CsvRecordTest(parameterized.TestCase):
       self.assertEqual(record_batch.columns[-1].flatten().to_pylist(),
                        _RAW_RECORDS)
 
-  def testImplicitTensorRepresentations(self):
+  @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
+  def testImplicitTensorRepresentations(self, use_beam_record_csv_tfxio):
     """Tests inferring of tensor representation."""
-    tfxio = self._MakeTFXIO(_COLUMN_NAMES, schema=_SCHEMA)
+    tfxio = self._MakeTFXIO(_COLUMN_NAMES, schema=_SCHEMA,
+                            make_beam_record_tfxio=use_beam_record_csv_tfxio)
     self.assertEqual(
         {
             "int_feature":
@@ -231,14 +285,18 @@ class CsvRecordTest(parameterized.TestCase):
       self.assertIn("string_feature", dict_of_tensors)
 
     p = beam.Pipeline()
-    record_batch_pcoll = p | tfxio.BeamSource(batch_size=1000)
+    record_batch_pcoll = (
+        self._MakePipelineInputs(p, use_beam_record_csv_tfxio)
+        | tfxio.BeamSource(batch_size=len(_ROWS)))
     beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
     pipeline_result = p.run()
     pipeline_result.wait_until_finish()
     telemetry_test_util.ValidateMetrics(self, pipeline_result,
-                                        _TELEMETRY_DESCRIPTORS, "csv", "text")
+                                        _TELEMETRY_DESCRIPTORS, "csv",
+                                        _EXPECTED_PHYSICAL_FORMAT)
 
-  def testExplicitTensorRepresentations(self):
+  @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
+  def testExplicitTensorRepresentations(self, use_beam_record_csv_tfxio):
     """Tests when the tensor representation is explicitely provided in the schema."""
     schema = schema_pb2.Schema()
     schema.CopyFrom(_SCHEMA)
@@ -256,12 +314,17 @@ class CsvRecordTest(parameterized.TestCase):
         schema_pb2.TensorRepresentationGroup(
             tensor_representation=tensor_representations))
 
-    tfxio = self._MakeTFXIO(_COLUMN_NAMES, schema=schema)
+    tfxio = self._MakeTFXIO(
+        _COLUMN_NAMES, schema=schema,
+        make_beam_record_tfxio=use_beam_record_csv_tfxio)
     self.assertEqual(tensor_representations, tfxio.TensorRepresentations())
 
-  def testProjection(self):
+  @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
+  def testProjection(self, use_beam_record_csv_tfxio):
     """Test projecting of a TFXIO."""
-    tfxio = self._MakeTFXIO(_COLUMN_NAMES, schema=_SCHEMA)
+    tfxio = self._MakeTFXIO(
+        _COLUMN_NAMES, schema=_SCHEMA,
+        make_beam_record_tfxio=use_beam_record_csv_tfxio)
 
     projected_tfxio = tfxio.Project(["int_feature"])
 
@@ -284,19 +347,24 @@ class CsvRecordTest(parameterized.TestCase):
       self.assertIn("int_feature", dict_of_tensors)
 
     p = beam.Pipeline()
-    record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_ROWS))
+    record_batch_pcoll = (
+        self._MakePipelineInputs(p, use_beam_record_csv_tfxio)
+        | tfxio.BeamSource(batch_size=len(_ROWS)))
     beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
     pipeline_result = p.run()
     pipeline_result.wait_until_finish()
     telemetry_test_util.ValidateMetrics(self, pipeline_result,
-                                        _TELEMETRY_DESCRIPTORS, "csv", "text")
+                                        _TELEMETRY_DESCRIPTORS, "csv",
+                                        _EXPECTED_PHYSICAL_FORMAT)
 
-  def testAttachRawRecordColumn(self):
+  @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
+  def testAttachRawRecordColumn(self, use_beam_record_csv_tfxio):
     raw_record_column_name = "raw_records"
     tfxio = self._MakeTFXIO(
         _COLUMN_NAMES,
         schema=_SCHEMA,
-        raw_record_column_name=raw_record_column_name)
+        raw_record_column_name=raw_record_column_name,
+        make_beam_record_tfxio=use_beam_record_csv_tfxio)
 
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
@@ -304,12 +372,16 @@ class CsvRecordTest(parameterized.TestCase):
       self._ValidateRecordBatch(tfxio, record_batch, raw_record_column_name)
 
     with beam.Pipeline() as p:
-      record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_ROWS))
+      record_batch_pcoll = (
+          self._MakePipelineInputs(p, use_beam_record_csv_tfxio)
+          | tfxio.BeamSource(batch_size=len(_ROWS)))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
-  def testOptionalSchema(self):
+  @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
+  def testOptionalSchema(self, use_beam_record_csv_tfxio):
     """Tests when the schema is not provided."""
-    tfxio = self._MakeTFXIO(_COLUMN_NAMES)
+    tfxio = self._MakeTFXIO(
+        _COLUMN_NAMES, make_beam_record_tfxio=use_beam_record_csv_tfxio)
     with self.assertRaisesRegex(ValueError, ".*TFMD schema not provided.*"):
       tfxio.ArrowSchema()
 
@@ -319,13 +391,16 @@ class CsvRecordTest(parameterized.TestCase):
       self._ValidateRecordBatch(tfxio, record_batch)
 
     with beam.Pipeline() as p:
-      record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_ROWS))
+      record_batch_pcoll = (
+          self._MakePipelineInputs(p, use_beam_record_csv_tfxio)
+          | tfxio.BeamSource(batch_size=len(_ROWS)))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
-  @parameterized.named_parameters(_SCHEMA_TEST_CASES)
-  def testSchema(self, schema):
+  @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
+  def testUnorderedSchema(self, use_beam_record_csv_tfxio):
     """Tests various valid schemas."""
-    tfxio = self._MakeTFXIO(_COLUMN_NAMES, schema=schema)
+    tfxio = self._MakeTFXIO(_COLUMN_NAMES, schema=_UNORDERED_SCHEMA,
+                            make_beam_record_tfxio=use_beam_record_csv_tfxio)
 
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
@@ -333,7 +408,9 @@ class CsvRecordTest(parameterized.TestCase):
       self._ValidateRecordBatch(tfxio, record_batch)
 
     with beam.Pipeline() as p:
-      record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_ROWS))
+      record_batch_pcoll = (
+          self._MakePipelineInputs(p, use_beam_record_csv_tfxio)
+          | tfxio.BeamSource(batch_size=len(_ROWS)))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
   def testSkipHeaderLines(self):
