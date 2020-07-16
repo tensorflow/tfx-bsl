@@ -22,7 +22,7 @@ from __future__ import print_function
 import apache_beam as beam
 import tensorflow as tf
 import pyarrow as pa
-from typing import Union, Optional
+from typing import Union, Text, Optional
 from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import raw_tf_record
@@ -75,7 +75,7 @@ def RunInference(  # pylint: disable=invalid-name
                                        tf.train.SequenceExample])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInferenceArrow(  # pylint: disable=invalid-name
-    file_path,
+    file_path: Text,
     inference_spec_type: model_spec_pb2.InferenceSpecType,
     schema: Optional[schema_pb2.Schema] = None
 ) -> beam.pvalue.PCollection:

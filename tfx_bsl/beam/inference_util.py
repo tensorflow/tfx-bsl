@@ -35,14 +35,9 @@ class JSONAdapter(object):
 
     The conversion will take in a recordbatch that contains features from a 
     tf.train.Example and will return a list of dict like string (JSON) where 
-    each item represent 
-    The conversion is determined by both the Arrow schema and the
-    TensorRepresentations, which must be provided at the initialization time.
-    Each TensorRepresentation contains the information needed to translates one
-    or more columns in a RecordBatch of the given Arrow schema into a TF Tensor
-    or CompositeTensor. They are contained in a Dict whose keys are
-    the names of the tensors, which will be the keys of the Dict produced by
-    ToBatchTensors().
+    each item is a JSON representation of an example.
+
+    - return format: [{ feature1: value1, ... }, ...]
     """
 
 
