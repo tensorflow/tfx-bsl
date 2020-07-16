@@ -94,30 +94,32 @@ class OperationType(object):
   PREDICTION = 'PREDICTION'
   MULTIHEAD = 'MULTIHEAD'
 
+_ExampleType = Union[tf.train.Example, tf.train.SequenceExample]
+
 _QueryType = Tuple[
-  model_spec_pb2.InferenceSpecType,
-  Union[tf.train.Example, tf.train.SequenceExample]
+  Union[model_spec_pb2.InferenceSpecType, None],
+  _ExampleType
 ]
 
 _QueryBatchType = Tuple[
-  model_spec_pb2.InferenceSpecType,
-  List[Union[tf.train.Example, tf.train.SequenceExample]]
+  Union[model_spec_pb2.InferenceSpecType, None],
+  List[_ExampleType]
 ]
 
+_ErrorOutputTag = 'errors'
+_PredictionOutputTag = 'predictions'
 
-@beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+
+@beam.typehints.with_input_types(Union[_ExampleType, _QueryType])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceImpl(  # pylint: disable=invalid-name
-    examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
-) -> beam.pvalue.PCollection:
+class RunInferenceImpl(beam.PTransform):
   """Implementation of RunInference API.
 
   Args:
-    examples: A PCollection containing examples.
-    inference_spec_type: Model inference endpoint.
+    examples: A PCollection containing examples or queries.
+    inference_spec_type: Model inference endpoint. This can be an InferenceSpecType
+      proto to use a fixed model or a PCollection of InferenceSpecType in which case
+      RunInference will use the most recently available model for each example.
 
   Returns:
     A PCollection containing prediction logs.
@@ -125,66 +127,131 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
   Raises:
     ValueError; when operation is not supported.
   """
-  logging.info('RunInference on model: %s', inference_spec_type)
+  def __init__(self, inference_spec_type: Union[
+      model_spec_pb2.InferenceSpecType, 
+      beam.pvalue.PCollection,
+      None]=None
+  ):
+    self._inference_spec_type = inference_spec_type
+    self._with_errors = False
 
-  queries = examples | 'build queries' >> beam.Map(
-    lambda x: (inference_spec_type, x))
-  return queries | '_RunInferenceCore' >> _RunInferenceCore()
+  def expand(self, examples: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
+    out = None
+
+    if type(self._inference_spec_type) == model_spec_pb2.InferenceSpecType:
+      logging.info('RunInference on model: %s', self._inference_spec_type)
+
+      queries = examples | 'format as queries' >> beam.Map(lambda x: (None, x))
+      out = queries | '_RunInferenceCore (fixed)' >> _RunInferenceCore(
+        fixed_inference_spec_type=self._inference_spec_type)
+    elif type(self._inference_spec_type) == beam.pvalue.PCollection:
+      logging.info('RunInference on dynamic models')
+
+      queries = examples | 'join examples' >> _TemporalJoin(self._inference_spec_type)
+      out = queries | '_RunInferenceCore (dynamic)' >> _RunInferenceCore()
+    elif self._inference_spec_type is None:
+      logging.info('RunInference on queries')
+
+      out = examples | '_RunInferenceCore (queries)' >> _RunInferenceCore()
+    else:
+      raise ValueError('Invalid type for inference_spec_type: %s' 
+                        % type(self._inference_spec_type))
+
+    return out
+
+    # TODO(hgarrereyn): error streams
+
+    # if self._with_errors:
+    #   return out
+    # else:
+    #   return out[_PredictionOutputTag]
+
+  # def with_errors(self):
+  #   self._with_errors = True
+  #   return self
 
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(_QueryType)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _RunInferenceCore(  # pylint: disable=invalid-name
-    queries: beam.pvalue.PCollection
+    queries: beam.pvalue.PCollection,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType=None
 ) -> beam.pvalue.PCollection:
   """RunInferenceCore
 
   Args:
     queries: A PCollection containing (InferenceSpecType, Example) tuples.
+    fixed_inference_spec_type (optional): if specified, use this model for all queries
 
   Returns:
     A PCollection containing prediction logs.
   """
-  batches = (
-    queries 
-    | 'BatchQueries' >> _BatchQueries()
-    | 'SplitByOperation' >> beam.Map(
-      lambda q: beam.pvalue.TaggedOutput(
-        _get_operation_type(q[0]), q
+  predictions = None
+  batched_queries = queries | 'BatchQueries' >> _BatchQueries()
+
+  if fixed_inference_spec_type is None:
+    # determine classification type at runtime
+    tagged = (
+      batched_queries | 'Tag by operation' >> beam.Map(_get_operation_type_map)
+      .with_outputs(
+        OperationType.CLASSIFICATION,
+        OperationType.REGRESSION,
+        OperationType.PREDICTION,
+        OperationType.MULTIHEAD,
+        _ErrorOutputTag
       )
-    ).with_outputs(
-      OperationType.CLASSIFICATION,
-      OperationType.REGRESSION,
-      OperationType.PREDICTION,
-      OperationType.MULTIHEAD,
     )
-  )
 
-  predictions = [
-    batches[OperationType.CLASSIFICATION] | 'Classify' >> _Classify(),
-    batches[OperationType.REGRESSION] | 'Regress' >> _Regress(),
-    batches[OperationType.PREDICTION] | 'Predict' >> _Predict(),
-    batches[OperationType.MULTIHEAD] | 'MultiInference' >> _MultiInference()
-  ]
-  # TODO(hgarrereyn): Additional stream for unsupported example types?
+    predictions = [
+      tagged[OperationType.CLASSIFICATION] | 'Classify' >> _Classify(),
+      tagged[OperationType.REGRESSION] | 'Regress' >> _Regress(),
+      tagged[OperationType.PREDICTION] | 'Predict' >> _Predict(),
+      tagged[OperationType.MULTIHEAD] | 'MultiInference' >> _MultiInference()
+    ] | beam.Flatten()
+  else:
+    # determine classification type at pipeline creation time
+    operation_type = _get_operation_type(fixed_inference_spec_type)
 
-  return predictions | beam.Flatten()
+    if operation_type == OperationType.CLASSIFICATION:
+      predictions = batched_queries | 'Classify' >> _Classify(
+        fixed_inference_spec_type=fixed_inference_spec_type)
+    elif operation_type == OperationType.REGRESSION:
+      predictions = batched_queries | 'Regress' >> _Regress(
+        fixed_inference_spec_type=fixed_inference_spec_type)
+    elif operation_type == OperationType.PREDICTION:
+      predictions = batched_queries | 'Predict' >> _Predict(
+        fixed_inference_spec_type=fixed_inference_spec_type)
+    elif operation_type == OperationType.MULTIHEAD:
+      predictions = (batched_queries | 'MultiInference' >> _MultiInference(
+        fixed_inference_spec_type=fixed_inference_spec_type))
+    else:
+      raise ValueError('Unsupported operation_type %s' % operation_type)
+
+  return predictions
 
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(_QueryType)
 @beam.typehints.with_output_types(_QueryBatchType)
 def _BatchQueries(queries: beam.pvalue.PCollection):
+  def _add_key(query: _QueryType):
+    # proto is not usable as a key so we need to serialize it
+    inference_spec, example = query
+    key = (inference_spec.SerializeToString() if inference_spec else None)
+    return (key, (inference_spec, example))
+
+  def _to_query_batch(grouped):
+    # all items have the same spec so use the first one
+    inference_spec = grouped[0][1][0]
+    examples = [x[1][1] for x in grouped]
+    return (inference_spec, examples)
+
   batches = (
     queries
-    | 'Add serialization for key' >> beam.Map(
-      lambda q: (q[0].SerializeToString(), q) # (serialized, (spec, example))
-    )
+    | 'Serialize inference_spec as key' >> beam.Map(_add_key)
     | 'GroupIntoBatches' >> beam.GroupIntoBatches(1000) # TODO(hgarrereyn): examine support for GroupIntoBatches
-    | 'Build query batches' >> beam.Map(
-      lambda batch: (batch[0][1][0], [x[1][1] for x in batch])
-    )
+    | 'Convert to QueryBatch' >> beam.Map(_to_query_batch)
   )
   return batches
 
@@ -199,69 +266,114 @@ _Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
 @beam.ptransform_fn
 @beam.typehints.with_input_types(_QueryBatchType)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def _Classify(pcoll: beam.pvalue.PCollection):  # pylint: disable=invalid-name
+def _Classify(
+    pcoll: beam.pvalue.PCollection,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType=None
+  ):  # pylint: disable=invalid-name
   """Performs classify PTransform."""
-  inference_type = pcoll | 'IsInProcess' >> beam.Map(
-    lambda q: beam.pvalue.TaggedOutput(
-      'local' if _using_in_process_inference(q[0]) else 'remote',
-      q
-    )
-  ).with_outputs('local', 'remote')
+  predictions = None
 
-  predictions = (inference_type['local'] 
-                  | 'Classify' >> beam.ParDo(
-                    _BatchClassifyDoFn(shared.Shared()))
-                  | 'BuildPredictionLogForClassifications' >> beam.ParDo(
-                    _BuildPredictionLogForClassificationsDoFn()))
-  # TODO(hgarrereyn): error stream for remote?
+  if fixed_inference_spec_type is None:
+    inference_type = pcoll | _TagUsingInProcessInference()
+
+    predictions = (
+      inference_type['local'] 
+      | 'Classify' >> beam.ParDo(
+        _BatchClassifyDoFn(shared.Shared()))
+      | 'BuildPredictionLogForClassifications' >> beam.ParDo(
+        _BuildPredictionLogForClassificationsDoFn()))
+    # TODO(hgarrereyn): error stream for remote?
+  else:
+    if _using_in_process_inference(fixed_inference_spec_type):
+      predictions = (
+        pcoll
+        | 'Classify' >> beam.ParDo(
+          _BatchClassifyDoFn(shared.Shared(), 
+            fixed_inference_spec_type=fixed_inference_spec_type))
+        | 'BuildPredictionLogForClassifications' >> beam.ParDo(
+          _BuildPredictionLogForClassificationsDoFn()))
+    else:
+      raise NotImplementedError
+
   return predictions
 
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(_QueryBatchType)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def _Regress(pcoll: beam.pvalue.PCollection):  # pylint: disable=invalid-name
+def _Regress(
+    pcoll: beam.pvalue.PCollection,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType=None
+  ):  # pylint: disable=invalid-name
   """Performs regress PTransform."""
-  inference_type = pcoll | 'IsInProcess' >> beam.Map(
-    lambda q: beam.pvalue.TaggedOutput(
-      'local' if _using_in_process_inference(q[0]) else 'remote',
-      q
-    )
-  ).with_outputs('local', 'remote')
+  predictions = None
 
-  predictions = (inference_type['local'] 
-                  | 'Regress' >> beam.ParDo(
-                    _BatchRegressDoFn(shared.Shared()))
-                  | 'BuildPredictionLogForRegressions' >> beam.ParDo(
-                    _BuildPredictionLogForRegressionsDoFn()))
-  # TODO(hgarrereyn): error stream for remote?
+  if fixed_inference_spec_type is None:
+    inference_type = pcoll | _TagUsingInProcessInference()
+
+    predictions = (
+      inference_type['local'] 
+      | 'Regress' >> beam.ParDo(
+        _BatchRegressDoFn(shared.Shared()))
+      | 'BuildPredictionLogForRegressions' >> beam.ParDo(
+        _BuildPredictionLogForRegressionsDoFn()))
+    # TODO(hgarrereyn): error stream for remote?
+  else:
+    if _using_in_process_inference(fixed_inference_spec_type):
+      predictions = (
+        pcoll
+        | 'Regress' >> beam.ParDo(
+          _BatchRegressDoFn(shared.Shared(), 
+            fixed_inference_spec_type=fixed_inference_spec_type))
+        | 'BuildPredictionLogForRegressions' >> beam.ParDo(
+          _BuildPredictionLogForRegressionsDoFn()))
+    else:
+      raise NotImplementedError
+
   return predictions
 
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(_QueryBatchType)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def _Predict(pcoll: beam.pvalue.PCollection):  # pylint: disable=invalid-name
+def _Predict(
+    pcoll: beam.pvalue.PCollection,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType=None
+  ):  # pylint: disable=invalid-name
   """Performs predict PTransform."""
-  inference_type = pcoll | 'IsInProcess' >> beam.Map(
-    lambda q: beam.pvalue.TaggedOutput(
-      'local' if _using_in_process_inference(q[0]) else 'remote',
-      q
-    )
-  ).with_outputs('local', 'remote')
+  predictions = None
 
-  local = (
-    inference_type['local'] | 'Predict' >> beam.ParDo(
-      _BatchPredictDoFn(shared.Shared())))
+  if fixed_inference_spec_type is None:
+    inference_type = pcoll | _TagUsingInProcessInference()
 
-  remote = (
-    inference_type['remote'] | 'RemotePredict' >> beam.ParDo(
-      _RemotePredictDoFn(pcoll.pipeline.options)))
+    local = (
+      inference_type['local'] | 'Predict' >> beam.ParDo(
+        _BatchPredictDoFn(shared.Shared())))
 
-  predictions = (
-    [local, remote] | beam.Flatten()
-    | 'BuildPredictionLogForPredictions' >> beam.ParDo(
-      _BuildPredictionLogForPredictionsDoFn()))
+    remote = (
+      inference_type['remote'] | 'RemotePredict' >> beam.ParDo(
+        _RemotePredictDoFn(pcoll.pipeline.options)))
+
+    predictions = (
+      [local, remote] | beam.Flatten()
+      | 'BuildPredictionLogForPredictions' >> beam.ParDo(
+        _BuildPredictionLogForPredictionsDoFn()))
+  else:
+    raw_predictions = None
+    if _using_in_process_inference(fixed_inference_spec_type):
+      raw_predictions = (
+        pcoll | 'Predict' >> beam.ParDo(
+          _BatchPredictDoFn(shared.Shared(), 
+          fixed_inference_spec_type=fixed_inference_spec_type)))
+    else:
+      raw_predictions = (
+        pcoll | 'RemotePredict' >> beam.ParDo(
+          _RemotePredictDoFn(pcoll.pipeline.options, 
+          fixed_inference_spec_type=fixed_inference_spec_type)))
+    
+    predictions = (
+      raw_predictions | 'BuildPredictionLogForPredictions' >> beam.ParDo(
+        _BuildPredictionLogForPredictionsDoFn()))
 
   return predictions
   
@@ -269,21 +381,35 @@ def _Predict(pcoll: beam.pvalue.PCollection):  # pylint: disable=invalid-name
 @beam.ptransform_fn
 @beam.typehints.with_input_types(_QueryBatchType)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def _MultiInference(pcoll: beam.pvalue.PCollection):  # pylint: disable=invalid-name
+def _MultiInference(
+    pcoll: beam.pvalue.PCollection,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType=None
+  ):  # pylint: disable=invalid-name
   """Performs multi inference PTransform."""
-  inference_type = pcoll | 'IsInProcess' >> beam.Map(
-    lambda q: beam.pvalue.TaggedOutput(
-      'local' if _using_in_process_inference(q[0]) else 'remote',
-      q
-    )
-  ).with_outputs('local', 'remote')
+  predictions = None
 
-  predictions = (inference_type['local'] 
-                  | 'MultiInference' >> beam.ParDo(
-                    _BatchMultiInferenceDoFn(shared.Shared()))
-                  | 'BuildMultiInferenceLog' >> beam.ParDo(
-                    _BuildMultiInferenceLogDoFn()))
-  # TODO(hgarrereyn): error stream for remote?
+  if fixed_inference_spec_type is None:
+    inference_type = pcoll | _TagUsingInProcessInference()
+
+    predictions = (
+      inference_type['local'] 
+      | 'MultiInference' >> beam.ParDo(
+        _BatchMultiInferenceDoFn(shared.Shared()))
+      | 'BuildMultiInferenceLog' >> beam.ParDo(
+        _BuildMultiInferenceLogDoFn()))
+    # TODO(hgarrereyn): error stream for remote?
+  else:
+    if _using_in_process_inference(fixed_inference_spec_type):
+      predictions = (
+        pcoll
+        | 'MultiInference' >> beam.ParDo(
+          _BatchMultiInferenceDoFn(shared.Shared(), 
+            fixed_inference_spec_type=fixed_inference_spec_type))
+        | 'BuildMultiInferenceLog' >> beam.ParDo(
+          _BuildMultiInferenceLogDoFn()))
+    else:
+      raise NotImplementedError
+
   return predictions
 
 
@@ -400,8 +526,7 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
           exception.resp.status in (503, 429))
 
 
-@beam.typehints.with_input_types(List[Union[tf.train.Example,
-                                            tf.train.SequenceExample]])
+@beam.typehints.with_input_types(_QueryBatchType)
 # Using output typehints triggers NotImplementedError('BEAM-2717)' on
 # streaming mode on Dataflow runner.
 # TODO(b/151468119): Consider to re-batch with online serving request size
@@ -427,9 +552,18 @@ class _RemotePredictDoFn(_BaseDoFn):
   without having access to cloud-hosted model's signatures.
   """
 
-  def __init__(self, pipeline_options: PipelineOptions):
+  def __init__(self, 
+    pipeline_options: PipelineOptions,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None):
     super(_RemotePredictDoFn, self).__init__()
     self._pipeline_options = pipeline_options
+    self._fixed_inference_spec_type = fixed_inference_spec_type
+    self._use_fixed_model = (self._fixed_inference_spec_type is not None)
+
+  def setup(self):
+    super(_RemotePredictDoFn, self).setup()
+    if self._use_fixed_model:
+      self._setup_model(self._fixed_inference_spec_type)
 
   def _setup_model(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     self._api_client = None
@@ -527,7 +661,8 @@ class _RemotePredictDoFn(_BaseDoFn):
       self, inference_spec: model_spec_pb2.InferenceSpecType,
       elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
   ) -> Sequence[Mapping[Text, Any]]:
-    self._setup_model(inference_spec)
+    if not self._use_fixed_model:
+      self._setup_model(inference_spec)
     body = {'instances': list(self._prepare_instances(elements))}
     request = self._make_request(body)
     response = self._execute_request(request)
@@ -566,9 +701,18 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     model inference in batch.
   """
 
-  def __init__(self, shared_model_handle: shared.Shared):
+  def __init__(self, 
+  shared_model_handle: shared.Shared,
+  fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None):
     super(_BaseBatchSavedModelDoFn, self).__init__()
     self._shared_model_handle = shared_model_handle
+    self._fixed_inference_spec_type = fixed_inference_spec_type
+    self._use_fixed_model = (self._fixed_inference_spec_type is not None)
+
+  def setup(self):
+    super(_BaseBatchSavedModelDoFn, self).setup()
+    if self._use_fixed_model:
+      self._setup_model(self._fixed_inference_spec_type)
 
   # TODO(hgarrereyn): explore caching options here
   def _setup_model(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
@@ -626,7 +770,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
 
     if not self._model_path:
       raise ValueError('Model path is not valid.')
-    return self._shared_model_handle.acquire(load)
+    return self._shared_model_handle.acquire(load, tag=self._inference_spec_type.SerializeToString())
 
   def _pre_process(self) -> _IOTensorSpec:
     # Pre process functions will validate for each signature.
@@ -667,7 +811,8 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
       self, inference_spec: model_spec_pb2.InferenceSpecType,
       elements: List[Union[tf.train.Example, tf.train.SequenceExample]]
   ) -> Mapping[Text, np.ndarray]:
-    self._setup_model(inference_spec)
+    if not self._use_fixed_model:
+      self._setup_model(inference_spec)
     self._check_elements(elements)
     outputs = self._run_tf_operations(elements)
     return outputs
@@ -1127,6 +1272,16 @@ def _using_in_process_inference(
   return inference_spec_type.WhichOneof('type') == 'saved_model_spec'
 
 
+@beam.ptransform_fn
+def _TagUsingInProcessInference(queries: beam.pvalue.PCollection):
+  return queries | beam.Map(
+    lambda query: beam.pvalue.TaggedOutput(
+      'local' if _using_in_process_inference(query[0]) else 'remote',
+      query
+    )
+  ).with_outputs('local', 'remote')
+
+
 def _get_signatures(model_path: Text, signatures: Sequence[Text],
                     tags: Sequence[Text]) -> Sequence[_Signature]:
   """Returns a sequence of {model_signature_name: signature}."""
@@ -1181,6 +1336,19 @@ def _get_operation_type(
   else:
     # Remote inference supports predictions only.
     return OperationType.PREDICTION
+
+
+def _get_operation_type_map(batch: _QueryBatchType):
+  inference_spec, _ = batch
+
+  try:
+    tag = _get_operation_type(inference_spec)
+    return beam.pvalue.TaggedOutput(tag, batch)
+  except Exception as e:
+    return beam.pvalue.TaggedOutput(
+      _ErrorOutputTag,
+      (e, batch)
+    )
 
 
 def _get_meta_graph_def(saved_model_pb: _SavedModel,
@@ -1252,3 +1420,72 @@ class _ClockFactory(object):
         and not _is_cygwin()):
       return _FineGrainedClock()
     return _Clock()
+
+
+class _TemporalJoinStream(object):
+  PRIMARY = 1
+  SECONDARY = 2
+
+
+class _TemporalJoinDoFn(beam.DoFn):
+  '''
+  A stateful DoFn that joins two PCollection streams.
+
+  CACHE: holds the most recent item from the secondary stream
+  EARLY_PRIMARY: holds any items from the primary stream received before the
+    first item from the secondary stream
+  '''
+  CACHE = beam.transforms.userstate.CombiningValueStateSpec(
+      'cache', combine_fn=beam.combiners.ToListCombineFn())
+  
+  EARLY_PRIMARY = beam.transforms.userstate.CombiningValueStateSpec(
+      'early_primary', combine_fn=beam.combiners.ToListCombineFn())
+
+  def process(self, x, 
+              cache=beam.DoFn.StateParam(CACHE),
+              early_primary=beam.DoFn.StateParam(EARLY_PRIMARY)):
+    key, tup = x
+    value, stream_type = tup
+
+    if stream_type == _TemporalJoinStream.PRIMARY:
+      cached = cache.read()
+      if len(cached) == 0:
+        # accumulate in early_primary
+        early_primary.add(value)
+      else:
+        return [(cached[0], value)]
+    elif stream_type == _TemporalJoinStream.SECONDARY:
+      cache.clear()
+      cache.add(value)
+
+      # dump any cached values from primary
+      primary = early_primary.read()
+      if len(primary) > 0:
+        early_primary.clear()
+        return [(value, x) for x in primary]
+    else:
+      return []
+
+
+@beam.ptransform_fn
+def _TemporalJoin(primary, secondary):
+  '''
+  Temporal join of two streaming PCollections.
+
+  Returns tuples of the type (b,a) where:
+  - a is from the primary stream
+  - b is from the secondary stream
+  - b is the most recent item at the time a is processed (or a was processed 
+    before b and b is the first item in the stream)
+  '''
+  tag_primary = primary | 'primary' >> beam.Map(
+      lambda x: (x, _TemporalJoinStream.PRIMARY))
+  tag_secondary = secondary | 'secondary' >> beam.Map(
+      lambda x: (x, _TemporalJoinStream.SECONDARY))
+
+  joined = [tag_primary, tag_secondary] \
+            | beam.Flatten() \
+            | 'Fake keys' >> beam.Map(lambda x: (0,x)) \
+            | 'Join' >> beam.ParDo(_TemporalJoinDoFn())
+
+  return joined

@@ -28,12 +28,15 @@ from tensorflow_serving.apis import prediction_log_pb2
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(Union[run_inference._ExampleType,
+                                       run_inference._QueryType])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInference(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: Union[
+      model_spec_pb2.InferenceSpecType,
+      beam.pvalue.PCollection,
+      None]=None
 ) -> beam.pvalue.PCollection:
   """Run inference with a model.
 
