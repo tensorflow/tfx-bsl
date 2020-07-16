@@ -90,17 +90,14 @@ setup(
     # six, and protobuf) with TF.
     install_requires=[
         'absl-py>=0.7,<0.9',
-        # avro-python3 1.9.2.1 still does not work for MacOS + Py3.5.
-        # TODO(b/149841057): remove once avro has a healthy release.
-        'avro-python3>=1.8.1,!=1.9.2.*,<2.0.0; python_version=="3.5" and platform_system=="Darwin"',
-        'apache-beam[gcp]>=2.20,<3',
+        'apache-beam[gcp]>=2.22,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
-        'pandas>=0.24,<1',
+        'pandas>=0.24,<2',
         'protobuf>=3.7,<4',
         'six>=1.12,<2',
-        'tensorflow>=1.15,<3',
-        'tensorflow-metadata>=0.22,<0.23',
+        'tensorflow>=1.15,!=2.0.*,<3',
+        'tensorflow-metadata>=0.22.2,<0.23',
         'tensorflow-serving-api>=1.15,<3',
     ] + [_PYARROW_VERSION_REQUIREMENT],
     python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,<4',

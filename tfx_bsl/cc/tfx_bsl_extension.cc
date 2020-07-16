@@ -23,6 +23,7 @@
 
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 #include "tfx_bsl/cc/coders/coders_submodule.h"
+#include "tfx_bsl/cc/sketches/sketches_submodule.h"
 #include "include/pybind11/pybind11.h"
 
 namespace tfx_bsl {
@@ -34,6 +35,7 @@ PYBIND11_MODULE(
   m.doc() = "TFX Basic Shared Libraries extension module";
   DefineArrowSubmodule(m);
   DefineCodersSubmodule(m);
+  DefineSketchesSubmodule(m);
 }
 
 }  // namespace tfx_bsl

@@ -41,4 +41,5 @@ def ValidateMetrics(
   for m in counters + distributions:
     test.assertTrue(
         m.key.metric.name.startswith("LogicalFormat[%s]-PhysicalFormat[%s]-" %
-                                     (logical_format, physical_format)))
+                                     (logical_format, physical_format)),
+        m.key.metric.name)

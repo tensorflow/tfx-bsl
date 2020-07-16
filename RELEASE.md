@@ -1,6 +1,26 @@
 # `tfx_bsl` release notes
 
-# Current version (not yet released; still in development)
+# Current Version(Still in Development)
+
+## Major Features and Improvements
+
+## Bug Fixes and Other Changes
+
+*   Starting from this version, the windows wheel will be built with VS 2015.
+*   `run_all_tests` will fail with exit code -2 if no tests are discovered.
+*   Stopped requiring `avro-python3`.
+*   Depends on `apache-beam[gcp]>=2.22,<3`.
+*   Example coders will ignore duplicate feature names in the TFMD schema
+    (only the first one counts). It is a temporary measure until TFDV can
+    check and prevent duplications. DO NOT rely on this behavior.
+*   CsvTFXIO now allows skipping CSV headers (`set skip_header_lines`).
+*   CsvTFXIO now requires `telemetry_descriptors` to construct.
+
+## Breaking changes
+
+## Deprecations
+
+# Version 0.22.1
 
 ## Major Features and Improvements
 
@@ -11,14 +31,17 @@
 
 ## Bug Fixes and Other Changes
 
-*   Depends on `pandas>=0.24,<1`.
+*   Depends on `pandas>=0.24,<2`.
+*   Depends on `tensorflow>=1.15,!=2.0.*,<3`.
+*   Depends on `tensorflow-metadata>=0.22.2,<0.23`.
+*   Removed tensor_to_arrow_test for TF 1.x as it does not support TF 1.x.
 
 ## Breaking changes
 
 ## Deprecations
 *   Removed `arrow.table_util.SliceTableByRowIndices` (in favor of
     `RecordBatchTake`)
-*   Removed `arrow.table_util.MergeTables` (available as native pyarrow API).
+*   Removed `arrow.table_util.MergeTables` (in favor of `MergeRecordBatches`)
 
 # Release 0.22.0
 

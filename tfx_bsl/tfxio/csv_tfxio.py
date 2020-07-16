@@ -148,6 +148,7 @@ class CsvTFXIO(_CsvTFXIOBase):
   def __init__(self,
                file_pattern: Text,
                column_names: List[Text],
+               telemetry_descriptors: List[Text],
                validate: Optional[bool] = True,
                delimiter: Optional[Text] = ",",
                skip_blank_lines: Optional[bool] = True,
@@ -155,13 +156,18 @@ class CsvTFXIO(_CsvTFXIOBase):
                secondary_delimiter: Optional[Text] = None,
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None,
-               telemetry_descriptors: Optional[List[Text]] = None):
+               skip_header_lines: Optional[int] = 0):
     """Initializes a CSV TFXIO.
 
     Args:
       file_pattern: A file glob pattern to read TFRecords from.
       column_names: List of csv column names. Order must match the order in the
         CSV file.
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
       validate: Boolean flag to verify that the files exist during the pipeline
         creation time.
       delimiter: A one-character string used to separate fields.
@@ -177,11 +183,9 @@ class CsvTFXIO(_CsvTFXIOBase):
         schema should contain exactly the same features as column_names.
       raw_record_column_name: If not None, the generated Arrow RecordBatches
         will contain a column of the given name that contains raw csv rows.
-      telemetry_descriptors: A set of descriptors that identify the component
-        that is instantiating this TFXIO. These will be used to construct the
-        namespace to contain metrics for profiling and are therefore expected to
-        be identifiers of the component itself and not individual instances of
-        source use.
+      skip_header_lines: Number of header lines to skip. Same number is
+        skipped from each file. Must be 0 or higher. Large number of
+        skipped lines might impact performance.
     """
     super(CsvTFXIO, self).__init__(
         column_names=column_names,
@@ -195,13 +199,15 @@ class CsvTFXIO(_CsvTFXIOBase):
         physical_format="text")
     self._file_pattern = file_pattern
     self._validate = validate
+    self._skip_header_lines = skip_header_lines
 
   def _CSVSource(self) -> beam.PTransform:
     """Returns a PTtransform that producese PCollection[bytes]."""
     return beam.io.ReadFromText(
         self._file_pattern,
         coder=beam.coders.BytesCoder(),
-        validate=self._validate)
+        validate=self._validate,
+        skip_header_lines=self._skip_header_lines)
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     """Returns a projected TFXIO.
@@ -226,7 +232,9 @@ class CsvTFXIO(_CsvTFXIOBase):
         multivalent_columns=self._multivalent_columns,
         secondary_delimiter=self._secondary_delimiter,
         schema=projected_schema,
-        raw_record_column_name=self._raw_record_column_name)
+        raw_record_column_name=self._raw_record_column_name,
+        telemetry_descriptors=self.telemetry_descriptors,
+        skip_header_lines=self._skip_header_lines)
 
   def TensorFlowDataset(self):
     raise NotImplementedError

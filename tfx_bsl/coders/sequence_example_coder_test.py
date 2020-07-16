@@ -669,6 +669,63 @@ _DECODE_CASES = [
             pa.array([None], type=list_factory(binary_type)),
         ], ["context_a"])),
     dict(
+        testcase_name="duplicate_context_feature_names_in_schema",
+        schema_text_proto="""
+        feature {
+          name: "context_a"
+          type: BYTES
+        }
+        # Note that the second feature "context_a" will be ignored.
+        feature {
+          name: "context_a"
+          type: INT
+        }
+        """,
+        sequence_examples_text_proto=[
+            """
+        context { feature { key: "context_a" value { } } }
+        feature_lists {
+          feature_list { key: 'sequence_a' value { } }
+        }
+        """
+        ],
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([None], type=list_factory(binary_type)),
+        ], ["context_a"])),
+    dict(
+        testcase_name="duplicate_sequence_feature_names_in_schema",
+        schema_text_proto="""
+        feature {
+          name: "##SEQUENCE##"
+          type: STRUCT
+          struct_domain {
+            feature {
+              name: "sequence_a"
+              type: INT
+            }
+            # Note that the second feature "sequence_a" will be ignored.
+            feature {
+              name: "sequence_a"
+              type: BYTES
+            }
+          }
+        }
+        """,
+        sequence_examples_text_proto=[
+            """
+        feature_lists {
+          feature_list { key: 'sequence_a' value { } }
+        }
+        """
+        ],
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.StructArray.from_arrays(
+                [pa.array([[]], type=list_factory(list_factory(pa.int64())))],
+                names=["sequence_a"]),
+        ], [_TEST_SEQUENCE_COLUMN_NAME])),
+    dict(
         testcase_name="feature_lists_with_no_sequence_features",
         schema_text_proto=None,
         sequence_examples_text_proto=["""

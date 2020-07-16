@@ -294,6 +294,20 @@ _TEST_CASES = [
         secondary_delimiter=','),
     dict(
         testcase_name='empty_multivalent_column',
+        input_lines=[',test'],
+        column_names=['f1', 'f2'],
+        expected_csv_cells=[[b'', b'test']],
+        expected_types=[
+            csv_decoder.ColumnType.UNKNOWN, csv_decoder.ColumnType.STRING
+        ],
+        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([None], pa.null()),
+            pa.array([[b'test']], pa.list_(pa.binary()))
+        ], ['f1', 'f2']),
+        multivalent_columns=['f1'],
+        secondary_delimiter='|'),
+    dict(
+        testcase_name='empty_values_multivalent_column',
         input_lines=['|,test'],
         column_names=['f1', 'f2'],
         expected_csv_cells=[[b'|', b'test']],

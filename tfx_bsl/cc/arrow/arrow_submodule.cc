@@ -184,6 +184,39 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
   auto m = arrow_module.def_submodule("table_util");
   m.doc() = "Arrow Table utilities.";
   m.def(
+      "MergeRecordBatches",
+      [](const std::vector<std::shared_ptr<arrow::RecordBatch>>&
+             record_batches) {
+        std::shared_ptr<arrow::RecordBatch> result;
+        Status s = MergeRecordBatches(record_batches, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      py::doc(
+          "Merges a list of record batches into one. "
+          "The columns are concatenated. "
+          "Columns of the same name must be of compatible types.\n"
+          "Two types are compatible if:\n"
+          "  - they are equal, or\n"
+          "  - one of them is Null\n"
+          "  - both are list<> or large_list<>, and their child types are "
+          "compatible (note that large_list<> and list<> are not compatible), "
+          "or\n"
+          "  - both are struct<>, and their children of the same name are "
+          "compatible. they don't need to have the same set of children.\n"
+          "Rules for concatanating two compatible but not equal arrays:\n"
+          "  1. if one of them is Null, then the result is of the other type, "
+          "with nulls representing elements from the NullArray.\n"
+          "  2. two compatible list<> arrays are concatenated recursively."
+          "  3. two compatible struct<> arrays will result in a struct<> that "
+          "contains children from both arrays. If on array is missing a child, "
+          "it is considered as if it had that child as a NullArray. Child "
+          "arrays are concatenated recusrively.\n"
+          "Returns an error if there's any incompatibility."),
+      py::call_guard<py::gil_scoped_release>());
+  m.def(
       "TotalByteSize",
       [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
          const bool ignore_unsupported) {
