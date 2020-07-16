@@ -427,7 +427,7 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   @staticmethod
   def _parse_feature_content(values: Sequence[Any], attr_name: Text,
-                             as_binary: bool) -> Sequence[Any]:
+                             as_binary: bool) -> List[Any]:
     """Parse the content of tf.train.Feature object.
 
     If bytes_list, parse a list of bytes-like objects to a list of strings so
@@ -443,7 +443,9 @@ class _RemotePredictDoFn(_BaseDoFn):
     elif attr_name == 'bytes_list':
       return [x.decode() for x in values]
     else:
-      return values
+      # Converts proto RepeatedScalarContainer to list so it is
+      # JSON-serializable
+      return list(values)
 
   def run_inference(
       self, elements: List[Union[tf.train.Example, tf.train.SequenceExample]]

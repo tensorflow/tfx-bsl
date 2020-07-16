@@ -22,6 +22,7 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
+from typing import List, Optional, Text
 
 import apache_beam as beam
 import numpy as np
@@ -29,7 +30,6 @@ import pyarrow as pa
 import six
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
-from typing import List, Optional, Text
 
 
 @six.add_metaclass(abc.ABCMeta)

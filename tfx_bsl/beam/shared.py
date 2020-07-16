@@ -202,6 +202,9 @@ class Shared(object):
   object. Example usage is described in the file comment of shared.py.
   """
 
+  # TODO(b/160177343): Consider allowing users to also pass in a key (GUID)
+  # for more easily sharing of identifiable expensive objects. User would be
+  # responsible for handling collisions.
   def __init__(self):
     self._key = _shared_map.make_key()
 

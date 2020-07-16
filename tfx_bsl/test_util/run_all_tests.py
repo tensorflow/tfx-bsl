@@ -16,6 +16,9 @@ r"""A commandline tool to discover and run all the absltest.TestCase in a dir.
 Usage:
 python -m tfx_bsl.test_util.run_all_tests \
     --start_dirs=<comma separated dirs to search for tests>
+
+Exits with code 0 if all discovered tests are successful, code -1 if any
+discovered tests fail and -2 if no tests were discovered.
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -191,6 +194,10 @@ def main(argv):
   del argv
   test_to_shards = _ParseShardedTests(FLAGS.sharded_tests)
   tests = _DiscoverTests(FLAGS.start_dirs, test_to_shards)
+  if not tests:
+    logging.info(
+        "No tests were discovered. Please check that they are setup correctly.")
+    return -2
   parallelism = FLAGS.parallelism
   if parallelism is None:
     parallelism = multiprocessing.cpu_count()

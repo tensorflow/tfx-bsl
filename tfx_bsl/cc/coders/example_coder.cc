@@ -755,6 +755,14 @@ Status ExamplesToRecordBatchDecoder::Make(
   }
   std::vector<std::shared_ptr<arrow::Field>> arrow_schema_fields;
   for (const tensorflow::metadata::v0::Feature& feature : schema->feature()) {
+    if (feature_decoders->find(feature.name()) != feature_decoders->end()) {
+      // TODO(b/160886325): duplicated features in the (same environment) in the
+      // schema should be a bug, but before TFDV checks for it, we tolerate it.
+      // TODO(b/160885730): the coder is current not environment aware, which
+      // means if there are two features of the same name but belonging to
+      // different environments, the first feature will be taken.
+      continue;
+    }
     TFX_BSL_RETURN_IF_ERROR(MakeFeatureDecoder(
         use_large_types, feature, &(*feature_decoders)[feature.name()]));
     arrow_schema_fields.emplace_back();
@@ -918,6 +926,17 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
             "domain that contains each sequence feature as a child.");
       }
       for (const auto& child_feature : feature.struct_domain().feature()) {
+        if (sequence_feature_decoders->find(child_feature.name()) !=
+            sequence_feature_decoders->end()) {
+          // TODO(b/160886325): duplicated features in the (same environment) in
+          // the schema should be a bug, but before TFDV checks for it, we
+          // tolerate it.
+          // TODO(b/160885730): the coder is current not environment aware,
+          // which means if there are two features of the same name but
+          // belonging to different environments, the first feature will be
+          // taken.
+          continue;
+        }
         TFX_BSL_RETURN_IF_ERROR(MakeFeatureListDecoder(
             use_large_types, child_feature,
             &(*sequence_feature_decoders)[child_feature.name()]));
@@ -926,6 +945,16 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
             use_large_types, /*is_sequence_feature=*/true, child_feature,
             &sequence_feature_schema_fields->back()));
       }
+      continue;
+    }
+    if (context_feature_decoders->find(feature.name()) !=
+        context_feature_decoders->end()) {
+      // TODO(b/160886325): duplicated features in the (same environment) in the
+      // schema should be a bug, but before TFDV checks for it, we tolerate
+      // it.
+      // TODO(b/160885730): the coder is current not environment aware, which
+      // means if there are two features of the same name but belonging to
+      // different environments, the first feature will be taken.
       continue;
     }
     // If the feature is not the top-level sequence feature, it is a context

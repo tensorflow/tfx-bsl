@@ -20,14 +20,15 @@ from __future__ import print_function
 
 import abc
 import collections
+import typing
+from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import six
 import tensorflow as tf
 from tfx_bsl.arrow import array_util
-import typing
-from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union
+from tfx_bsl.arrow import path
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -228,7 +229,8 @@ class _BaseDenseTensorHandler(_TypeHandler):
     dense_rep = tensor_representation.dense_tensor
     column_name = dense_rep.column_name
     self._column_index = arrow_schema.get_field_index(column_name)
-    _, value_type = _GetNestDepthAndValueType(arrow_schema, [column_name])
+    _, value_type = _GetNestDepthAndValueType(arrow_schema,
+                                              path.ColumnPath(column_name))
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
     unbatched_shape = [
@@ -269,7 +271,8 @@ class _BaseDenseTensorHandler(_TypeHandler):
       arrow_schema: pa.Schema,
       tensor_representation: schema_pb2.TensorRepresentation) -> bool:
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema, [tensor_representation.dense_tensor.column_name])
+        arrow_schema,
+        path.ColumnPath(tensor_representation.dense_tensor.column_name))
     # Can only handle 1-nested lists.
     return depth == 1 and _IsSupportedArrowValueType(value_type)
 
@@ -302,7 +305,8 @@ class _DefaultFillingDenseTensorHandler(_BaseDenseTensorHandler):
     super(_DefaultFillingDenseTensorHandler, self).__init__(
         arrow_schema, tensor_representation)
     _, value_type = _GetNestDepthAndValueType(
-        arrow_schema, [tensor_representation.dense_tensor.column_name])
+        arrow_schema,
+        path.ColumnPath(tensor_representation.dense_tensor.column_name))
     self._default_fill = _GetDefaultFill(
         self._shape[1:], value_type,
         tensor_representation.dense_tensor.default_value)
@@ -333,7 +337,8 @@ class _VarLenSparseTensorHandler(_TypeHandler):
         arrow_schema, tensor_representation)
     column_name = tensor_representation.varlen_sparse_tensor.column_name
     self._column_index = arrow_schema.get_field_index(column_name)
-    _, value_type = _GetNestDepthAndValueType(arrow_schema, [column_name])
+    _, value_type = _GetNestDepthAndValueType(arrow_schema,
+                                              path.ColumnPath(column_name))
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
@@ -365,7 +370,9 @@ class _VarLenSparseTensorHandler(_TypeHandler):
   def CanHandle(arrow_schema: pa.Schema,
                 tensor_representation: schema_pb2.TensorRepresentation) -> bool:
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema, [tensor_representation.varlen_sparse_tensor.column_name])
+        arrow_schema,
+        path.ColumnPath(
+            [tensor_representation.varlen_sparse_tensor.column_name]))
     # Currently can only handle 1-nested lists, but can easily support
     # arbitrarily nested ListArrays.
     return depth == 1 and _IsSupportedArrowValueType(value_type)
@@ -389,7 +396,8 @@ class _SparseTensorHandler(_TypeHandler):
         sparse_representation.value_column_name)
     self._shape = [dim.size for dim in sparse_representation.dense_shape.dim]
     _, value_type = _GetNestDepthAndValueType(
-        arrow_schema, [sparse_representation.value_column_name])
+        arrow_schema,
+        path.ColumnPath(sparse_representation.value_column_name))
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._coo_size = len(self._shape) + 1
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
@@ -447,13 +455,14 @@ class _SparseTensorHandler(_TypeHandler):
 
     # All the index columns must be of integral types.
     for index_column in sparse_representation.index_column_names:
-      depth, value_type = _GetNestDepthAndValueType(arrow_schema,
-                                                    [index_column])
+      depth, value_type = _GetNestDepthAndValueType(
+          arrow_schema, path.ColumnPath(index_column))
       if depth != 1 or not pa.types.is_integer(value_type):
         return False
 
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema, [sparse_representation.value_column_name])
+        arrow_schema,
+        path.ColumnPath(sparse_representation.value_column_name))
     return depth == 1 and _IsSupportedArrowValueType(value_type)
 
 
@@ -461,7 +470,7 @@ class _RaggedTensorHandler(_TypeHandler):
   """Handles conversion to RaggedTensors."""
 
   __slots__ = [
-      "_column_index", "_steps", "_ragged_rank", "_dtype",
+      "_column_index", "_path", "_ragged_rank", "_dtype",
       "_row_partition_dtype", "_convert_to_binary_fn"
   ]
 
@@ -470,10 +479,10 @@ class _RaggedTensorHandler(_TypeHandler):
     super(_RaggedTensorHandler, self).__init__(arrow_schema,
                                                tensor_representation)
     ragged_representation = tensor_representation.ragged_tensor
-    self._steps = list(ragged_representation.feature_path.step)
-    self._column_index = arrow_schema.get_field_index(self._steps[0])
+    self._path = path.ColumnPath.from_proto(ragged_representation.feature_path)
+    self._column_index = arrow_schema.get_field_index(self._path.steps()[0])
     self._ragged_rank, value_type = _GetNestDepthAndValueType(
-        arrow_schema, self._steps)
+        arrow_schema, self._path)
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._row_partition_dtype = ragged_representation.row_partition_dtype
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
@@ -493,7 +502,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Union[np.ndarray, tf.Tensor]:
-    steps = collections.deque(self._steps[1:])
+    column_path = self._path.suffix(1)
     column = record_batch.column(self._column_index)
     column_type = column.type
     if (self._row_partition_dtype ==
@@ -514,7 +523,8 @@ class _RaggedTensorHandler(_TypeHandler):
             "This record batch is sliced. We currently do not handle converting"
             " slices to RaggedTensors.")
       if pa.types.is_struct(column_type):
-        column = column.field(steps.popleft())
+        column = column.field(column_path.initial_step())
+        column_path = column_path.suffix(1)
         column_type = column.type
       elif _IsListLike(column_type):
         row_splits.append(np.asarray(column.offsets, dtype=offsets_dtype))
@@ -559,7 +569,8 @@ class _RaggedTensorHandler(_TypeHandler):
       arrow_type = None
       for arrow_type in _EnumerateTypesAlongPath(
           arrow_schema,
-          list(tensor_representation.ragged_tensor.feature_path.step)):
+          path.ColumnPath.from_proto(
+              tensor_representation.ragged_tensor.feature_path)):
         if _IsListLike(arrow_type):
           contains_list = True
       if pa.types.is_struct(arrow_type):
@@ -612,21 +623,23 @@ def _IsListLike(arrow_type: pa.DataType) -> bool:
   return pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type)
 
 
-def _GetNestDepthAndValueType(arrow_schema: pa.Schema,
-                              path: List[Text]) -> Tuple[int, pa.DataType]:
+def _GetNestDepthAndValueType(
+    arrow_schema: pa.Schema,
+    column_path: path.ColumnPath) -> Tuple[int, pa.DataType]:
   """Returns the depth of a leaf field, and its innermost value type.
 
   The Depth is constituted by the number of nested lists in the leaf field.
 
   Args:
     arrow_schema: The arrow schema to traverse.
-    path: A path of field names. The path must describe a leaf struct.
+    column_path: A path of field names. The path must describe a leaf struct.
+
   Returns: A Tuple of depth and arrow type
   """
-  arrow_type = arrow_schema.field(path[0]).type
+  arrow_type = arrow_schema.field(column_path.steps()[0]).type
   depth = 0
 
-  for arrow_type in _EnumerateTypesAlongPath(arrow_schema, path):
+  for arrow_type in _EnumerateTypesAlongPath(arrow_schema, column_path):
     if _IsListLike(arrow_type):
       depth += 1
 
@@ -634,29 +647,33 @@ def _GetNestDepthAndValueType(arrow_schema: pa.Schema,
 
 
 def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
-                             path: List[Text]) -> pa.DataType:
-  """Enumerates nested types along a path.
+                             column_path: path.ColumnPath) -> pa.DataType:
+  """Enumerates nested types along a column_path.
 
   A nested type is either a list-like type or a struct type.
 
-  It uses `path`[0] to first address a field in the schema, and enumerates its
-  type. If that type is nested, it enumerates its child and continues
-  recursively until the path reaches an end. The child of a list-like type is
-  its value type. The child of a struct type is the type of the child field of
-  the name given by the corresponding step in the path.
+  It uses `column_path`[0] to first address a field in the schema, and
+  enumerates its type. If that type is nested, it enumerates its child and
+  continues recursively until the column_path reaches an end. The child of a
+  list-like type is its value type. The child of a struct type is the type of
+  the child field of the name given by the corresponding step in the
+  column_path.
 
   Args:
     arrow_schema: The arrow schema to traverse.
-    path: A path of field names.
+    column_path: A path of field names.
 
   Yields:
     The arrow type of each level in the schema.
 
   Raises:
     ValueError: If a step does not exist in the arrow schema.
+    ValueError: If arrow_schema has no more struct fields, but we did not
+                iterate through every field in column_path.
   """
-  path = collections.deque(path)
-  field_name = path.popleft()
+  field_name = column_path.initial_step()
+  column_path = column_path.suffix(1)
+
   arrow_field = arrow_schema.field(field_name)
   arrow_type = arrow_field.type
   yield arrow_type
@@ -664,9 +681,10 @@ def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
   while True:
     if pa.types.is_struct(arrow_type):
       # get the field from the StructType
-      if not path:  # path is empty
+      if not column_path:
         break
-      curr_field_name = path.popleft()
+      curr_field_name = column_path.initial_step()
+      column_path = column_path.suffix(1)
       try:
         arrow_field = arrow_type[curr_field_name]
       except KeyError:
@@ -678,6 +696,10 @@ def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
       arrow_type = arrow_type.value_type
     else:
       yield arrow_type
+      if column_path:
+        raise ValueError(
+            "The arrow_schema fields are exhausted, but there are remaining "
+            "fields in the column_path: {}".format(column_path))
       break
     yield arrow_type
 

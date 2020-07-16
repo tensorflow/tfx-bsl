@@ -48,7 +48,11 @@ pip install ${wheel} && \
 pip install ${TENSORFLOW} && \
 pip uninstall -y Cython && \
 
-"${PYTHON_BIN_PATH}" -m tfx_bsl.test_util.run_all_tests --start_dirs="tfx_bsl" \
+# TODO(b/159836186): high parallelism caused problem w/ TF 2.2.
+# remove --parallelism=1 after the root case is addressed.
+"${PYTHON_BIN_PATH}" -m tfx_bsl.test_util.run_all_tests \
+  --start_dirs="tfx_bsl" \
+  --parallelism=1 \
   || { echo "Failed to run unit tests."; exit 1; }
 TEST_RESULT=$?
 

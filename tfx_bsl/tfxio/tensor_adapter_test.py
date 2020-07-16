@@ -910,6 +910,30 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                                              {"output": tensor_representation}))
 
   @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorStructTypeTooManySteps(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+            step: "inner_feature"
+            step: "non_existant_feature"
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.StructArray.from_arrays([
+            pa.array([[1, 2, 3]], pa.list_(pa.int64())),
+            pa.array([["a", "b", "c"]], pa.list_(pa.binary()))
+        ], ["inner_feature", "x2"])
+    ], ["ragged_feature"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
   def testRaggedTensorStructTypeNonLeaf(self):
     tensor_representation = text_format.Parse(
         """

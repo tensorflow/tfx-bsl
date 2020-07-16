@@ -155,6 +155,28 @@ _DECODE_CASES = [
         from_arrays([
             pa.array([None], type=list_factory(binary_type)),
         ], ["a"])),
+    dict(
+        testcase_name="duplicate_feature_names_in_schema",
+        schema_text_proto="""
+        feature {
+          name: "a"
+          type: BYTES
+        }
+        # Note that the second feature "a" will be ignored.
+        feature {
+          name: "a"
+          type: INT
+        }
+        """,
+        examples_text_proto=[
+            """
+        features { feature { key: "a" value { } } }
+        """
+        ],
+        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
+        from_arrays([
+            pa.array([None], type=list_factory(binary_type)),
+        ], ["a"])),
 ]
 # pylint: enable=g-long-lambda
 
