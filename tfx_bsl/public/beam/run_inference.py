@@ -91,7 +91,7 @@ def RunInferenceArrow(  # pylint: disable=invalid-name
   Args:
     file_path: File Path for which the examples are stored.
     inference_spec_type: Model inference endpoint.
-    Schema [optional]: required for models that requires 
+    Schema [optional]: required for models that requires
       multi-tensor inputs.
 
   Returns:

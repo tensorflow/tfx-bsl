@@ -35,7 +35,7 @@ from googleapiclient import http
 from six.moves import http_client
 import tensorflow as tf
 from tfx_bsl.beam import run_inference_arrow
-from tfx_bsl.beam import inference_util
+from tfx_bsl.beam import bsl_util
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
@@ -701,8 +701,7 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
       ['x_bytes', 'x', 'y']
     )
 
-    _jsonAdaptor = inference_util.JSONAdapter()
-    result = list(_jsonAdaptor.ToJSON(record_batch_remote))
+    result = list(bsl_util.RecordToJSON(record_batch_remote))
     self.assertEqual([
         {
             'x_bytes': {

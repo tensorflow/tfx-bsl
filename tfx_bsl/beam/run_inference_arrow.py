@@ -43,7 +43,7 @@ import json
 import six
 import tensorflow as tf
 from tfx_bsl.beam import shared
-from tfx_bsl.beam import inference_util
+from tfx_bsl.beam import bsl_util
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 from tfx_bsl.tfxio import tensor_adapter
@@ -56,7 +56,6 @@ from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_serving.apis import regression_pb2
-from tensorflow_model_analysis import model_util
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
 # pylint: disable=g-import-not-at-top
@@ -314,8 +313,7 @@ class _BaseDoFn(beam.DoFn):
 
     model_input = None
     if self._io_tensor_spec is None:    # Case when we are running remote inference
-      _jsonAdaptor = inference_util.JSONAdapter()
-      model_input = _jsonAdaptor.ToJSON(elements)
+      model_input = bsl_util.RecordToJSON(elements)
     elif (len(self._io_tensor_spec.input_tensor_names) == 1):
       model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
     else:
@@ -327,7 +325,7 @@ class _BaseDoFn(beam.DoFn):
       _tensor_adapter = tensor_adapter.TensorAdapter(self._tensor_adapter_config)
       dict_of_tensors = _tensor_adapter.ToBatchTensors(
         elements, produce_eager_tensors = False)
-      filtered_tensors = model_util.filter_tensors_by_input_names(
+      filtered_tensors = bsl_util.filter_tensors_by_input_names(
         dict_of_tensors, input_tensor_alias)
 
       model_input = {}
