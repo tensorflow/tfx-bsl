@@ -596,8 +596,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         project_id='test_project',
         model_name='test_model',
         version_name='test_version',
-        serialization_config=model_spec_pb2.
-        AIPlatformPredictionSerializationConfig()
+        use_serialization_config=True
       )
     )
     remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)

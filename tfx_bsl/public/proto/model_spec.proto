@@ -84,18 +84,15 @@ message AIPlatformPredictionModelSpec {
   // Configures how examples are converted to API requests.
   // If not specified, example features are directly converted to json dicts according to feature type.
   oneof example_config {
-    // Use AIPlatformPredictionSerializationConfig if the model accepts a single serialized example as input.
-    AIPlatformPredictionSerializationConfig serialization_config = 4;
+    // Set use_serialization_config if the model accepts a single serialized example as input.
+    // API requests will contain the serialized example as a base64 encoded string.
+    //
+    // For example:
+    // instances = [
+    //  {'b64': '<base64 encoded serialized example 1>'},
+    //  {'b64': '<base64 encoded serialized example 2>'},
+    //  ...
+    // ]
+    bool use_serialization_config = 4;
   }
 }
-
-// An example configuration type where examples are serialized and passed to an input tensor that accepts a single string.
-// API requests will contain the serialized example as a base64 encoded string.
-//
-// For example:
-// instances = [
-//  {'b64': '<base64 encoded serialized example 1>'},
-//  {'b64': '<base64 encoded serialized example 2>'},
-//  ...
-// ]
-message AIPlatformPredictionSerializationConfig {}
