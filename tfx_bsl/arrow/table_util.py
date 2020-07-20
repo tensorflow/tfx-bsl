@@ -19,8 +19,9 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-from typing import List, Optional, Text, Union
-import pandas as pd
+import sys
+from typing import Any, List, Optional, Text, Union
+
 import pyarrow as pa
 from tfx_bsl.arrow import array_util
 
@@ -33,10 +34,17 @@ try:
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import MergeRecordBatches as _MergeRecordBatches
   from tfx_bsl.cc.tfx_bsl_extension.arrow.table_util import TotalByteSize as _TotalByteSize
 except ImportError as err:
-  import sys
   sys.stderr.write("Error importing tfx_bsl_extension.arrow.table_util. "
                    "Some tfx_bsl functionalities are not available: {}"
                    .format(err))
+# TODO(b/161712697): this hack is introduced because pandas is PY3 only. It's
+# not needed once tfx_bsl can be PY3 only.
+try:
+  from pandas import DataFrame
+except ImportError as err:
+  sys.stderr.write("Error importing pandas. Some tfx_bsl functionalities "
+                   "are not available. {}\n".format(err))
+  DataFrame = Any
 # pylint: enable=g-import-not-at-top
 # pytype: enable=import-error
 # pylint: enable=unused-import
@@ -90,8 +98,7 @@ def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
     return _MergeRecordBatches(record_batches)
 
 
-def DataFrameToRecordBatch(
-    dataframe: pd.DataFrame) -> pa.RecordBatch:
+def DataFrameToRecordBatch(dataframe: DataFrame) -> pa.RecordBatch:
   """Convert pandas.DataFrame to a pyarrow.RecordBatch with primitive arrays.
 
   Args:
