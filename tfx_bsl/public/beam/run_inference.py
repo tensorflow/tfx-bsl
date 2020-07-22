@@ -25,57 +25,23 @@ import pyarrow as pa
 from typing import Union, Text, Optional
 from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
-from tfx_bsl.tfxio import raw_tf_record
+from tfx_bsl.tfxio import tf_example_record
+from tfx_bsl.tfxio import tf_sequence_example_record
 from tfx_bsl.beam import run_inference
 from tfx_bsl.beam import run_inference_arrow
 from tfx_bsl.public.proto import model_spec_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_metadata.proto.v0 import schema_pb2
 
+from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
+from tfx_bsl.beam.bsl_constants import DataType
 
-_RECORDBATCH_COLUMN = '__RAW_RECORD__'
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(tf.train.Example)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInference(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
-) -> beam.pvalue.PCollection:
-  """Run inference with a model.
-
-   There are two types of inference you can perform using this PTransform:
-   1. In-process inference from a SavedModel instance. Used when
-     `saved_model_spec` field is set in `inference_spec_type`.
-   2. Remote inference by using a service endpoint. Used when
-     `ai_platform_prediction_model_spec` field is set in
-     `inference_spec_type`.
-
-  TODO(b/131873699): Add support for the following features:
-  1. Bytes as Input.
-  2. PTable Input.
-  3. Models as SideInput.
-
-  Args:
-    examples: A PCollection containing examples.
-    inference_spec_type: Model inference endpoint.
-
-  Returns:
-    A PCollection containing prediction logs.
-  """
-
-  return (
-      examples |
-      'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
-
-
-@beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
-@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceArrow(  # pylint: disable=invalid-name
-    file_path: Text,
     inference_spec_type: model_spec_pb2.InferenceSpecType,
     schema: Optional[schema_pb2.Schema] = None
 ) -> beam.pvalue.PCollection:
@@ -89,7 +55,7 @@ def RunInferenceArrow(  # pylint: disable=invalid-name
      `inference_spec_type`.
 
   Args:
-    file_path: File Path for which the examples are stored.
+    examples: A PCollection containing examples.
     inference_spec_type: Model inference endpoint.
     Schema [optional]: required for models that requires
       multi-tensor inputs.
@@ -97,8 +63,14 @@ def RunInferenceArrow(  # pylint: disable=invalid-name
   Returns:
     A PCollection containing prediction logs.
   """
-  converter = raw_tf_record.RawTfRecordTFXIO(
-    file_path, raw_record_column_name=_RECORDBATCH_COLUMN)
+
+  data_type = DataType.EXAMPLE
+  converter = tf_example_record.TFExampleBeamRecord(
+    physical_format="inmem",
+    telemetry_descriptors=[],
+    schema=schema,
+    raw_record_column_name=_RECORDBATCH_COLUMN)
+
   if schema:
     tfxio = test_util.InMemoryTFExampleRecord(
       schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
@@ -106,17 +78,67 @@ def RunInferenceArrow(  # pylint: disable=invalid-name
       arrow_schema=tfxio.ArrowSchema(),
       tensor_representations=tfxio.TensorRepresentations())
 
-  with beam.Pipeline() as pipeline:
-    return (pipeline
-            | "GetRawRecordAndConvertToRecordBatch" >> converter.BeamSource()
-            | "RunInferenceImpl" >> run_inference_arrow.RunInferenceImpl(
-                    inference_spec_type, tensor_adapter_config=tensor_adapter_config))
+  return (examples
+          | 'ParseExamples' >> beam.Map(tf.train.Example.SerializeToString)
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInferenceImpl' >> run_inference_arrow.RunInferenceImpl(
+                  inference_spec_type, data_type,
+                  tensor_adapter_config=tensor_adapter_config))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(tf.train.SequenceExample)
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
+    examples: beam.pvalue.PCollection,
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    schema: Optional[schema_pb2.Schema] = None
+) -> beam.pvalue.PCollection:
+  """Run inference with a model.
+
+   There are two types of inference you can perform using this PTransform:
+   1. In-process inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_spec_type`.
+   2. Remote inference by using a service endpoint. Used when
+     `ai_platform_prediction_model_spec` field is set in
+     `inference_spec_type`.
+
+  Args:
+    examples: A PCollection containing sequence examples.
+    inference_spec_type: Model inference endpoint.
+    Schema [optional]: required for models that requires
+      multi-tensor inputs.
+
+  Returns:
+    A PCollection containing prediction logs.
+  """
+
+  data_type = DataType.SEQUENCEEXAMPLE
+  converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
+    physical_format="inmem",
+    telemetry_descriptors=[],
+    schema=schema,
+    raw_record_column_name=_RECORDBATCH_COLUMN)
+
+  if schema:
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
+    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+      arrow_schema=tfxio.ArrowSchema(),
+      tensor_representations=tfxio.TensorRepresentations())
+
+  return (examples
+          | 'ParseExamples' >> beam.Map(tf.train.Example.SerializeToString)
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInferenceImpl' >> run_inference_arrow.RunInferenceImpl(
+                  inference_spec_type, data_type,
+                  tensor_adapter_config=tensor_adapter_config))
 
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceRecord(  # pylint: disable=invalid-name
+def RunInferenceOnRecordBatch(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType,
     tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None

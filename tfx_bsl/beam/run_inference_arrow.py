@@ -50,6 +50,9 @@ from tfx_bsl.tfxio import tensor_adapter
 from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
     Tuple, Union, Optional
 
+from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
+from tfx_bsl.beam.bsl_constants import DataType
+
 # TODO(b/140306674): stop using the internal TF API.
 from tensorflow.python.saved_model import loader_impl
 from tensorflow_serving.apis import classification_pb2
@@ -67,7 +70,6 @@ except ImportError:
   pass
 
 
-_RECORDBATCH_COLUMN = '__RAW_RECORD__'
 _DEFAULT_INPUT_KEY = 'examples'
 _METRICS_DESCRIPTOR_INFERENCE = 'BulkInferrer'
 _METRICS_DESCRIPTOR_IN_PROCESS = 'InProcess'
@@ -90,10 +92,6 @@ class OperationType(object):
   PREDICTION = 'PREDICTION'
   MULTIHEAD = 'MULTIHEAD'
 
-class DataType(object):
-  EXAMPLE = 'EXAMPLE'
-  SEQUENCEEXAMPLE = 'SEQUENCEEXAMPLE'
-
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(pa.RecordBatch)
@@ -101,6 +99,7 @@ class DataType(object):
 def RunInferenceImpl(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType,
+    data_type: DataType,
     tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None
 ) -> beam.pvalue.PCollection:
   """Implementation of RunInference API.
@@ -120,10 +119,6 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
   """
   logging.info('RunInference on model: %s', inference_spec_type)
 
-  # TODO (Maxine): either determine data type or take it as an input
-  # data_type = _get_data_type(examples)
-
-  data_type = DataType.EXAMPLE
   operation_type = _get_operation_type(inference_spec_type)
   if operation_type == OperationType.CLASSIFICATION:
     return examples | 'Classify' >> _Classify(
@@ -1148,15 +1143,6 @@ def _get_operation_type(
   else:
     # Remote inference supports predictions only.
     return OperationType.PREDICTION
-
-
-def _get_data_type(elements: Sequence[Any]) -> Text:
-  if all(isinstance(elements, tf.train.Example)): 
-    return DataType.EXAMPLE
-  elif all(isinstance(element, tf.train.SequenceExample)):
-    return DataType.SEQUENCEEXAMPLE
-  else:
-    return DataType.EXAMPLE
 
 
 def _get_meta_graph_def(saved_model_pb: _SavedModel,

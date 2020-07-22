@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Tests for tfx_bsl.run_inference."""
+"""Tests for tfx_bsl.run_inference_arrow."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -34,8 +34,9 @@ from googleapiclient import discovery
 from googleapiclient import http
 from six.moves import http_client
 import tensorflow as tf
-from tfx_bsl.beam import run_inference_arrow
 from tfx_bsl.beam import bsl_util
+from tfx_bsl.beam import run_inference_arrow
+from tfx_bsl.beam.bsl_constants import DataType
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
@@ -314,7 +315,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch_multi_input])
           | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-                inference_spec_type, self.tensor_adapter_config)
+                inference_spec_type, DataType.EXAMPLE, self.tensor_adapter_config)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -324,7 +325,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch_multihead])
           | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-                inference_spec_type)
+                inference_spec_type, DataType.EXAMPLE)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -334,7 +335,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
           pipeline
           | "createRecordBatch" >> beam.Create([self.record_batch])
           | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-                inference_spec_type)
+                inference_spec_type, DataType.EXAMPLE)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -547,7 +548,7 @@ class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
         pipeline 
         | "createRecordBatch" >> beam.Create([self.record_batch_multihead])
         | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-              inference_spec_type))
+              inference_spec_type, DataType.EXAMPLE))
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -605,7 +606,7 @@ class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
         self.pipeline
         | "createRecordBatch" >> beam.Create([self.record_batch])
         | 'RunInference' >> run_inference_arrow.RunInferenceImpl(
-              inference_spec_type))
+              inference_spec_type, DataType.EXAMPLE))
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()

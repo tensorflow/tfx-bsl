@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""TensorAdapter."""
+"""TFX-BSL util"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -26,9 +26,8 @@ import base64
 import json
 import typing
 from typing import Dict, List, Text, Any, Set, Optional
-
-_RECORDBATCH_COLUMN = '__RAW_RECORD__'
-KERAS_INPUT_SUFFIX = '_input'
+from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
+from tfx_bsl.beam.bsl_constants import KERAS_INPUT_SUFFIX
    
 
 def RecordToJSON(record_batch: pa.RecordBatch) -> List[Text]:
@@ -49,6 +48,7 @@ def RecordToJSON(record_batch: pa.RecordBatch) -> List[Text]:
     df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
 
   return json.loads(df.to_json(orient='records'))
+
 
 def find_input_name_in_features(features: Set[Text],
                                 input_name: Text) -> Optional[Text]:

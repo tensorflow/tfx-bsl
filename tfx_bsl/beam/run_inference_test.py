@@ -37,7 +37,6 @@ from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
 
 from google.protobuf import text_format
-
 from tensorflow_serving.apis import prediction_log_pb2
 
 
