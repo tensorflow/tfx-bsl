@@ -18,6 +18,8 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+from typing import List, Optional, Text
+
 from absl import logging
 import apache_beam as beam
 import pyarrow as pa
@@ -26,7 +28,6 @@ from tfx_bsl.coders import batch_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tfxio
-from typing import List, Optional, Text
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -106,6 +107,43 @@ def _BatchedRecordsToArrow(records: List[bytes],
       records, should_produce_large_types)
   return pa.RecordBatch.from_arrays(
       [raw_record_column], [raw_record_column_name])
+
+
+class RawBeamRecordTFXIO(_RawRecordTFXIO):
+  """TFXIO for raw records in pcoll[bytes].
+
+  This is a special TFXIO that does not actually do I/O -- it relies on the
+  caller to prepare a PCollection of bytes.
+  """
+
+  def __init__(self,
+               physical_format: Text,
+               raw_record_column_name: Text,
+               telemetry_descriptors: List[Text]):
+    """Initializer.
+
+    Args:
+      physical_format: The physical format that describes where the input
+        pcoll[bytes] comes from. Used for telemetry purposes. Examples: "text",
+        "tfrecord".
+      raw_record_column_name: If not None, the generated Arrow RecordBatches
+        will contain a column of the given name that contains serialized
+        records.
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
+    """
+    super(RawBeamRecordTFXIO, self).__init__(
+        telemetry_descriptors=telemetry_descriptors,
+        physical_format=physical_format,
+        raw_record_column_name=raw_record_column_name)
+
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
+    return (beam.ptransform_fn(lambda x: x)()
+            .with_input_types(bytes)
+            .with_output_types(bytes))
 
 
 class RawTfRecordTFXIO(_RawRecordTFXIO):

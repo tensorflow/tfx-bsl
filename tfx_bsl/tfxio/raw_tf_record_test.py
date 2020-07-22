@@ -100,5 +100,32 @@ class RawTfRecordTest(absltest.TestCase):
     with self.assertRaises(AssertionError):
       tfxio.Project(["some_other_name"])
 
+
+class RawBeamRecordTest(absltest.TestCase):
+
+  def testE2E(self):
+    column_name = "raw_record"
+    tfxio = raw_tf_record.RawBeamRecordTFXIO(
+        physical_format="inmem",
+        raw_record_column_name=column_name,
+        telemetry_descriptors=["some", "component"])
+
+    def _AssertFn(record_batches):
+      self.assertLen(record_batches, 1)
+      record_batch = record_batches[0]
+      self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
+      tensor_adapter = tfxio.TensorAdapter()
+      tensors = tensor_adapter.ToBatchTensors(record_batch)
+      self.assertLen(tensors, 1)
+      self.assertIn(column_name, tensors)
+
+    with beam.Pipeline() as p:
+      record_batch_pcoll = (
+          p
+          | "CreateInMemRecords" >> beam.Create(_RAW_RECORDS)
+          | "BeamSource" >> tfxio.BeamSource(batch_size=len(_RAW_RECORDS)))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+
 if __name__ == "__main__":
   absltest.main()
