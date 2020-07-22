@@ -45,11 +45,7 @@ def HasFullSupportForLargeBinary() -> bool:
 
 def _LargeListCanBeConvertedToPandas() -> bool:
   """Returns True if a large_list can be converted to a pd.Series."""
-  try:
-    pa.array([], type=pa.large_list(pa.int32())).to_pandas()
-  except:  # pylint:disable=bare-except
-    return False
-  return True
+  return pa.__version__ >= "0.17"
 
 
 def _LargeBinaryCanBeDictEncoded() -> bool:

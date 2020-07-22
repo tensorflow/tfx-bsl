@@ -14,3 +14,9 @@
 """Init module for tfx_bsl."""
 
 from tfx_bsl.version import __version__
+
+# TODO(b/161449255): clean this up after a tfx release that does not contain the
+# usage of this is out.
+# Indicates that tfx_bsl.coders.tf_graph_record_decoder and
+# tfx_bsl.tfxio.record_to_tensor_tfxio are available.
+HAS_TF_GRAPH_RECORD_DECODER = True

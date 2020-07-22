@@ -18,34 +18,21 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
-from typing import List, Text
+from typing import  Optional, Text
 
-import apache_beam as beam
 from tfx_bsl.tfxio import tf_example_record
-from tfx_bsl.tfxio import tfxio
+
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-class InMemoryTFExampleRecord(tf_example_record._TFExampleRecordBase):  # pylint: disable=protected-access
-  """A TF Example TFXIO whose source is a PCollection[bytes].
+# DEPRECATED. Prefer tf_example_record.TFExampleBeamRecord.
+# TODO(b/158580478): clean this up.
+class InMemoryTFExampleRecord(tf_example_record.TFExampleBeamRecord):
 
-  Usage:
-    tfxio = InMemoryTFExampleRecord(schema)
-    record_batches = (
-      beam.Create([serialized_example1, ...]) | tfxio.BeamSource())
-  """
-
-  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
-
-    @beam.typehints.with_input_types(bytes)
-    @beam.typehints.with_output_types(bytes)
-    def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
-      return raw_records_pcoll
-
-    return beam.ptransform_fn(_PTransformFn)()
-
-  def TensorFlowDataset(self):
-    raise NotImplementedError
-
-  def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
-    return InMemoryTFExampleRecord(
-        self._ProjectTfmdSchema(tensor_names), self.raw_record_column_name)
+  def __init__(self, schema: Optional[schema_pb2.Schema] = None,
+               raw_record_column_name: Optional[Text] = None):
+    super(InMemoryTFExampleRecord, self).__init__(
+        physical_format="inmem",
+        telemetry_descriptors=["test", "component"],
+        schema=schema,
+        raw_record_column_name=raw_record_column_name)

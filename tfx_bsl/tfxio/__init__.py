@@ -16,3 +16,7 @@
 Design doc:
 https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md
 """
+
+# TODO(b/158580478): clean this up once the usages of this flag are removed
+# and the removal is released.
+TFXIO_HAS_BEAM_RECORD_TFXIO = True

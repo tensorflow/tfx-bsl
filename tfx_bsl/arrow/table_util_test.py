@@ -18,13 +18,20 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
-import pandas as pd
+import unittest
+
 import pyarrow as pa
 from tfx_bsl.arrow import table_util
 
 from absl.testing import absltest
 from absl.testing import parameterized
 
+# TODO(b/161712697): this hack is introduced because pandas is PY3 only. It's
+# not needed once tfx_bsl can be PY3 only.
+try:
+  import pandas as pd  # pylint: disable=g-import-not-at-top
+except ImportError:
+  pd = None
 
 _MERGE_TEST_CASES = [
     dict(
@@ -509,6 +516,7 @@ class RecordBatchTakeTest(parameterized.TestCase):
           "Expected {}, got {}".format(expected_output, sliced))
 
 
+@unittest.skipIf(pd is None, "pandas is not available")
 class DataFrameToRecordBatchTest(parameterized.TestCase):
 
   def testDataFrameToRecordBatch(self):

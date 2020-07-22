@@ -19,6 +19,8 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
+import copy
+from typing import List, Optional, Text
 
 import apache_beam as beam
 import pyarrow as pa
@@ -28,7 +30,6 @@ from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
 from tfx_bsl.tfxio import tfxio
-from typing import List, Optional, Text
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -140,6 +141,42 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
         {k: v for k, v in tensor_representations.items() if k in tensor_names})
 
     return result
+
+  def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
+    """Returns a projected TFXIO.
+
+    Project in csv should not be used for optimization, since the decoder must
+    read all columns no matter what.
+
+    The Projected TFXIO will not project the record batches, arrow schema,
+    nor the tfmd schema. Only the tensor representation, and the resulting
+    tensors will be projected.
+
+    Args:
+      tensor_names: The columns to project.
+    """
+    projected_schema = self._ProjectTfmdSchemaTensorRepresentation(tensor_names)
+    result = copy.copy(self)
+    result._schema = projected_schema  # pylint: disable=protected-access
+    return result
+
+
+class BeamRecordCsvTFXIO(_CsvTFXIOBase):
+  """TFXIO implementation for CSV records in pcoll[bytes].
+
+  This is a special TFXIO that does not actually do I/O -- it relies on the
+  caller to prepare a PCollection of bytes.
+  """
+
+  # inherits the initializer from the base.
+
+  def _CSVSource(self) -> beam.PTransform:
+    return (beam.ptransform_fn(lambda x: x)()
+            .with_input_types(bytes)
+            .with_output_types(bytes))
+
+  def TensorFlowDataset(self):
+    raise NotImplementedError
 
 
 class CsvTFXIO(_CsvTFXIOBase):
