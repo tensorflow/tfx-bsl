@@ -21,8 +21,9 @@ from __future__ import print_function
 from typing import List, Dict, Mapping, Optional, Text, Tuple, Union
 
 from absl import logging
+import numpy as np
+import tensorflow as tf
 from tfx_bsl.arrow import path
-
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
@@ -48,6 +49,18 @@ _LEGACY_DEFAULT_VALUE_FOR_FEATURE_TYPE = {
         schema_pb2.TensorRepresentation.DefaultValue(int_value=-1),
     schema_pb2.FLOAT:
         schema_pb2.TensorRepresentation.DefaultValue(float_value=-1.0),
+}
+
+_FEATURE_TYPE_TO_TF_TYPE = {
+    schema_pb2.BYTES: tf.string,
+    schema_pb2.INT: tf.int64,
+    schema_pb2.FLOAT: tf.float32,
+}
+
+_DEFAULT_VALUE_KIND_TO_FEATURE_TYPE = {
+    "bytes_value": schema_pb2.BYTES,
+    "int_value": schema_pb2.INT,
+    "float_value": schema_pb2.FLOAT,
 }
 
 
@@ -130,6 +143,56 @@ def GetSourceColumnsFromTensorRepresentation(
 
   return _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER[
       tensor_representation.WhichOneof("kind")](tensor_representation)
+
+
+def CreateTfExampleParserConfig(
+    tensor_representation: schema_pb2.TensorRepresentation,
+    feature_type: schema_pb2.FeatureType
+) -> Union[tf.io.VarLenFeature, tf.io.SparseFeature, tf.io.FixedLenFeature]:
+  """Creates a Feature Configuration that is used for tf.io.parse_example.
+
+  Args:
+    tensor_representation: The tensor representation to convert to a Feature.
+    feature_type: The schema_pb2.FeatureType of the given feature. The supported
+      types are listed in _FEATURE_TYPE_TO_TF_TYPE.
+
+  Returns:
+    Either a `tf.io.FixedLenFeature`, `tf.io.VarLenFeature`, or
+    `tf.io.SparseFeature`.
+
+  Raises:
+    ValueError: If the tensor_representation cannot be converted to a Feature.
+    NotImplementedError: For ragged_tensor in tensor_representation.
+  """
+  value_dtype = _FEATURE_TYPE_TO_TF_TYPE.get(feature_type, None)
+  if value_dtype is None:
+    raise ValueError(
+        "The feature_type: {} is not supported.".format(feature_type))
+
+  tensor_representation_kind = tensor_representation.WhichOneof("kind")
+  if tensor_representation_kind == "dense_tensor":
+    dense_tensor_rep = tensor_representation.dense_tensor
+    shape = _GetDimsFromFixedShape(dense_tensor_rep.shape)
+    default_value = None
+    if dense_tensor_rep.HasField("default_value"):
+      default_value = _GetDefaultValuesList(shape, feature_type,
+                                            dense_tensor_rep.default_value)
+    return tf.io.FixedLenFeature(
+        shape=shape, dtype=value_dtype, default_value=default_value)
+  elif tensor_representation_kind == "varlen_sparse_tensor":
+    return tf.io.VarLenFeature(dtype=value_dtype)
+  elif tensor_representation_kind == "sparse_tensor":
+    sparse_tensor_rep = tensor_representation.sparse_tensor
+    return tf.io.SparseFeature(
+        index_key=sparse_tensor_rep.index_column_names,
+        value_key=sparse_tensor_rep.value_column_name,
+        dtype=value_dtype,
+        size=_GetDimsFromFixedShape(sparse_tensor_rep.dense_shape))
+  else:
+    # TODO(b/159939495): Implement support for ragged tensor.
+    raise NotImplementedError(
+        "TensorRepresentation: {} is not supported.".format(
+            tensor_representation_kind))
 
 
 def _ShouldIncludeFeature(
@@ -379,3 +442,38 @@ def _LegacyInferDefaultValue(
         "Feature %s has min_fraction = 1 (%s). Not setting defalut value.",
         feature_proto.name, feature_proto.presence)
     return None
+
+
+def _GetDimsFromFixedShape(shape: schema_pb2.FixedShape) -> List[int]:
+  """Returns a list of dimensions, given a schema_pb2.FixedShape.
+
+  Args:
+    shape: A schema_pb2.FixedShape.
+  """
+  return [dim.size for dim in shape.dim]
+
+
+def _GetDefaultValuesList(
+    unbatched_shape: List[int], feature_type: schema_pb2.FeatureType,
+    default_value_proto: schema_pb2.TensorRepresentation.DefaultValue
+) -> List[Union[int, float, bytes]]:
+  """Returns a List filled with the default value given in the proto.
+
+  Args:
+    unbatched_shape: The shape of the tensor to fill.
+    feature_type: The expected type of the default_value.
+    default_value_proto: The DefaultValue proto that holds the default_value.
+
+  Raises:
+    ValueError: if the default_value is incompatible with feature_type.
+  """
+  kind = default_value_proto.WhichOneof("kind")
+  default_value = getattr(default_value_proto, kind)
+  expected_feature_type = _DEFAULT_VALUE_KIND_TO_FEATURE_TYPE.get(kind, None)
+  if feature_type != expected_feature_type:
+    raise ValueError(
+        "FeatureType: {} is incompatible with default_value: {}".format(
+            schema_pb2.FeatureType.Name(feature_type), default_value))
+  size = int(np.prod(unbatched_shape, initial=1))
+
+  return [default_value] * size
