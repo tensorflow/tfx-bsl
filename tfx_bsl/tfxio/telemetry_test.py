@@ -155,7 +155,10 @@ class TelemetryTest(parameterized.TestCase):
                                expected_counters):
     p = beam.Pipeline()
     _ = (p
-         | "CreateTestData" >> beam.Create([record_batch])
+         # Slice the input into two pieces to make sure profiling can handle
+         # sliced RecordBatches.
+         | "CreateTestData" >> beam.Create([record_batch.slice(0, 1),
+                                            record_batch.slice(1)])
          | "Profile" >> telemetry.ProfileRecordBatches(
              ["test", "component"], _LOGICAL_FORMAT, _PHYSICAL_FORMAT, 1.0))
     runner = p.run()

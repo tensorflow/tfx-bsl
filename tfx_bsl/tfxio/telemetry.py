@@ -18,14 +18,15 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
-import apache_beam as beam
 import enum
+from typing import Iterable, Callable, List, Optional, Text
+
+import apache_beam as beam
 import numpy as np
 import pyarrow as pa
 from tfx_bsl.arrow import array_util
 from tfx_bsl.arrow import table_util
 from tfx_bsl.telemetry import util as telemetry_util
-from typing import Iterable, Callable, List, Optional, Text
 
 
 @beam.typehints.with_input_types(pa.RecordBatch)
@@ -185,11 +186,6 @@ class _ProfileRecordBatchDoFn(beam.DoFn):
           self._num_feature_values_dist.update(num_values)
 
     for column in record_batch:
-      # Skip sliced arrays, because flatten() does not work properly.
-      # ARROW-7362
-      # TODO(zhuo): Remove this after we start using pyarrow 0.16.
-      if column.offset != 0:
-        continue
       _RecursionHelper(np.arange(num_rows, dtype=np.int64), column)
 
   def _UpdateNumCellsCounters(self, record_batch: pa.RecordBatch) -> None:
