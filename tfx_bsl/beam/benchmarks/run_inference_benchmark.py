@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC
+# Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,13 +27,13 @@ PATH_TO_DATA \
 --region us-central1
 """
 
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import argparse
 import apache_beam as beam
+from tfx_bsl.tfxio import raw_tf_record
 from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
 from apache_beam.options.pipeline_options import PipelineOptions
@@ -51,7 +51,7 @@ def run(argv=None, save_main_session=True):
     parser.add_argument(
         'input',
         type=str,
-        help='Path to the data file(s) containing game data.')
+        help='Path to the data file(s) containing data.')
     parser.add_argument(
         '--output',
         type=str,
@@ -73,9 +73,12 @@ def run(argv=None, save_main_session=True):
                 model_path=model_path))
 
     inference_spec_type = get_saved_model_spec(args.model_path)
+    converter = raw_tf_record.RawTfRecordTFXIO(
+        args.input, raw_record_column_name='__RAW_RECORD__')
+
     with beam.Pipeline(options=options) as p:
         (p
-            | 'ReadInputText' >> beam.io.ReadFromText(args.input)
+            | "GetRawRecordAndConvertToRecordBatch" >> converter.BeamSource()
             | 'RunInferenceImpl' >> run_inference.RunInferenceImpl(
                 inference_spec_type))
 
