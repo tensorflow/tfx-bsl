@@ -29,13 +29,14 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
+from typing import List, Optional, Text
 import apache_beam as beam
 import pyarrow as pa
 import six
 import tensorflow as tf
 from tfx_bsl.arrow import pyarrow_capability
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import tensor_adapter
-from typing import List, Optional, Text
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -79,10 +80,16 @@ class TFXIO(object):
     """
 
   @abc.abstractmethod
-  def TensorFlowDataset(self) -> tf.data.Dataset:
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorflowDatasetOptions) -> tf.data.Dataset:
     """Returns a tf.data.Dataset of TF inputs.
 
     May raise an error if the TFMD schema was not provided at construction time.
+
+    Args:
+      options: an options object for the tf.data.Dataset. Look at
+        `dataset_options.TensorflowDatasetOptions` for more details.
     """
 
   @abc.abstractmethod
@@ -193,8 +200,10 @@ class _ProjectedTFXIO(TFXIO):
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     return self.projected.TensorRepresentations()
 
-  def TensorFlowDataset(self) -> tf.data.Dataset:
-    return self.projected.TensorFlowDataset()
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorflowDatasetOptions) -> tf.data.Dataset:
+    return self.projected.TensorFlowDataset(options)
 
   def _ProjectImpl(self, unused_tensor_names: List[Text]) -> "TFXIO":
     raise ValueError("This should never be called.")

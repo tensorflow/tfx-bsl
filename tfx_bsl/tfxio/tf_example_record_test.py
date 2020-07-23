@@ -22,11 +22,14 @@ import os
 from absl import flags
 import apache_beam as beam
 from apache_beam.testing import util as beam_testing_util
+import numpy as np
 import pyarrow as pa
 import tensorflow as tf
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry_test_util
 from tfx_bsl.tfxio import tf_example_record
 from google.protobuf import text_format
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 from absl.testing import absltest
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -106,9 +109,60 @@ _EXAMPLES = [
 """,
 ]
 
+_SERIALIZED_EXAMPLES = [
+    text_format.Parse(pbtxt, tf.train.Example()).SerializeToString()
+    for pbtxt in _EXAMPLES
+]
 
-_SERIALIZED_EXAMPLES = [text_format.Parse(
-    pbtxt, tf.train.Example()).SerializeToString() for pbtxt in _EXAMPLES]
+
+def CreateExamplesAsTensors():
+  if tf.executing_eagerly():
+    sparse_tensor_factory = tf.SparseTensor
+  else:
+    sparse_tensor_factory = tf.compat.v1.SparseTensorValue
+
+  return [{
+      "int_feature":
+          sparse_tensor_factory(
+              values=[1], indices=[[0, 0]], dense_shape=[1, 1]),
+      "float_feature":
+          sparse_tensor_factory(
+              values=[1.0, 2.0, 3.0, 4.0],
+              indices=[[0, 0], [0, 1], [0, 2], [0, 3]],
+              dense_shape=[1, 4]),
+      "string_feature":
+          sparse_tensor_factory(
+              values=[], indices=np.empty((0, 2)), dense_shape=[1, 0])
+  }, {
+      "int_feature":
+          sparse_tensor_factory(
+              values=[2], indices=[[0, 0]], dense_shape=[1, 1]),
+      "float_feature":
+          sparse_tensor_factory(
+              values=[2.0, 3.0, 4.0, 5.0],
+              indices=[[0, 0], [0, 1], [0, 2], [0, 3]],
+              dense_shape=[1, 4]),
+      "string_feature":
+          sparse_tensor_factory(
+              values=[b"foo", b"bar"],
+              indices=[[0, 0], [0, 1]],
+              dense_shape=[1, 2])
+  }, {
+      "int_feature":
+          sparse_tensor_factory(
+              values=[3], indices=[[0, 0]], dense_shape=[1, 1]),
+      "float_feature":
+          sparse_tensor_factory(
+              values=[4.0, 5.0, 6.0, 7.0],
+              indices=[[0, 0], [0, 1], [0, 2], [0, 3]],
+              dense_shape=[1, 4]),
+      "string_feature":
+          sparse_tensor_factory(
+              values=[], indices=np.empty((0, 2)), dense_shape=[1, 0])
+  }]
+
+
+_EXAMPLES_AS_TENSORS = CreateExamplesAsTensors()
 
 
 def GetExpectedColumnValues(tfxio):
@@ -137,7 +191,7 @@ def _WriteInputs(filename):
       w.write(s)
 
 
-class TfExampleRecordTest(absltest.TestCase):
+class TfExampleRecordTest(tf.test.TestCase):
 
   @classmethod
   def setUpClass(cls):
@@ -304,6 +358,40 @@ class TfExampleRecordTest(absltest.TestCase):
       # Setting the batch_size to make sure only one batch is generated.
       record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+  @test_util.run_all_in_graph_and_eager_modes
+  def testTensorflowDataset(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    options = dataset_options.TensorflowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, parsed_examples_dict in enumerate(
+        tfxio.TensorFlowDataset(options=options)):
+      for key, parsed_example in parsed_examples_dict.items():
+        self.assertAllEqual(parsed_example.values,
+                            _EXAMPLES_AS_TENSORS[i][key].values)
+        self.assertAllEqual(parsed_example.indices,
+                            _EXAMPLES_AS_TENSORS[i][key].indices)
+        self.assertAllEqual(parsed_example.dense_shape,
+                            _EXAMPLES_AS_TENSORS[i][key].dense_shape)
+
+  @test_util.run_all_in_graph_and_eager_modes
+  def testProjectedTensorflowDataset(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    feature_name = "string_feature"
+    projected_tfxio = tfxio.Project([feature_name])
+    options = dataset_options.TensorflowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, parsed_examples_dict in enumerate(
+        projected_tfxio.TensorFlowDataset(options=options)):
+      self.assertIn(feature_name, parsed_examples_dict)
+      self.assertLen(parsed_examples_dict, 1)
+      parsed_example = parsed_examples_dict[feature_name]
+      self.assertAllEqual(parsed_example.values,
+                          _EXAMPLES_AS_TENSORS[i][feature_name].values)
+      self.assertAllEqual(parsed_example.indices,
+                          _EXAMPLES_AS_TENSORS[i][feature_name].indices)
+      self.assertAllEqual(parsed_example.dense_shape,
+                          _EXAMPLES_AS_TENSORS[i][feature_name].dense_shape)
 
 
 class TFExampleBeamRecordTest(absltest.TestCase):
