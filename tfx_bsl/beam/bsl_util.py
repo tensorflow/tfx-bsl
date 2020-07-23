@@ -41,12 +41,19 @@ def RecordToJSON(record_batch: pa.RecordBatch) -> List[Text]:
   Args:
   record_batch: input RecordBatch.
   """
+  def flatten(element: List[Any]):
+    if len(element) == 1:
+        return element[0]
+    return element
+
   df = record_batch.to_pandas()
   as_binary = df.columns.str.endswith("_bytes")
-  df.loc[:, as_binary] = df.loc[:, as_binary].applymap(lambda x: {'b64': base64.b64encode(x).decode()})
+  df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
+    lambda values: [{'b64': base64.b64encode(x).decode()} for x in values])
   if _RECORDBATCH_COLUMN in df.columns:
     df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
 
+  df = df.applymap(lambda x: flatten(x))
   return json.loads(df.to_json(orient='records'))
 
 

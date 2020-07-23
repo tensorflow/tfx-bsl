@@ -26,6 +26,7 @@ except ImportError:
   import mock
 
 import apache_beam as beam
+import pyarrow as pa
 from apache_beam.metrics.metric import MetricsFilter
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
@@ -33,17 +34,24 @@ from googleapiclient import discovery
 from googleapiclient import http
 from six.moves import http_client
 import tensorflow as tf
+from tfx_bsl.beam import bsl_util
 from tfx_bsl.beam import run_inference
+from tfx_bsl.beam.bsl_constants import DataType
+from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
 from tfx_bsl.public.proto import model_spec_pb2
+from tfx_bsl.tfxio import test_util
+from tfx_bsl.tfxio import tensor_adapter
+from tfx_bsl.tfxio import tf_example_record
 
 from google.protobuf import text_format
 from tensorflow_serving.apis import prediction_log_pb2
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-class RunInferenceFixture(tf.test.TestCase):
+class RunInferenceArrowFixture(tf.test.TestCase):
 
   def setUp(self):
-    super(RunInferenceFixture, self).setUp()
+    super(RunInferenceArrowFixture, self).setUp()
     self._predict_examples = [
         text_format.Parse(
             """
@@ -70,10 +78,10 @@ class RunInferenceFixture(tf.test.TestCase):
         output_file.write(example.SerializeToString())
 
 
-class RunOfflineInferenceTest(RunInferenceFixture):
+class RunOfflineInferenceArrowTest(RunInferenceArrowFixture):
 
   def setUp(self):
-    super(RunOfflineInferenceTest, self).setUp()
+    super(RunOfflineInferenceArrowTest, self).setUp()
     self._predict_examples = [
         text_format.Parse(
             """
@@ -88,6 +96,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
               }
               """, tf.train.Example()),
     ]
+
     self._multihead_examples = [
         text_format.Parse(
             """
@@ -105,11 +114,46 @@ class RunOfflineInferenceTest(RunInferenceFixture):
             """, tf.train.Example()),
     ]
 
+    self.schema = text_format.Parse(
+      """
+      tensor_representation_group {
+        key: ""
+        value {
+          tensor_representation {
+            key: "x"
+            value {
+              dense_tensor {
+                column_name: "x"
+                shape { dim { size: 1 } }
+              }
+            }
+          }
+          tensor_representation {
+            key: "y"
+            value {
+              dense_tensor {
+                column_name: "y"
+                shape { dim { size: 1 } }
+              }
+            }
+          }
+        }
+      }
+      feature {
+        name: "x"
+        type: FLOAT
+      }
+      feature {
+        name: "y"
+        type: FLOAT
+      }
+      """, schema_pb2.Schema())
 
   def _prepare_multihead_examples(self, example_path):
     with tf.io.TFRecordWriter(example_path) as output_file:
       for example in self._multihead_examples:
         output_file.write(example.SerializeToString())
+
 
   def _build_predict_model(self, model_path):
     """Exports the dummy sum predict model."""
@@ -206,14 +250,37 @@ class RunOfflineInferenceTest(RunInferenceFixture):
       builder.save()
 
   def _run_inference_with_beam(self, example_path, inference_spec_type,
-                               prediction_log_path):
-    with beam.Pipeline() as pipeline:
-      _ = (
+                               prediction_log_path, include_config = False):
+    converter = tf_example_record.TFExampleBeamRecord(
+      physical_format="inmem",
+      telemetry_descriptors=[],
+      raw_record_column_name=_RECORDBATCH_COLUMN)
+
+    if include_config:
+      tfxio = test_util.InMemoryTFExampleRecord(
+        schema=self.schema, raw_record_column_name=_RECORDBATCH_COLUMN)
+      tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=tfxio.ArrowSchema(),
+        tensor_representations=tfxio.TensorRepresentations())
+
+      with beam.Pipeline() as pipeline:
+        _ = (
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-          | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-          |
-          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInference' >> run_inference.RunInferenceImpl(
+                inference_spec_type, DataType.EXAMPLE, tensor_adapter_config)
+          | 'WritePredictions' >> beam.io.WriteToTFRecord(
+              prediction_log_path,
+              coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
+    else:
+      with beam.Pipeline() as pipeline:
+        _ = (
+          pipeline
+          | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInference' >> run_inference.RunInferenceImpl(
+                inference_spec_type, DataType.EXAMPLE)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -362,7 +429,6 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     inference_model = tf.keras.models.Model(inputs, [output1, output2])
 
     class TestKerasModel(tf.keras.Model):
-
       def __init__(self, inference_model):
         super(TestKerasModel, self).__init__(name='test_keras_model')
         self.inference_model = inference_model
@@ -372,10 +438,9 @@ class RunOfflineInferenceTest(RunInferenceFixture):
       ])
       def call(self, serialized_example):
         features = {
-            'input1':
-                tf.compat.v1.io.FixedLenFeature([1],
-                                                dtype=tf.float32,
-                                                default_value=0)
+            'input1': tf.compat.v1.io.FixedLenFeature(
+              [1], dtype=tf.float32,
+              default_value=0)
         }
         input_tensor_dict = tf.io.parse_example(serialized_example, features)
         return inference_model(input_tensor_dict['input1'])
@@ -386,12 +451,12 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         loss=tf.keras.losses.binary_crossentropy,
         metrics=['accuracy'])
 
+    example_path = self._get_output_data_dir('examples')
+    self._prepare_predict_examples(example_path)
     model_path = self._get_output_data_dir('model')
     tf.compat.v1.keras.experimental.export_saved_model(
         model, model_path, serving_only=True)
 
-    example_path = self._get_output_data_dir('examples')
-    self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
     self._run_inference_with_beam(
         example_path,
@@ -402,6 +467,66 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
 
+  def testKerasModelPredictMultiTensor(self):
+    input1 = tf.keras.layers.Input((1,), name='x')
+    input2 = tf.keras.layers.Input((1,), name='y')
+
+    x1 = tf.keras.layers.Dense(10)(input1)
+    x2 = tf.keras.layers.Dense(10)(input2)
+    output = tf.keras.layers.Dense(5, name='output')(x2)
+
+    model = tf.keras.models.Model([input1, input2], output)
+    model_path = self._get_output_data_dir('model')
+    tf.compat.v1.keras.experimental.export_saved_model(
+        model, model_path, serving_only=True)
+
+    example_path = self._get_output_data_dir('examples')
+    self._prepare_multihead_examples(example_path)
+    prediction_log_path = self._get_output_data_dir('predictions')
+    self._run_inference_with_beam(
+        example_path,
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(
+                model_path=model_path)),
+              prediction_log_path, include_config = True)
+
+    results = self._get_results(prediction_log_path)
+    self.assertLen(results, 2)
+    for result in results:
+      self.assertLen(result.predict_log.request.inputs, 2)
+      self.assertAllInSet(list(result.predict_log.request.inputs), list(['x','y']))
+
+  def testMultiTensorError(self):
+    input1 = tf.keras.layers.Input((1,), name='x')
+    input2 = tf.keras.layers.Input((1,), name='y')
+
+    x1 = tf.keras.layers.Dense(10)(input1)
+    x2 = tf.keras.layers.Dense(10)(input2)
+    output = tf.keras.layers.Dense(5, name='output')(x2)
+
+    model = tf.keras.models.Model([input1, input2], output)
+    model_path = self._get_output_data_dir('model')
+    tf.compat.v1.keras.experimental.export_saved_model(
+        model, model_path, serving_only=True)
+
+    example_path = self._get_output_data_dir('examples')
+    self._prepare_multihead_examples(example_path)
+    prediction_log_path = self._get_output_data_dir('predictions')
+
+    error_msg = 'Tensor adaptor config is required with a multi-input model'
+    try:
+      self._run_inference_with_beam(
+        example_path,
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(
+                model_path=model_path)),
+              prediction_log_path, include_config = False)
+    except ValueError as exc:
+      actual_error_msg = str(exc)
+      self.assertTrue(actual_error_msg.startswith(error_msg))
+    else:
+      self.fail('Test was expected to throw ValueError exception')
+
   def testTelemetry(self):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
@@ -410,11 +535,18 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     inference_spec_type = model_spec_pb2.InferenceSpecType(
         saved_model_spec=model_spec_pb2.SavedModelSpec(
             model_path=model_path, signature_name=['classify_sum']))
+  
     pipeline = beam.Pipeline()
+    converter = tf_example_record.TFExampleBeamRecord(
+      physical_format="inmem",
+      telemetry_descriptors=[],
+      raw_record_column_name=_RECORDBATCH_COLUMN)
     _ = (
-        pipeline | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
+        pipeline 
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
+        | 'ConvertToRecordBatch' >> converter.BeamSource()
+        | 'RunInference' >> run_inference.RunInferenceImpl(
+              inference_spec_type, DataType.EXAMPLE))
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -449,13 +581,13 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         load_model_latency_milli_secs['distributions'][0].result.sum, 0)
 
 
-class RunRemoteInferenceTest(RunInferenceFixture):
+class RunRemoteInferenceArrowTest(RunInferenceArrowFixture):
 
   def setUp(self):
-    super(RunRemoteInferenceTest, self).setUp()
+    super(RunRemoteInferenceArrowTest, self).setUp()
+    # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
     self.example_path = self._get_output_data_dir('example')
     self._prepare_predict_examples(self.example_path)
-    # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
     self._discovery_testdata_dir = os.path.join(
         os.path.join(os.path.dirname(__file__), 'testdata'),
         'ml_discovery.json')
@@ -470,11 +602,16 @@ class RunRemoteInferenceTest(RunInferenceFixture):
 
   def _set_up_pipeline(self, inference_spec_type):
     self.pipeline = beam.Pipeline()
+    converter = tf_example_record.TFExampleBeamRecord(
+      physical_format="inmem",
+      telemetry_descriptors=[],
+      raw_record_column_name=_RECORDBATCH_COLUMN)
     self.pcoll = (
         self.pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
-        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
+        | 'ConvertToRecordBatch' >> converter.BeamSource()
+        | 'RunInference' >> run_inference.RunInferenceImpl(
+              inference_spec_type, DataType.EXAMPLE))
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()
@@ -582,18 +719,25 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         }
         """, tf.train.Example())
 
+      converter = tf_example_record.TFExampleBeamRecord(
+        physical_format="inmem",
+        telemetry_descriptors=[],
+        raw_record_column_name=_RECORDBATCH_COLUMN)
+
       self.pipeline = beam.Pipeline()
       self.pcoll = (
           self.pipeline
-          | 'ReadExamples' >> beam.Create([example])
-          |
-          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
+          | 'CreateExamples' >> beam.Create([example])
+          | 'ParseExamples' >> beam.Map(lambda x: x.SerializeToString())
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInference' >> run_inference.RunInferenceImpl(
+                  inference_spec_type, DataType.EXAMPLE))
 
       self._run_inference_with_beam()
 
   def test_request_body_with_binary_data(self):
     example = text_format.Parse(
-        """
+      """
       features {
         feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
         feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
@@ -601,8 +745,19 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         feature { key: "z" value { float_list { value: [4.5, 5, 5.5] }}}
       }
       """, tf.train.Example())
-    result = list(
-        run_inference._RemotePredictDoFn._prepare_instances([example]))
+
+    serialized_example_remote = [example.SerializeToString()]
+    record_batch_remote = pa.RecordBatch.from_arrays(
+      [
+        pa.array([["ASa8asdf"]], type=pa.list_(pa.binary())),
+        pa.array([["JLK7ljk3"]], type=pa.list_(pa.utf8())),
+        pa.array([[1, 2]], type=pa.list_(pa.int32())),
+        pa.array([[4.5, 5, 5.5]], type=pa.list_(pa.float32()))
+      ],
+      ['x_bytes', 'x', 'y', 'z']
+    )
+
+    result = list(bsl_util.RecordToJSON(record_batch_remote))
     self.assertEqual([
         {
             'x_bytes': {
