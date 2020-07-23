@@ -59,3 +59,32 @@ cc_library(
         "@pybind11",
     ],
 )
+
+cc_library(
+    name = "misragries_sketch",
+    srcs = ["misragries_sketch.cc"],
+    hdrs = ["misragries_sketch.h"],
+    deps = [
+        ":sketches_proto",
+        "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
+        "@arrow",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "misragries_sketch_test",
+    size = "small",
+    srcs = ["misragries_sketch_test.cc"],
+    deps = [
+        ":misragries_sketch",
+        "//tfx_bsl/cc/util:status",
+        "@arrow",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
