@@ -432,7 +432,8 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _prepare_instances(
       self, elements: List[tf.train.Example]
   ) -> Generator[Mapping[Text, Any], None, None]:
-    if self._ai_platform_prediction_model_spec.use_serialization_config:
+    if (self._ai_platform_prediction_model_spec.HasField("use_serialization_config") and
+        self._ai_platform_prediction_model_spec.use_serialization_config):
       return self._prepare_instances_serialized(elements)
     else:
       return self._prepare_instances_dict(elements)
