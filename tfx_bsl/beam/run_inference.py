@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Run batch inference on saved model."""
+"""Run batch inference on saved model and private APIs of inference."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -46,7 +46,10 @@ from tfx_bsl.beam import shared
 from tfx_bsl.beam import bsl_util
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
+from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
+from tfx_bsl.tfxio import tf_example_record
+from tfx_bsl.tfxio import tf_sequence_example_record
 from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
     Tuple, Union, Optional
 
@@ -59,6 +62,7 @@ from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_serving.apis import regression_pb2
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
 # pylint: disable=g-import-not-at-top
@@ -94,9 +98,114 @@ class OperationType(object):
 
 
 @beam.ptransform_fn
+@beam.typehints.with_input_types(tf.train.Example)
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def RunInferenceOnExamples(  # pylint: disable=invalid-name
+    examples: beam.pvalue.PCollection,
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    schema: Optional[schema_pb2.Schema] = None
+) -> beam.pvalue.PCollection:
+  """Run inference with a model.
+
+   There are two types of inference you can perform using this PTransform:
+   1. In-process inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_spec_type`.
+   2. Remote inference by using a service endpoint. Used when
+     `ai_platform_prediction_model_spec` field is set in
+     `inference_spec_type`.
+
+   TODO(b/131873699): Add support for the following features:
+   1. Bytes as Input.
+   2. PTable Input.
+   3. Models as SideInput.
+
+  Args:
+    examples: A PCollection containing examples.
+    inference_spec_type: Model inference endpoint.
+    Schema [optional]: required for models that requires
+      multi-tensor inputs.
+
+  Returns:
+    A PCollection containing prediction logs.
+  """
+
+  data_type = DataType.EXAMPLE
+  converter = tf_example_record.TFExampleBeamRecord(
+    physical_format="inmem",
+    telemetry_descriptors=[],
+    schema=schema,
+    raw_record_column_name=_RECORDBATCH_COLUMN)
+
+  tensor_adapter_config = None
+  if schema:
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
+    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+      arrow_schema=tfxio.ArrowSchema(),
+      tensor_representations=tfxio.TensorRepresentations())
+
+  return (examples
+          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInferenceImpl' >> RunInferenceOnRecordBatch(
+                  inference_spec_type, data_type,
+                  tensor_adapter_config=tensor_adapter_config))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(tf.train.SequenceExample)
+@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
+def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
+    examples: beam.pvalue.PCollection,
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    schema: Optional[schema_pb2.Schema] = None
+) -> beam.pvalue.PCollection:
+  """Run inference with a model.
+
+   There are two types of inference you can perform using this PTransform:
+   1. In-process inference from a SavedModel instance. Used when
+     `saved_model_spec` field is set in `inference_spec_type`.
+   2. Remote inference by using a service endpoint. Used when
+     `ai_platform_prediction_model_spec` field is set in
+     `inference_spec_type`.
+
+  Args:
+    examples: A PCollection containing sequence examples.
+    inference_spec_type: Model inference endpoint.
+    Schema [optional]: required for models that requires
+      multi-tensor inputs.
+
+  Returns:
+    A PCollection containing prediction logs.
+  """
+
+  data_type = DataType.SEQUENCEEXAMPLE
+  converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
+    physical_format="inmem",
+    telemetry_descriptors=[],
+    schema=schema,
+    raw_record_column_name=_RECORDBATCH_COLUMN)
+
+  tensor_adapter_config = None
+  if schema:
+    tfxio = test_util.InMemoryTFExampleRecord(
+      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
+    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+      arrow_schema=tfxio.ArrowSchema(),
+      tensor_representations=tfxio.TensorRepresentations())
+
+  return (examples
+          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInferenceImpl' >> RunInferenceOnRecordBatch(
+                  inference_spec_type, data_type,
+                  tensor_adapter_config=tensor_adapter_config))
+
+
+@beam.ptransform_fn
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceImpl(  # pylint: disable=invalid-name
+def RunInferenceOnRecordBatch(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType, data_type: Text,
     tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None
@@ -104,7 +213,7 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
   """Implementation of RunInference API.
 
   Args:
-    examples: A PCollection containing RecordBatch of serialized examples.
+    examples: A PCollection containing RecordBatch of serialized examples and features.
     inference_spec_type: Model inference endpoint.
     tensor_adapter_config [Optional]: Tensor adapter config which specifies how to
       obtain tensors from the Arrow RecordBatch.

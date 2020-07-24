@@ -22,19 +22,11 @@ from __future__ import print_function
 import apache_beam as beam
 import tensorflow as tf
 import pyarrow as pa
-from typing import Union, Text, Optional
-from tfx_bsl.tfxio import test_util
-from tfx_bsl.tfxio import tensor_adapter
-from tfx_bsl.tfxio import tf_example_record
-from tfx_bsl.tfxio import tf_sequence_example_record
+from typing import Text, Optional
 from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_metadata.proto.v0 import schema_pb2
-
-from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
-from tfx_bsl.beam.bsl_constants import DataType
-
 
 @beam.ptransform_fn
 @beam.typehints.with_input_types(tf.train.Example)
@@ -53,6 +45,11 @@ def RunInference(  # pylint: disable=invalid-name
      `ai_platform_prediction_model_spec` field is set in
      `inference_spec_type`.
 
+   TODO(b/131873699): Add support for the following features:
+   1. Bytes as Input.
+   2. PTable Input.
+   3. Models as SideInput.
+
   Args:
     examples: A PCollection containing examples.
     inference_spec_type: Model inference endpoint.
@@ -63,27 +60,9 @@ def RunInference(  # pylint: disable=invalid-name
     A PCollection containing prediction logs.
   """
 
-  data_type = DataType.EXAMPLE
-  converter = tf_example_record.TFExampleBeamRecord(
-    physical_format="inmem",
-    telemetry_descriptors=[],
-    schema=schema,
-    raw_record_column_name=_RECORDBATCH_COLUMN)
-
-  tensor_adapter_config = None
-  if schema:
-    tfxio = test_util.InMemoryTFExampleRecord(
-      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
-    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-      arrow_schema=tfxio.ArrowSchema(),
-      tensor_representations=tfxio.TensorRepresentations())
-
   return (examples
-          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
-          | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInferenceImpl' >> run_inference.RunInferenceImpl(
-                  inference_spec_type, data_type,
-                  tensor_adapter_config=tensor_adapter_config))
+          | 'RunInferenceOnExamples' >> run_inference.RunInferenceOnExamples(
+                  inference_spec_type, schema=schema))
 
 
 @beam.ptransform_fn
@@ -113,24 +92,6 @@ def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
     A PCollection containing prediction logs.
   """
 
-  data_type = DataType.SEQUENCEEXAMPLE
-  converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
-    physical_format="inmem",
-    telemetry_descriptors=[],
-    schema=schema,
-    raw_record_column_name=_RECORDBATCH_COLUMN)
-
-  tensor_adapter_config = None
-  if schema:
-    tfxio = test_util.InMemoryTFExampleRecord(
-      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
-    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-      arrow_schema=tfxio.ArrowSchema(),
-      tensor_representations=tfxio.TensorRepresentations())
-
   return (examples
-          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
-          | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInferenceImpl' >> run_inference.RunInferenceImpl(
-                  inference_spec_type, data_type,
-                  tensor_adapter_config=tensor_adapter_config))
+          | 'RunInferenceOnSequenceExamples' >> run_inference.RunInferenceOnSequenceExamples(
+                  inference_spec_type, schema=schema))
