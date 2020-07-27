@@ -54,14 +54,6 @@ Note that these instructions will install the latest master branch of `tfx-bsl`.
 If you want to install a specific branch (such as a release branch), pass
 `-b <branchname>` to the `git clone` command.
 
-When building on Python 2, make sure to strip the Python types in the source
-code using the following commands:
-
-```shell
-pip install strip-hints
-python tfx_bsl/tools/strip_type_hints.py tfx_bsl/
-```
-
 ### 3. Build the pip package
 
 Then, run the following at the project root:
@@ -70,7 +62,7 @@ Then, run the following at the project root:
 sudo docker-compose build manylinux2010
 sudo docker-compose run -e PYTHON_VERSION=${PYTHON_VERSION} manylinux2010
 ```
-where `PYTHON_VERSION` is one of `{27, 35, 36, 37}`.
+where `PYTHON_VERSION` is one of `{35, 36, 37}`.
 
 A wheel will be produced under `dist/`.
 
@@ -117,14 +109,6 @@ cd tfx-bsl
 Note that these instructions will install the latest master branch of `tfx_bsl`
 If you want to install a specific branch (such as a release branch),
 pass `-b <branchname>` to the `git clone` command.
-
-When building on Python 2, make sure to strip the Python types in the source
-code using the following commands:
-
-```shell
-pip install strip-hints
-python tfx_bsl/tools/strip_type_hints.py tfx_bsl/
-```
 
 ### 3. Build the pip package
 
