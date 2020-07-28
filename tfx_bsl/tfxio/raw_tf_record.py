@@ -18,7 +18,7 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
-from typing import List, Optional, Text
+from typing import List, Optional, Text, Union
 
 from absl import logging
 import apache_beam as beam
@@ -45,7 +45,7 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
   """
 
   def __init__(self, raw_record_column_name: Text,
-               telemetry_descriptors: Optional[List[Text]],
+               telemetry_descriptors: List[Text],
                physical_format: Text):
     assert raw_record_column_name is not None
     super(_RawRecordTFXIO, self).__init__(
@@ -149,23 +149,29 @@ class RawBeamRecordTFXIO(_RawRecordTFXIO):
 class RawTfRecordTFXIO(_RawRecordTFXIO):
   """Raw record TFXIO for TFRecord format."""
 
-  def __init__(self, file_pattern: Text, raw_record_column_name: Text,
-               telemetry_descriptors: Optional[List[Text]] = None):
+  def __init__(self, file_pattern: Union[Text, List[Text]],
+               raw_record_column_name: Text,
+               telemetry_descriptors: List[Text]):
+    """Initializer.
+
+    Args:
+      file_pattern: One or a list of glob patterns. If a list, must not be
+        empty.
+      raw_record_column_name: Name of the raw record column.
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
+    """
     super(RawTfRecordTFXIO, self).__init__(
         telemetry_descriptors=telemetry_descriptors,
         physical_format="tfrecords_gzip",
         raw_record_column_name=raw_record_column_name)
+    if not isinstance(file_pattern, list):
+      file_pattern = [file_pattern]
+    assert file_pattern, "Must provide at least one file pattern."
     self._file_pattern = file_pattern
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
-
-    @beam.typehints.with_input_types(beam.Pipeline)
-    @beam.typehints.with_output_types(bytes)
-    def _PTransformFn(pipeline: beam.pvalue.PCollection):
-      return pipeline | "ReadFromTFRecord" >> beam.io.ReadFromTFRecord(
-          self._file_pattern,
-          coder=beam.coders.BytesCoder(),
-          # TODO(b/114938612): Eventually remove this override.
-          validate=False)
-
-    return beam.ptransform_fn(_PTransformFn)()
+    return record_based_tfxio.ReadTfRecord(self._file_pattern)

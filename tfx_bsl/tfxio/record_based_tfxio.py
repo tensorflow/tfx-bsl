@@ -216,3 +216,22 @@ def AppendRawRecordColumn(
   return pa.RecordBatch.from_arrays(
       list(record_batch.columns) + [raw_record_column],
       list(schema.names) + [column_name])
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(beam.Pipeline)
+@beam.typehints.with_output_types(bytes)
+def ReadTfRecord(pipeline: beam.Pipeline,
+                 file_pattern: List[Text]) -> beam.pvalue.PCollection:
+  """A Beam source that reads multiple TFRecord file patterns."""
+  assert file_pattern, "Must provide at least one file pattern."
+  # TODO(b/162261470): consider using beam.io.tfrecordio.ReadAllFromTFRecord
+  # once the # concern over size estimation is addressed (also see
+  # b/161935932#comment13).
+  pcolls = []
+  for i, f in enumerate(file_pattern):
+    pcolls.append(pipeline
+                  | "ReadFromTFRecord[%d]" % i >> beam.io.ReadFromTFRecord(
+                      f, coder=beam.coders.BytesCoder()))
+
+  return pcolls | "FlattenPCollsFromPatterns" >> beam.Flatten()

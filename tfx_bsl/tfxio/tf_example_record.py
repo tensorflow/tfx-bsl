@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
-from typing import List, Optional, Text
+from typing import List, Optional, Text, Union
 
 from absl import logging
 import apache_beam as beam
@@ -194,7 +194,7 @@ class TFExampleRecord(_TFExampleRecordBase):
   """TFXIO implementation for tf.Example on TFRecord."""
 
   def __init__(self,
-               file_pattern: Text,
+               file_pattern: Union[List[Text], Text],
                validate: bool = True,
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None,
@@ -203,8 +203,7 @@ class TFExampleRecord(_TFExampleRecordBase):
 
     Args:
       file_pattern: A file glob pattern to read TFRecords from.
-      validate: Boolean flag to verify that the files exist during the pipeline
-        creation time.
+      validate: Not used. do not set. (not used since post 0.22.1).
       schema: A TFMD Schema describing the dataset.
       raw_record_column_name: If not None, the generated Arrow RecordBatches
         will contain a column of the given name that contains serialized
@@ -219,17 +218,19 @@ class TFExampleRecord(_TFExampleRecordBase):
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         physical_format="tfrecords_gzip")
+    del validate
+    if not isinstance(file_pattern, list):
+      file_pattern = [file_pattern]
+    assert file_pattern, "Must provide at least one file pattern."
     self._file_pattern = file_pattern
-    self._validate = validate
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
-    return beam.io.ReadFromTFRecord(self._file_pattern, validate=self._validate)
+    return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     return TFExampleRecord(
         file_pattern=self._file_pattern,
-        validate=self._validate,
         schema=projected_schema,
         raw_record_column_name=self.raw_record_column_name,
         telemetry_descriptors=self.telemetry_descriptors)

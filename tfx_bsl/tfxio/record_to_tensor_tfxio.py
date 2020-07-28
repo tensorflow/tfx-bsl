@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import copy
-from typing import List, Iterator, Optional, Text
+from typing import List, Iterator, Optional, Text, Union
 
 import apache_beam as beam
 import pyarrow as pa
@@ -105,15 +105,16 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
   """
 
   def __init__(self,
-               file_pattern: Text,
+               file_pattern: Union[List[Text], Text],
                saved_decoder_path: Text,
                telemetry_descriptors: List[Text],
                raw_record_column_name: Optional[Text] = None):
     """Initializer.
 
     Args:
-      file_pattern: A file glob pattern to read TFRecords from.
-      saved_decoder_path: the path to the saved TfGraphRecordDecoder to be
+      file_pattern: One or a list of glob patterns. If a list, must not be
+        empty.
+      saved_decoder_path: The path to the saved TfGraphRecordDecoder to be
         used for decoding the records. Note that this path must be accessible
         by beam workers.
       telemetry_descriptors: A set of descriptors that identify the component
@@ -130,10 +131,13 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
         telemetry_descriptors,
         physical_format="tfrecords_gzip",
         raw_record_column_name=raw_record_column_name)
+    if not isinstance(file_pattern, list):
+      file_pattern = [file_pattern]
+    assert file_pattern, "Must provide at least one file pattern."
     self._file_pattern = file_pattern
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
-    return beam.io.ReadFromTFRecord(self._file_pattern, validate=False)
+    return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
   def TensorFlowDataset(self):
     # Implementation note: Project() might have been called, which means
