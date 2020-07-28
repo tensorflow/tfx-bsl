@@ -65,10 +65,10 @@ class MisraGriesSketch {
   MisraGriesSketch(int num_buckets);
   // This class is copyable and movable.
   ~MisraGriesSketch() = default;
-  // Add an array of items.
+  // Adds an array of items.
   Status AddValues(const arrow::Array& items);
-  // Add an array of items with their associated weights. Raises an error if the
-  // weights are not a FloatArray.
+  // Adds an array of items with their associated weights. Raises an error if
+  // the weights are not a FloatArray.
   Status AddValues(const arrow::Array& items, const arrow::Array& weights);
   // Merges another MisraGriesSketch into this sketch. Raises an error if the
   // sketches do not have the same number of buckets.
@@ -77,9 +77,9 @@ class MisraGriesSketch {
   std::vector<std::pair<std::string, double>> GetCounts() const;
   // Creates a struct array <values, counts> of the top-k items.
   Status Estimate(std::shared_ptr<arrow::Array>* values_and_counts_array) const;
-  // Serializes proto of sketch.
+  // Serializes the sketch into a string.
   std::string Serialize() const;
-  // Parses encoded MisraGries proto.
+  // Deserializes the string to a MisraGries object.
   static MisraGriesSketch Deserialize(absl::string_view encoded);
   // Gets delta_.
   double GetDelta() const;

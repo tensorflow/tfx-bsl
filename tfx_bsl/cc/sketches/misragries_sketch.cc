@@ -131,7 +131,8 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
         if (array.IsNull(i)) {
           continue;
         }
-        const auto item = array.GetView(i);
+        const auto value = array.GetView(i);
+        const auto item = absl::string_view(value.data(), value.size());
         const float weight = weights_->Value(i);
         InsertItem(item, weight);
       }

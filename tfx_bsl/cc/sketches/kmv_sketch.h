@@ -46,17 +46,16 @@ class KmvSketch {
   // KmvSketch is copyable and movable.
   KmvSketch(int num_buckets);
   ~KmvSketch() = default;
-  // Updates the sketch with an Arrow array of values. Supports numeric arrays
-  // of all integral types, binary arrays, and string arrays.
+  // Updates the sketch with an Arrow array of values.
   Status AddValues(const arrow::Array& array);
-  // Merges the sketch from another object into this sketch. Returns error if
-  // the other sketch has a different number of buckets than this sketch.
+  // Merges another KMV sketch into this sketch. Returns error if the other
+  // sketch has a different number of buckets than this sketch.
   Status Merge(KmvSketch& other);
   // Estimates the number of distinct elements.
   uint64_t Estimate() const;
   // Serializes the sketch into a string.
   std::string Serialize() const;
-  // Converts the encoded sketch into a KmvSketch object.
+  // Deserializes the string to a KmvSketch object.
   static KmvSketch Deserialize(absl::string_view encoded);
 
  private:

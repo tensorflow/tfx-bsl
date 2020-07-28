@@ -387,7 +387,7 @@ TEST(MisraGriesSketchTest, AddWeightedZipfDistribution) {
     for (auto const& item : counts) {
       double true_count = true_counts[std::string(item.first)] * trial;
       double estimated_count = item.second;
-      EXPECT_LE(true_count, estimated_count + 1e8);
+      EXPECT_LE(true_count, estimated_count + 1e-8);
       EXPECT_LE(estimated_count - mg.GetDelta(), true_count);
     }
   }

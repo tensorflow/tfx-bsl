@@ -41,26 +41,6 @@ cc_test(
 )
 
 cc_library(
-    name = "sketches_submodule",
-    srcs = ["sketches_submodule.cc"],
-    hdrs = ["sketches_submodule.h"],
-    copts = [
-        "-fexceptions",
-    ],
-    features = ["-use_header_modules"],
-    visibility = [
-        "//tfx_bsl/cc:__pkg__",
-    ],
-    deps = [
-        ":kmv_sketch",
-        "//tfx_bsl/cc/pybind11:absl_casters",
-        "//tfx_bsl/cc/pybind11:arrow_casters",
-        "@com_google_absl//absl/strings",
-        "@pybind11",
-    ],
-)
-
-cc_library(
     name = "misragries_sketch",
     srcs = ["misragries_sketch.cc"],
     hdrs = ["misragries_sketch.h"],
@@ -86,5 +66,26 @@ cc_test(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "sketches_submodule",
+    srcs = ["sketches_submodule.cc"],
+    hdrs = ["sketches_submodule.h"],
+    copts = [
+        "-fexceptions",
+    ],
+    features = ["-use_header_modules"],
+    visibility = [
+        "//tfx_bsl/cc:__pkg__",
+    ],
+    deps = [
+        ":kmv_sketch",
+        ":misragries_sketch",
+        "//tfx_bsl/cc/pybind11:absl_casters",
+        "//tfx_bsl/cc/pybind11:arrow_casters",
+        "@com_google_absl//absl/strings",
+        "@pybind11",
     ],
 )
