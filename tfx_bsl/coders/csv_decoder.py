@@ -21,14 +21,15 @@ from __future__ import print_function
 
 import collections
 import csv
-import apache_beam as beam
 import enum
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Tuple, Union
+
+import apache_beam as beam
 import numpy as np
 import pyarrow as pa
 import six
 import tensorflow as tf
 from tfx_bsl.coders import batch_util
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Tuple, Union
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 from tensorflow_metadata.proto.v0 import statistics_pb2
@@ -42,6 +43,11 @@ ColumnName = Union[Text, bytes]
 
 
 class ColumnType(enum.IntEnum):
+  """Enum for the type of a CSV column."""
+  # column will not be in the result RecordBatch
+  IGNORE = -2
+  # column will be in the result RecordBatch but will be of Null type (which
+  # means this column contains only empty value).
   UNKNOWN = -1
   INT = statistics_pb2.FeatureNameStatistics.INT
   FLOAT = statistics_pb2.FeatureNameStatistics.FLOAT
@@ -57,7 +63,7 @@ ColumnInfo = collections.namedtuple(
     "ColumnInfo",
     [
         "name",  # type: ColumnName  # pytype: disable=ignored-type-comment
-        "type",  # type: Optional[ColumnType]  # pytype: disable=ignored-type-comment
+        "type",  # type: ColumnType  # pytype: disable=ignored-type-comment
     ])
 
 _SCHEMA_TYPE_TO_COLUMN_TYPE = {
@@ -94,7 +100,9 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
     skip_blank_lines: A boolean to indicate whether to skip over blank lines
       rather than interpreting them as missing values.
     schema: An optional schema of the input data. If this is provided, it must
-      contain all columns.
+      contain a subset of columns in `column_names`. If a feature is in
+      `column_names` but not in the schema, it won't be in the result
+      RecordBatch.
     multivalent_columns: Columns that can contain multiple values. If
       secondary_delimiter is provided, this must also be provided.
     secondary_delimiter: Delimiter used for parsing multivalent columns. If
@@ -300,14 +308,21 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
     self._raw_record_column_type = _GetFeatureTypeToArrowTypeMapping(
         self._produce_large_types).get(ColumnType.STRING)
 
+    # Note that len(_column_handlers) == len(column_infos) but
+    # len(_column_names) and len(_column_arrow_types) may not equal to that,
+    # because columns of type IGNORE are not there.
     self._column_handlers = None
     self._column_names = None
     self._column_arrow_types = None
 
   def _get_column_handler(
       self, column_info: ColumnInfo
-  ) -> Callable[[CSVCell], Optional[Iterable[Union[int, float, bytes, Text]]]]:
-    value_converter = _VALUE_CONVERTER_MAP[column_info.type]
+  ) -> Optional[Callable[[CSVCell], Optional[Iterable[Union[int, float, bytes,
+                                                            Text]]]]]:
+    if column_info.type == ColumnType.IGNORE:
+      return None
+    value_converter = _VALUE_CONVERTER_MAP.get(column_info.type)
+    assert value_converter is not None
     if column_info.name in self._multivalent_columns:
       # If the column is multivalent and unknown, we treat it as a univalent
       # column. This will result in a null array instead of a list<null>", as
@@ -324,19 +339,22 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
   def _process_column_infos(self, column_infos: List[ColumnInfo]):
     arrow_type_map = _GetFeatureTypeToArrowTypeMapping(
         self._produce_large_types)
-    self._column_arrow_types = [
-        arrow_type_map.get(c.type) for c in column_infos
-    ]
     self._column_handlers = [self._get_column_handler(c) for c in column_infos]
-    self._column_names = [c.name for c in column_infos]
+    self._column_arrow_types = [
+        arrow_type_map.get(c.type)
+        for c in column_infos
+        if c.type != ColumnType.IGNORE
+    ]
+    self._column_names = [
+        c.name for c in column_infos if c.type != ColumnType.IGNORE]
 
   def process(self, batch_of_tuple: List[Tuple[List[CSVCell], CSVLine]],
               column_infos: List[ColumnInfo]) -> Iterable[pa.RecordBatch]:
-    if self._column_names is None:
+    if self._column_handlers is None:
       self._process_column_infos(column_infos)
 
     raw_records = []
-    values_list_by_column = [[] for _ in self._column_handlers]
+    values_list_by_column = [[] for _ in self._column_names]
     for (csv_row, raw_record) in batch_of_tuple:
       if not csv_row:
         if not self._skip_blank_lines:
@@ -345,9 +363,13 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
         continue
       if len(csv_row) != len(self._column_handlers):
         raise ValueError("Encountered a row of unexpected number of columns")
-      for value, handler, values_list in (zip(csv_row, self._column_handlers,
-                                              values_list_by_column)):
-        values_list.append(handler(value) if value else None)
+      column_idx = 0
+      for csv_cell, handler in zip(csv_row, self._column_handlers):
+        if handler is None:
+          continue
+        values_list_by_column[column_idx].append(
+            handler(csv_cell) if csv_cell else None)
+        column_idx += 1
       if self._raw_record_column_name is not None:
         raw_records.append([raw_record])
 
@@ -390,19 +412,22 @@ def GetArrowSchema(column_names: List[Text],
 
   Raises:
     ValueError:
-     * If the column names do not match the schema proto.
+     * If the schema contains a feature that does not exist in `column_names`.
      * If the feature type does not map to an arrow type.
      * If raw_record_column_name exists in column_names
   """
-  if len(column_names) != len(schema.feature):
+  schema_feature_names = [f.name for f in schema.feature]
+  if not set(schema_feature_names).issubset(set(column_names)):
     raise ValueError(
-        "Column Names: {} does not match schema features: {}".format(
-            column_names, schema.feature))
+        "Schema features are not a subset of column names: {} vs {}".format(
+            schema_feature_names, column_names))
 
   fields = []
   column_name_to_schema_feature_map = {f.name: f for f in schema.feature}
   for col in column_names:
-    feature = column_name_to_schema_feature_map[col]
+    feature = column_name_to_schema_feature_map.get(col)
+    if feature is None:
+      continue
     arrow_type = _GetFeatureTypeToArrowTypeMapping(large_types).get(
         _SCHEMA_TYPE_TO_COLUMN_TYPE.get(feature.type), None)
     if arrow_type is None:
@@ -505,9 +530,7 @@ def _GetColumnInfosFromSchema(
 
   column_infos = []
   for col_name in column_names:
-    feature_type = feature_type_map.get(col_name, None)
-    if feature_type is None:
-      raise ValueError("Schema does not contain column: {}".format(col_name))
+    feature_type = feature_type_map.get(col_name, ColumnType.IGNORE)
     column_infos.append(ColumnInfo(col_name, feature_type))
   return column_infos
 

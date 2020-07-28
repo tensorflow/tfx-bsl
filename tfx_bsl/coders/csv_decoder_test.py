@@ -407,26 +407,14 @@ _TEST_CASES = [
             """feature {
                 name: "int_feature"
                 type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "float_feature"
                 type: FLOAT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "str_feature"
                 type: BYTES
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               """, schema_pb2.Schema()),
         expected_record_batch=pa.RecordBatch.from_arrays([
@@ -447,10 +435,6 @@ _TEST_CASES = [
             """feature {
                 name: "large_list_feature"
                 type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               """, schema_pb2.Schema()),
         expected_record_batch=pa.RecordBatch.from_arrays(
@@ -470,10 +454,6 @@ _TEST_CASES = [
             """feature {
                 name: "large_string_feature"
                 type: BYTES
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               """, schema_pb2.Schema()),
         expected_record_batch=pa.RecordBatch.from_arrays([
@@ -519,26 +499,14 @@ _TEST_CASES = [
             """feature {
                 name: "int_feature"
                 type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "float_feature"
                 type: FLOAT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "str_feature"
                 type: BYTES
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               """, schema_pb2.Schema()),
         expected_record_batch=pa.RecordBatch.from_arrays([
@@ -610,10 +578,10 @@ class CSVDecoderTest(parameterized.TestCase):
         self.assertEqual(expected_record_batch, actual)
 
     def _check_arrow_schema(actual):
-      if actual:
+      for record_batch in actual:
         expected_arrow_schema = csv_decoder.GetArrowSchema(
             column_names, schema, raw_record_column_name, produce_large_types)
-        self.assertEqual(actual[0].schema, expected_arrow_schema)
+        self.assertEqual(record_batch.schema, expected_arrow_schema)
 
     with beam.Pipeline() as p:
       parsed_csv_cells_and_raw_records = (
@@ -669,6 +637,31 @@ class CSVDecoderTest(parameterized.TestCase):
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
 
+  def test_csv_to_recordbatch_schema_features_subset_of_column_names(self):
+    input_lines = ['1,2.0,hello', '5,12.34,world']
+    column_names = ['int_feature', 'float_feature', 'str_feature']
+    schema = text_format.Parse("""feature { name: "int_feature" type: INT }""",
+                               schema_pb2.Schema())
+    self.assertEqual(csv_decoder.GetArrowSchema(column_names, schema),
+                     pa.schema([pa.field('int_feature', pa.list_(pa.int64()))]))
+
+    def _check_record_batches(record_batches):
+      self.assertLen(record_batches, 1)
+      self.assertTrue(record_batches[0].equals(
+          pa.RecordBatch.from_arrays(
+              [pa.array([[1], [5]], pa.list_(pa.int64()))], ['int_feature'])))
+
+    with beam.Pipeline() as p:
+      record_batches = (
+          p | 'CreatingPColl' >> beam.Create(input_lines, reshuffle=False)
+          | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
+              column_names=column_names,
+              delimiter=',',
+              desired_batch_size=1000,
+              schema=schema))
+      beam_test_util.assert_that(
+          record_batches, _check_record_batches, label='check_record_batches')
+
   def test_invalid_row(self):
     input_lines = ['1,2.0,hello', '5,12.34']
     column_names = ['int_feature', 'float_feature', 'str_feature']
@@ -705,31 +698,6 @@ class CSVDecoderTest(parameterized.TestCase):
                 desired_batch_size=1000))
         beam_test_util.assert_that(result, lambda _: None)
 
-  def test_invalid_schema_missing_column(self):
-    input_lines = ['1,2']
-    column_names = ['f1', 'f2']
-    schema = text_format.Parse(
-        """
-              feature {
-                name: "f1"
-                type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
-              }
-              """, schema_pb2.Schema())
-    with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
-        ValueError, '.*Schema does not contain column.*'):
-      with beam.Pipeline() as p:
-        result = (
-            p | beam.Create(input_lines, reshuffle=False)
-            | 'CSVToRecordBatch' >> csv_decoder.CSVToRecordBatch(
-                column_names=column_names,
-                schema=schema,
-                desired_batch_size=1000))
-        beam_test_util.assert_that(result, lambda _: None)
-
   def test_invalid_raw_record_column_name(self):
     input_lines = ['1,2.0,hello', '5,12.34']
     schema = text_format.Parse(
@@ -737,26 +705,14 @@ class CSVDecoderTest(parameterized.TestCase):
               feature {
                 name: "int_feature"
                 type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "float_feature"
                 type: FLOAT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "str_feature"
                 type: BYTES
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               """, schema_pb2.Schema())
     column_names = ['int_feature', 'float_feature', 'str_feature']
@@ -775,29 +731,21 @@ class CSVDecoderTest(parameterized.TestCase):
       csv_decoder.GetArrowSchema(
           column_names, schema, raw_record_column_name='int_feature')
 
-  def test_get_arrow_schema_column_names_invalid(self):
+  def test_get_arrow_schema_schema_feature_not_subset_of_column_names(self):
     schema = text_format.Parse(
         """
               feature {
                 name: "f1"
                 type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               feature {
                 name: "f2"
                 type: INT
-                value_count {
-                  min: 0
-                  max: 2
-                }
               }
               """, schema_pb2.Schema())
     column_names = ['f1']
     with self.assertRaisesRegex(
-        ValueError, 'Column Names.* does not match schema features.*'):
+        ValueError, 'Schema features are not a subset of column names'):
       csv_decoder.GetArrowSchema(column_names, schema)
 
 
