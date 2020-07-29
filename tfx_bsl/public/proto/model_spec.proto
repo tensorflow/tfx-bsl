@@ -79,4 +79,22 @@ message AIPlatformPredictionModelSpec {
   // The name of the model's version.
   // If not specified, version won't be attached to the request.
   string version_name = 3;
+
+  // Optional.
+  // Configures how examples are converted to API requests.
+  // If not specified, example features are directly converted to json dicts
+  // according to feature type.
+  oneof example_config {
+    // Set use_serialization_config if the model accepts a single serialized
+    // example as input. API requests will contain the serialized example as a
+    // base64 encoded string.
+    //
+    // For example:
+    // instances = [
+    //  {'b64': '<base64 encoded serialized example 1>'},
+    //  {'b64': '<base64 encoded serialized example 2>'},
+    //  ...
+    // ]
+    bool use_serialization_config = 4;
+  }
 }
