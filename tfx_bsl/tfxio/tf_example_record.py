@@ -277,7 +277,8 @@ class TFExampleRecord(_TFExampleRecordBase):
         shuffle=options.shuffle,
         shuffle_buffer_size=options.shuffle_buffer_size,
         shuffle_seed=options.shuffle_seed,
-        drop_final_batch=options.drop_final_batch)
+        drop_final_batch=options.drop_final_batch,
+        label_key=options.label_key)
 
 
 @beam.typehints.with_input_types(List[bytes])

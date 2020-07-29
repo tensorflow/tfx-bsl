@@ -232,6 +232,11 @@ class TfExampleRecordTest(tf.test.TestCase):
       self.assertEqual(record_batch.columns[-1].flatten().to_pylist(),
                        _SERIALIZED_EXAMPLES)
 
+  def _AssertSparseTensorEqual(self, lhs, rhs):
+    self.assertAllEqual(lhs.values, rhs.values)
+    self.assertAllEqual(lhs.indices, rhs.indices)
+    self.assertAllEqual(lhs.dense_shape, rhs.dense_shape)
+
   def testImplicitTensorRepresentations(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
     self.assertEqual(
@@ -366,13 +371,24 @@ class TfExampleRecordTest(tf.test.TestCase):
         batch_size=1, shuffle=False, num_epochs=1)
     for i, parsed_examples_dict in enumerate(
         tfxio.TensorFlowDataset(options=options)):
-      for key, parsed_example in parsed_examples_dict.items():
-        self.assertAllEqual(parsed_example.values,
-                            _EXAMPLES_AS_TENSORS[i][key].values)
-        self.assertAllEqual(parsed_example.indices,
-                            _EXAMPLES_AS_TENSORS[i][key].indices)
-        self.assertAllEqual(parsed_example.dense_shape,
-                            _EXAMPLES_AS_TENSORS[i][key].dense_shape)
+      self.assertLen(parsed_examples_dict, 3)
+      for feature_name, tensor in parsed_examples_dict.items():
+        self._AssertSparseTensorEqual(
+            tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
+
+  @test_util.run_all_in_graph_and_eager_modes
+  def testTensorflowDatasetWithLabelKey(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    options = dataset_options.TensorflowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1, label_key="string_feature")
+    for i, (parsed_examples_dict, label_feature) in enumerate(
+        tfxio.TensorFlowDataset(options=options)):
+      self._AssertSparseTensorEqual(
+          label_feature, _EXAMPLES_AS_TENSORS[i]["string_feature"])
+      self.assertLen(parsed_examples_dict, 2)
+      for feature_name, tensor in parsed_examples_dict.items():
+        self._AssertSparseTensorEqual(
+            tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
 
   @test_util.run_all_in_graph_and_eager_modes
   def testProjectedTensorflowDataset(self):
@@ -385,13 +401,8 @@ class TfExampleRecordTest(tf.test.TestCase):
         projected_tfxio.TensorFlowDataset(options=options)):
       self.assertIn(feature_name, parsed_examples_dict)
       self.assertLen(parsed_examples_dict, 1)
-      parsed_example = parsed_examples_dict[feature_name]
-      self.assertAllEqual(parsed_example.values,
-                          _EXAMPLES_AS_TENSORS[i][feature_name].values)
-      self.assertAllEqual(parsed_example.indices,
-                          _EXAMPLES_AS_TENSORS[i][feature_name].indices)
-      self.assertAllEqual(parsed_example.dense_shape,
-                          _EXAMPLES_AS_TENSORS[i][feature_name].dense_shape)
+      self._AssertSparseTensorEqual(parsed_examples_dict[feature_name],
+                                    _EXAMPLES_AS_TENSORS[i][feature_name])
 
 
 class TFExampleBeamRecordTest(absltest.TestCase):

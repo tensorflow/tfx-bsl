@@ -19,13 +19,13 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
-from typing import Optional
+from typing import Optional, Text
 
 
 class TensorflowDatasetOptions(
     collections.namedtuple('TensorflowDatasetOptions', [
         'batch_size', 'drop_final_batch', 'num_epochs', 'shuffle',
-        'shuffle_buffer_size', 'shuffle_seed'
+        'shuffle_buffer_size', 'shuffle_seed', 'label_key'
     ])):
   """Options for TFXIO's TensorFlowDataset.
 
@@ -39,7 +39,8 @@ class TensorflowDatasetOptions(
               num_epochs: Optional[int] = None,
               shuffle: Optional[bool] = None,
               shuffle_buffer_size: Optional[int] = None,
-              shuffle_seed: Optional[int] = None):
+              shuffle_seed: Optional[int] = None,
+              label_key: Optional[Text] = None):
     """Returns a dataset options object.
 
     Args:
@@ -57,7 +58,12 @@ class TensorflowDatasetOptions(
         ensures better shuffling but would increase memory usage and startup
         time.
       shuffle_seed: Randomization seed to use for shuffling.
+      label_key: name of the label tensor. If provided, the returned dataset
+        will yield Tuple[Dict[Text, Tensor], Tensor], where the second term in
+        the tuple is the label tensor and the dict (the first term) will not
+        contain the label feature.
     """
     return super(TensorflowDatasetOptions,
                  cls).__new__(cls, batch_size, drop_final_batch, num_epochs,
-                              shuffle, shuffle_buffer_size, shuffle_seed)
+                              shuffle, shuffle_buffer_size, shuffle_seed,
+                              label_key)
