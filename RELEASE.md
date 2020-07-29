@@ -17,6 +17,7 @@
     check and prevent duplications. DO NOT rely on this behavior.
 *   CsvTFXIO now allows skipping CSV headers (`set skip_header_lines`).
 *   CsvTFXIO now requires `telemetry_descriptors` to construct.
+*   Depends on `pyarrow>=0.17,<0.18`.
 
 ## Breaking changes
 
