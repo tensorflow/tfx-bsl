@@ -14,17 +14,20 @@
 
 """Script to use run_inference from command line
 Below is a complete command line for running this script
-for benchmarks
+for benchmarks on dataflow
 
 python3 run_inference_benchemark.py \
 PATH_TO_MODEL \
 PATH_TO_DATA \
 --output gs://YOUR_BUCKET/results/output \
+--extra_packages PACKAGE1 PACKAGE2 \
 --project YOUR_PROJECT \
 --runner DataflowRunner \
 --temp_location gs://YOUR_BUCKET/temp \
 --job_name run-inference-metrics \
 --region us-central1
+
+*In this case, one of the extra_packages should be the wheel file for tfx-bsl
 """
 
 from __future__ import absolute_import
@@ -57,17 +60,21 @@ def run(argv=None, save_main_session=True):
         type=str,
         required=True,
         help='Path to the output file(s).')
+    parser.add_argument(
+        '--extra_packages',
+        type=str,
+        nargs='*',
+        help='Wheel file(s) for any additional required package(s) to Beam packages')
 
     args, pipeline_args = parser.parse_known_args(argv)
     options = PipelineOptions(pipeline_args)
 
     setup_options = options.view_as(SetupOptions)
-    # Path of the wheel file tfx-bsl
-    setup_options.extra_packages = ['./tfx-bsl/dist/tfx_bsl-0.23.0.dev0-cp37-cp37m-linux_x86_64.whl']
+    setup_options.extra_packages = args.extra_packages
     setup_options.save_main_session = save_main_session
 
     def get_saved_model_spec(model_path):
-        '''returns an InferenceSpecType object for a saved model path'''
+        '''Returns an InferenceSpecType object for a saved model path'''
         return model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path))
