@@ -19,6 +19,7 @@ from __future__ import print_function
 
 import os
 import tempfile
+import unittest
 
 from absl import flags
 import apache_beam as beam
@@ -58,6 +59,36 @@ class RecordBasedTfxioTest(absltest.TestCase):
       beam_test_util.assert_that(
           record_pcoll,
           lambda actual: _CheckRecords(actual, file1_records + file2_records))
+
+  @unittest.skipIf(not tf.executing_eagerly(), "Eager execution not enabled.")
+  def testDetectCompressionType(self):
+    tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
+    def _TouchFile(path):
+      with open(path, "w+") as _:
+        pass
+
+    _TouchFile(os.path.join(tmp_dir, "dataset-a-0.gz"))
+    _TouchFile(os.path.join(tmp_dir, "dataset-a-1.gz"))
+    _TouchFile(os.path.join(tmp_dir, "dataset-b-0"))
+    _TouchFile(os.path.join(tmp_dir, "dataset-b-1"))
+
+    self.assertEqual(
+        record_based_tfxio.DetectCompressionType(
+            [os.path.join(tmp_dir, "dataset-a*")]), b"GZIP")
+
+    self.assertEqual(
+        record_based_tfxio.DetectCompressionType(
+            [os.path.join(tmp_dir, "dataset-b*")]), b"")
+
+    with self.assertRaises(tf.errors.InvalidArgumentError):
+      record_based_tfxio.DetectCompressionType([
+          os.path.join(tmp_dir, "dataset-b*"),
+          os.path.join(tmp_dir, "dataset-a*")
+      ])
+
+    # TODO(zhuo/andylou): also test the case where no file is matched, once
+    # tf.io.matching_files does not blow up ASAN.
+
 
 if __name__ == "__main__":
   absltest.main()

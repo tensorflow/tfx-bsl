@@ -365,9 +365,9 @@ class TfExampleRecordTest(tf.test.TestCase):
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
   @test_util.run_all_in_graph_and_eager_modes
-  def testTensorflowDataset(self):
+  def testTensorFlowDataset(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
-    options = dataset_options.TensorflowDatasetOptions(
+    options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1)
     for i, parsed_examples_dict in enumerate(
         tfxio.TensorFlowDataset(options=options)):
@@ -377,9 +377,9 @@ class TfExampleRecordTest(tf.test.TestCase):
             tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
 
   @test_util.run_all_in_graph_and_eager_modes
-  def testTensorflowDatasetWithLabelKey(self):
+  def testTensorFlowDatasetWithLabelKey(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
-    options = dataset_options.TensorflowDatasetOptions(
+    options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1, label_key="string_feature")
     for i, (parsed_examples_dict, label_feature) in enumerate(
         tfxio.TensorFlowDataset(options=options)):
@@ -391,11 +391,11 @@ class TfExampleRecordTest(tf.test.TestCase):
             tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
 
   @test_util.run_all_in_graph_and_eager_modes
-  def testProjectedTensorflowDataset(self):
+  def testProjectedTensorFlowDataset(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
     feature_name = "string_feature"
     projected_tfxio = tfxio.Project([feature_name])
-    options = dataset_options.TensorflowDatasetOptions(
+    options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1)
     for i, parsed_examples_dict in enumerate(
         projected_tfxio.TensorFlowDataset(options=options)):

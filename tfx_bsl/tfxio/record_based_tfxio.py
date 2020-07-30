@@ -24,10 +24,12 @@ from __future__ import print_function
 import abc
 from typing import Any, List, Optional, Text
 
+from absl import logging
 import apache_beam as beam
 import numpy as np
 import pyarrow as pa
 import six
+import tensorflow as tf
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
 
@@ -235,3 +237,35 @@ def ReadTfRecord(pipeline: beam.Pipeline,
                       f, coder=beam.coders.BytesCoder()))
 
   return pcolls | "FlattenPCollsFromPatterns" >> beam.Flatten()
+
+
+@tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string)])
+def DetectCompressionType(file_patterns: tf.Tensor) -> tf.Tensor:
+  """A TF function that detects compression type given file patterns.
+
+  It simply looks at the names (extensions) of files matching the patterns.
+
+  Args:
+    file_patterns: A 1-D string tensor that contains the file patterns.
+
+  Returns:
+    A scalar string tensor. The contents are either "GZIP" or "".
+
+  Raises:
+    tf.errors.InvalidArgumentError: if files matched do not have the same
+    compression type.
+  """
+  files = tf.io.matching_files(file_patterns)
+  is_gz = tf.strings.regex_full_match(files, r".*\.gz$")
+  all_files_are_gz = tf.math.reduce_all(is_gz)
+  all_files_are_not_gz = tf.math.reduce_all(~is_gz)
+  tf.print(
+      "DetectCompressionType: all_files_are_gz:",
+      all_files_are_gz,
+      "; all_files_are_not_gz:",
+      all_files_are_not_gz,
+      output_stream=logging.info)
+  return tf.case([(all_files_are_gz, lambda: tf.constant("GZIP")),
+                  (all_files_are_not_gz, lambda: tf.constant(""))],
+                 exclusive=False,
+                 default=None)

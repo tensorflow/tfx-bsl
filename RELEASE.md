@@ -9,6 +9,7 @@
   * We will be subject to semantic versioning once tfx_bsl goes beyond 1.0.
 *  TFRecord based TFXIO implementations now support reading from multiple file
    patterns.
+*  Implemented the TensorFlowDataset() interface for TFExampleRecord TFXIO.
 
 ## Bug Fixes and Other Changes
 
