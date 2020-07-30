@@ -51,13 +51,8 @@ def RecordToJSON(record_batch: pa.RecordBatch, prepare_instances_serialized) -> 
     return [{'b64': base64.b64encode(value).decode()} for value in df[_RECORDBATCH_COLUMN]]
   else:
     as_binary = df.columns.str.endswith("_bytes")
-    # Handles the case where there is only one entry
-    if len(df) == 1:
-      df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
-        lambda feature: [{'b64': base64.b64encode(feature).decode()}])
-    else:
-      df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
-          lambda feature: [{'b64': base64.b64encode(value).decode()} for value in feature])
+    df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
+        lambda feature: [{'b64': base64.b64encode(value).decode()} for value in feature])
 
     if _RECORDBATCH_COLUMN in df.columns:
       df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
