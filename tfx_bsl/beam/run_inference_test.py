@@ -1199,6 +1199,40 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
         },
     ], result)
 
+  def test_request_serialized_example(self):
+    example = text_format.Parse(
+      """
+      features {
+        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+        feature { key: "y" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.Example())
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+        ai_platform_prediction_model_spec=model_spec_pb2
+        .AIPlatformPredictionModelSpec(
+            project_id='test_project',
+            model_name='test_model',
+            version_name='test_version',
+            use_serialization_config=True))
+    
+    serialized_example_remote = [example.SerializeToString()]
+    record_batch_remote = pa.RecordBatch.from_arrays(
+      [
+        pa.array([["ASa8asdf"]], type=pa.list_(pa.binary())),
+        pa.array([["JLK7ljk3"]], type=pa.list_(pa.utf8())),
+        pa.array([[1, 2]], type=pa.list_(pa.int32())),
+        pa.array([[4.5, 5, 5.5]], type=pa.list_(pa.float32())),
+        serialized_example_remote
+      ],
+      ['x_bytes', 'x', 'y', 'z', _RECORDBATCH_COLUMN]
+    )
+
+    result = list(bsl_util.RecordToJSON(record_batch_remote, True))
+    self.assertEqual(result, [{
+        'b64': base64.b64encode(example.SerializeToString()).decode()
+    }])
+
 
 if __name__ == '__main__':
   tf.test.main()
