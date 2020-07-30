@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Script to use beam.run_inference from command line
+"""Script to use public.run_inference from command line
 Below is a complete command in terminal for running this script
 on dataflow for benchmarks.
 
-python3 run_inference_benchemark.py \
+python3 run_inference_api_benchemark.py \
 PATH_TO_MODEL \
 PATH_TO_DATA \
 --output gs://YOUR_BUCKET/results/output \
@@ -24,7 +24,7 @@ PATH_TO_DATA \
 --project YOUR_PROJECT \
 --runner DataflowRunner \
 --temp_location gs://YOUR_BUCKET/temp \
---job_name run-inference-metrics \
+--job_name run-inference-api-metrics \
 --region us-central1
 
 *In this case, one of the extra_packages should be the wheel file for tfx-bsl
@@ -36,8 +36,8 @@ from __future__ import print_function
 
 import argparse
 import apache_beam as beam
-from tfx_bsl.tfxio import raw_tf_record
-from tfx_bsl.beam import run_inference
+import tensorflow as tf
+from tfx_bsl.public.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
@@ -80,13 +80,11 @@ def run(argv=None, save_main_session=True):
                 model_path=model_path))
 
     inference_spec_type = get_saved_model_spec(args.model_path)
-    converter = raw_tf_record.RawTfRecordTFXIO(
-        args.input, raw_record_column_name='__RAW_RECORD__')
-
     with beam.Pipeline(options=options) as p:
         (p
-            | "GetRawRecordAndConvertToRecordBatch" >> converter.BeamSource()
-            | 'RunInferenceImpl' >> run_inference.RunInferenceImpl(
+            | 'ReadInputText' >> beam.io.ReadFromTFRecord(args.input)
+            | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
+            | 'RunInferenceImpl' >> run_inference.RunInference(
                 inference_spec_type))
 
 
