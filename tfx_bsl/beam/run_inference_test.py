@@ -18,6 +18,7 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
+import base64
 import json
 import os
 try:
@@ -603,9 +604,17 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         feature { key: "z" value { float_list { value: [4.5, 5, 5.5] }}}
       }
       """, tf.train.Example())
-    result = list(
-        run_inference._RemotePredictDoFn._prepare_instances([example]))
-    self.assertEqual([
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+        ai_platform_prediction_model_spec=model_spec_pb2
+        .AIPlatformPredictionModelSpec(
+            project_id='test_project',
+            model_name='test_model',
+            version_name='test_version'))
+    remote_predict = run_inference._RemotePredictDoFn(
+      None, fixed_inference_spec_type=inference_spec_type)
+    remote_predict._setup_model(remote_predict._fixed_inference_spec_type)
+    result = list(remote_predict._prepare_instances([example]))
+    self.assertEqual(result, [
         {
             'x_bytes': {
                 'b64': 'QVNhOGFzZGY='
@@ -614,7 +623,31 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             'y': [1, 2],
             'z': [4.5, 5, 5.5]
         },
-    ], result)
+    ])
+
+  def test_request_serialized_example(self):
+    example = text_format.Parse(
+        """
+      features {
+        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+        feature { key: "y" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.Example())
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+        ai_platform_prediction_model_spec=model_spec_pb2
+        .AIPlatformPredictionModelSpec(
+            project_id='test_project',
+            model_name='test_model',
+            version_name='test_version',
+            use_serialization_config=True))
+    remote_predict = run_inference._RemotePredictDoFn(
+      None, fixed_inference_spec_type=inference_spec_type)
+    remote_predict._setup_model(remote_predict._fixed_inference_spec_type)
+    result = list(remote_predict._prepare_instances([example]))
+    self.assertEqual(result, [{
+        'b64': base64.b64encode(example.SerializeToString()).decode()
+    }])
 
 
 class RunInferenceCoreTest(RunInferenceFixture):

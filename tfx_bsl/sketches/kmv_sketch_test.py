@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Tests for tfx_bsl.sketches.kmv_sketch."""
+"""Tests for tfx_bsl.sketches.KmvSketch."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -19,7 +19,7 @@ from __future__ import print_function
 
 import pyarrow as pa
 import six.moves.cPickle as pickle  # Pybind only supports cPickle for Python2.7
-from tfx_bsl.sketches import kmv_sketch
+from tfx_bsl.sketches import KmvSketch
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -28,7 +28,7 @@ _NUM_BUCKETS = 128
 
 
 def _create_basic_sketch(values, num_buckets=_NUM_BUCKETS):
-  sketch = kmv_sketch.KmvSketch(num_buckets)
+  sketch = KmvSketch(num_buckets)
   sketch.AddValues(values)
   return sketch
 
@@ -57,7 +57,7 @@ class KmvSketchTest(parameterized.TestCase):
 
   def test_add_unsupported_type(self):
     values = pa.array([True, False], pa.bool_())
-    sketch = kmv_sketch.KmvSketch(_NUM_BUCKETS)
+    sketch = KmvSketch(_NUM_BUCKETS)
     with self.assertRaisesRegex(RuntimeError, "Unimplemented: bool"):
       sketch.AddValues(values)
 
@@ -82,7 +82,7 @@ class KmvSketchTest(parameterized.TestCase):
     pickled = pickle.dumps(sketch, 2)
     self.assertIsInstance(pickled, bytes)
     unpickled = pickle.loads(pickled)
-    self.assertIsInstance(unpickled, kmv_sketch.KmvSketch)
+    self.assertIsInstance(unpickled, KmvSketch)
 
     num_unique = unpickled.Estimate()
     self.assertEqual(3, num_unique)
@@ -93,8 +93,8 @@ class KmvSketchTest(parameterized.TestCase):
     serialized = sketch.Serialize()
     self.assertIsInstance(serialized, bytes)
 
-    deserialized = kmv_sketch.KmvSketch.Deserialize(serialized)
-    self.assertIsInstance(deserialized, kmv_sketch.KmvSketch)
+    deserialized = KmvSketch.Deserialize(serialized)
+    self.assertIsInstance(deserialized, KmvSketch)
 
     num_unique = deserialized.Estimate()
     self.assertEqual(3, num_unique)

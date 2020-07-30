@@ -545,6 +545,8 @@ class _RemotePredictDoFn(_BaseDoFn):
   def _setup_model(
       self, inference_spec_type: model_spec_pb2.InferenceSpecType
   ):
+    self._ai_platform_prediction_model_spec = (
+        inference_spec_type.ai_platform_prediction_model_spec)
     self._api_client = None
 
     project_id = (
@@ -589,10 +591,10 @@ class _RemotePredictDoFn(_BaseDoFn):
     return self._api_client.projects().predict(
         name=self._full_model_name, body=body)
 
-  @classmethod
-  def _prepare_instances(
-      cls, elements: List[ExampleType]
+  def _prepare_instances_dict(
+      self, elements: List[ExampleType]
   ) -> Generator[Mapping[Text, Any], None, None]:
+    """Prepare instances by converting features to dictionary."""
     for example in elements:
       # TODO(b/151468119): support tf.train.SequenceExample
       if not isinstance(example, tf.train.Example):
@@ -604,12 +606,27 @@ class _RemotePredictDoFn(_BaseDoFn):
         if attr_name is None:
           continue
         attr = getattr(feature, attr_name)
-        values = cls._parse_feature_content(attr.value, attr_name,
-                                            cls._sending_as_binary(input_name))
+        values = self._parse_feature_content(
+            attr.value, attr_name, self._sending_as_binary(input_name))
         # Flatten a sequence if its length is 1
         values = (values[0] if len(values) == 1 else values)
         instance[input_name] = values
       yield instance
+
+  def _prepare_instances_serialized(
+      self, elements: List[ExampleType]
+  ) -> Generator[Mapping[Text, Text], None, None]:
+    """Prepare instances by base64 encoding serialized examples."""
+    for example in elements:
+      yield {'b64': base64.b64encode(example.SerializeToString()).decode()}
+
+  def _prepare_instances(
+      self, elements: List[ExampleType]
+  ) -> Generator[Mapping[Text, Any], None, None]:
+    if self._ai_platform_prediction_model_spec.use_serialization_config:
+      return self._prepare_instances_serialized(elements)
+    else:
+      return self._prepare_instances_dict(elements)
 
   @staticmethod
   def _sending_as_binary(input_name: Text) -> bool:
