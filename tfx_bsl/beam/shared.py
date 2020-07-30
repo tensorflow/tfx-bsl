@@ -66,8 +66,9 @@ class _SharedControlBlock(object):
   def __init__(self):
     self._lock = threading.Lock()
     self._ref = None
+    self._tag = None
 
-  def acquire(self, constructor_fn: Callable[[], Any]) -> Any:
+  def acquire(self, constructor_fn: Callable[[], Any], tag: Any = None) -> Any:
     """Acquire a reference to the object this shared control block manages.
 
     Args:
@@ -75,6 +76,9 @@ class _SharedControlBlock(object):
         present in the cache. This function should take no arguments. It should
         return an initialised object, or None if the object could not be
         initialised / constructed.
+      tag: an optional indentifier to store with the cached object. If
+        subsequent calls to acquire use different tags, the object will be
+        reloaded rather than returned from cache.
 
     Returns:
       An initialised object, either from a previous initialisation, or
@@ -83,11 +87,13 @@ class _SharedControlBlock(object):
     with self._lock:
       # self._ref is None if this is a new control block.
       # self._ref() is None if the weak reference was GCed.
-      if self._ref is None or self._ref() is None:
+      # self._tag != tag if user specifies a new identifier
+      if self._ref is None or self._ref() is None or self._tag != tag:
         result = constructor_fn()
         if result is None:
           return None
         self._ref = weakref.ref(result)
+        self._tag = tag
       else:
         result = self._ref()
     return result
@@ -161,7 +167,9 @@ class _SharedMap(object):
   def make_key(self) -> Text:
     return str(uuid.uuid1())
 
-  def acquire(self, key: Text, constructor_fn: Callable[[], Any]) -> Any:
+  def acquire(
+    self, key: Text, constructor_fn: Callable[[], Any], tag: Any = None
+  ) -> Any:
     """Acquire a reference to a Shared object.
 
     Args:
@@ -170,6 +178,9 @@ class _SharedMap(object):
         present in the cache. This function should take no arguments. It should
         return an initialised object, or None if the object could not be
         initialised / constructed.
+      tag: an optional indentifier to store with the cached object. If
+        subsequent calls to acquire use different tags, the object will be
+        reloaded rather than returned from cache.
 
     Returns:
       A reference to the initialised object, either from the cache, or
@@ -181,7 +192,7 @@ class _SharedMap(object):
         control_block = _SharedControlBlock()
         self._cache_map[key] = control_block
 
-    result = control_block.acquire(constructor_fn)
+    result = control_block.acquire(constructor_fn, tag)
 
     # Because we release the lock in between, if we acquire multiple Shareds
     # in a short time, there's no guarantee as to which one will be kept alive.
@@ -208,7 +219,7 @@ class Shared(object):
   def __init__(self):
     self._key = _shared_map.make_key()
 
-  def acquire(self, constructor_fn: Callable[[], Any]) -> Any:
+  def acquire(self, constructor_fn: Callable[[], Any], tag: Any = None) -> Any:
     """Acquire a reference to the object associated with this Shared handle.
 
     Args:
@@ -216,9 +227,12 @@ class Shared(object):
         present in the cache. This function should take no arguments. It should
         return an initialised object, or None if the object could not be
         initialised / constructed.
+      tag: an optional indentifier to store with the cached object. If
+        subsequent calls to acquire use different tags, the object will be
+        reloaded rather than returned from cache.
 
     Returns:
       A reference to an initialised object, either from the cache, or
       newly-constructed.
     """
-    return _shared_map.acquire(self._key, constructor_fn)
+    return _shared_map.acquire(self._key, constructor_fn, tag)
