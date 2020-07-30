@@ -30,7 +30,7 @@ from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
 from tfx_bsl.beam.bsl_constants import KERAS_INPUT_SUFFIX
    
 
-def RecordToJSON(record_batch: pa.RecordBatch) -> List[Text]:
+def RecordToJSON(record_batch: pa.RecordBatch, prepare_instances_serialized) -> List[Text]:
   """Returns a JSON string translated from `record_batch`.
 
     The conversion will take in a recordbatch that contains features from a 
@@ -47,14 +47,22 @@ def RecordToJSON(record_batch: pa.RecordBatch) -> List[Text]:
     return element
 
   df = record_batch.to_pandas()
-  as_binary = df.columns.str.endswith("_bytes")
-  df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
-    lambda values: [{'b64': base64.b64encode(x).decode()} for x in values])
-  if _RECORDBATCH_COLUMN in df.columns:
-    df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
+  if prepare_instances_serialized: 
+    return [{'b64': base64.b64encode(value).decode()} for value in df[_RECORDBATCH_COLUMN]]
+  else:
+    as_binary = df.columns.str.endswith("_bytes")
+    # Handles the case where there is only one entry
+    if len(df) == 1:
+      df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
+        lambda feature: [{'b64': base64.b64encode(feature).decode()}])
+    else:
+      df.loc[:, as_binary] = df.loc[:, as_binary].applymap(
+          lambda feature: [{'b64': base64.b64encode(value).decode()} for value in feature])
 
-  df = df.applymap(lambda x: flatten(x))
-  return json.loads(df.to_json(orient='records'))
+    if _RECORDBATCH_COLUMN in df.columns:
+      df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
+    df = df.applymap(lambda x: flatten(x))
+    return json.loads(df.to_json(orient='records'))
 
 
 def find_input_name_in_features(features: Set[Text],

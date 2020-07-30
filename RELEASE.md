@@ -3,6 +3,8 @@
 # Current Version(Still in Development)
 
 ## Major Features and Improvements
+*  TFRecord based TFXIO implementations now support reading from multiple file
+   patterns.
 
 ## Bug Fixes and Other Changes
 
@@ -19,6 +21,8 @@
 ## Breaking changes
 
 ## Deprecations
+
+*   Dropped Python 2.x support.
 
 # Version 0.22.1
 

@@ -389,6 +389,7 @@ class _BaseDoFn(beam.DoFn):
     tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None):
     super(_BaseDoFn, self).__init__()
     self._clock = None
+    self.inference_spec_type = inference_spec_type
     self._metrics_collector = self._MetricsCollector(inference_spec_type)
     self._tensor_adapter_config = tensor_adapter_config
     self._io_tensor_spec = None   # This value may be None if the model is remote
@@ -416,7 +417,9 @@ class _BaseDoFn(beam.DoFn):
 
     model_input = None
     if self._io_tensor_spec is None:    # Case when we are running remote inference
-      model_input = bsl_util.RecordToJSON(elements)
+      prepare_instances_serialized = (
+        self.inference_spec_type.ai_platform_prediction_model_spec.use_serialization_config)
+      model_input = bsl_util.RecordToJSON(elements, prepare_instances_serialized)
     elif (len(self._io_tensor_spec.input_tensor_names) == 1):
       model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
     else:

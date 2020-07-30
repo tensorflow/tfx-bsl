@@ -19,15 +19,17 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
-from typing import List, Optional, Text
+from typing import List, Optional, Text, Union
 
 from absl import logging
 import apache_beam as beam
 import pyarrow as pa
 import six
+import tensorflow as tf
 from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import example_coder
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
@@ -192,7 +194,7 @@ class TFExampleRecord(_TFExampleRecordBase):
   """TFXIO implementation for tf.Example on TFRecord."""
 
   def __init__(self,
-               file_pattern: Text,
+               file_pattern: Union[List[Text], Text],
                validate: bool = True,
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None,
@@ -201,8 +203,7 @@ class TFExampleRecord(_TFExampleRecordBase):
 
     Args:
       file_pattern: A file glob pattern to read TFRecords from.
-      validate: Boolean flag to verify that the files exist during the pipeline
-        creation time.
+      validate: Not used. do not set. (not used since post 0.22.1).
       schema: A TFMD Schema describing the dataset.
       raw_record_column_name: If not None, the generated Arrow RecordBatches
         will contain a column of the given name that contains serialized
@@ -217,23 +218,67 @@ class TFExampleRecord(_TFExampleRecordBase):
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         physical_format="tfrecords_gzip")
+    del validate
+    if not isinstance(file_pattern, list):
+      file_pattern = [file_pattern]
+    assert file_pattern, "Must provide at least one file pattern."
     self._file_pattern = file_pattern
-    self._validate = validate
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
-    return beam.io.ReadFromTFRecord(self._file_pattern, validate=self._validate)
+    return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     return TFExampleRecord(
         file_pattern=self._file_pattern,
-        validate=self._validate,
         schema=projected_schema,
         raw_record_column_name=self.raw_record_column_name,
         telemetry_descriptors=self.telemetry_descriptors)
 
-  def TensorFlowDataset(self):
-    raise NotImplementedError
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorflowDatasetOptions) -> tf.data.Dataset:
+    """Creates a TFRecordDataset that yields Tensors.
+
+    The serialized tf.Examples are parsed by `tf.io.parse_example` to create
+    Tensors.
+
+    See base class (tfxio.TFXIO) for more details.
+
+    Args:
+      options: an options object for the tf.data.Dataset. See
+        `dataset_options.TensorflowDatasetOptions` for more details.
+
+    Returns:
+      A dataset of `dict` elements, (or a tuple of `dict` elements and label).
+      Each `dict` maps feature keys to `Tensor`, `SparseTensor`, or
+      `RaggedTensor` objects.
+
+    Raises:
+      ValueError: if there is something wrong with the tensor_representation.
+    """
+    feature_name_to_type = {f.name: f.type for f in self._schema.feature}
+
+    # Creates parsing config for each feature.
+    features = {}
+    tensor_representations = self.TensorRepresentations()
+    for feature_name, tensor_representation in tensor_representations.items():
+      feature_type = feature_name_to_type[feature_name]
+      features[
+          feature_name] = tensor_representation_util.CreateTfExampleParserConfig(
+              tensor_representation, feature_type)
+
+    return tf.data.experimental.make_batched_features_dataset(
+        self._file_pattern,
+        features=features,
+        batch_size=options.batch_size,
+        reader_args=["GZIP"],
+        num_epochs=options.num_epochs,
+        shuffle=options.shuffle,
+        shuffle_buffer_size=options.shuffle_buffer_size,
+        shuffle_seed=options.shuffle_seed,
+        drop_final_batch=options.drop_final_batch,
+        label_key=options.label_key)
 
 
 @beam.typehints.with_input_types(List[bytes])

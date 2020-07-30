@@ -91,7 +91,10 @@ class RawTfRecordTest(absltest.TestCase):
 
   def testProject(self):
     column_name = "raw_record"
-    tfxio = raw_tf_record.RawTfRecordTFXIO(self._raw_record_file, column_name)
+    tfxio = raw_tf_record.RawTfRecordTFXIO(
+        self._raw_record_file,
+        column_name,
+        telemetry_descriptors=["some", "component"])
     projected = tfxio.Project([column_name])
     self.assertTrue(tfxio.ArrowSchema().equals(projected.ArrowSchema()))
     self.assertEqual(tfxio.TensorRepresentations(),

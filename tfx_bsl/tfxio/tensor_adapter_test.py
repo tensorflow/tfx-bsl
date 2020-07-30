@@ -732,7 +732,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     adapter = tensor_adapter.TensorAdapter(
         tensor_adapter.TensorAdapterConfig(record_batch.schema,
                                            {"output": tensor_representation}))
-    with self.assertRaisesRegexp(RuntimeError, "eager mode was not enabled"):
+    with self.assertRaisesRegex(RuntimeError, "eager mode was not enabled"):
       adapter.ToBatchTensors(record_batch, produce_eager_tensors=True)
 
   @parameterized.named_parameters(*_ONE_TENSOR_TEST_CASES)
@@ -1101,14 +1101,14 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
   def testRaiseOnUnsupportedTensorRepresentation(self):
-    with self.assertRaisesRegexp(ValueError, "Unable to handle tensor"):
+    with self.assertRaisesRegex(ValueError, "Unable to handle tensor"):
       tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               pa.schema([pa.field("a", pa.list_(pa.int64()))]),
               {"tensor": schema_pb2.TensorRepresentation()}))
 
   def testRaiseOnNoMatchingHandler(self):
-    with self.assertRaisesRegexp(ValueError, "Unable to handle tensor"):
+    with self.assertRaisesRegex(ValueError, "Unable to handle tensor"):
       tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               # nested lists are not supported now.
@@ -1136,7 +1136,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     tensor_representation.dense_tensor.default_value.CopyFrom(
         text_format.Parse(default_value_pbtxt,
                           schema_pb2.TensorRepresentation.DefaultValue()))
-    with self.assertRaisesRegexp(ValueError, exception_regexp):
+    with self.assertRaisesRegex(ValueError, exception_regexp):
       tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               pa.schema([pa.field("column", pa.list_(value_type))]),
@@ -1148,7 +1148,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                                                    arrow_schema):
     tensor_representation = text_format.Parse(tensor_representation_textpb,
                                               schema_pb2.TensorRepresentation())
-    with self.assertRaisesRegexp(ValueError, "Unable to handle tensor"):
+    with self.assertRaisesRegex(ValueError, "Unable to handle tensor"):
       tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               pa.schema([pa.field(k, v) for k, v in arrow_schema.items()]),
@@ -1186,8 +1186,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     self.assertLen(adapter.TypeSpecs(), 1)
     self.assertLen(adapter.OriginalTypeSpecs(), 2)
 
-    with self.assertRaisesRegexp(ValueError,
-                                 "original_type_specs must be a superset"):
+    with self.assertRaisesRegex(ValueError,
+                                "original_type_specs must be a superset"):
       adapter = tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               arrow_schema,

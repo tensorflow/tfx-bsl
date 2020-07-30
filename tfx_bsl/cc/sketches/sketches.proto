@@ -18,7 +18,22 @@ package tfx_bsl.sketches;
 
 // Specifies how the KMV sketch is formatted for serialization.
 message Kmv {
-  optional int32 num_buckets = 1; // Max number of values in the sketch.
-  repeated fixed64 hashes = 2 [packed=true]; // Values of the hashes.
-  optional fixed64 max_limit = 3; // Largest hash value in the sketch.
+  // Max number of values in the sketch.
+  optional int32 num_buckets = 1;
+  // Values of the hashes.
+  repeated fixed64 hashes = 2 [packed=true];
+  // Largest hash value in the sketch.
+  optional fixed64 max_limit = 3;
+}
+
+// Specifies how the MisraGries sketch is formatted for serialization.
+message MisraGries {
+  // Max number of values in the sketch.
+  optional int32 num_buckets = 1;
+  // Names of items.
+  repeated string items = 2;
+  // Weights or counts of items.
+  repeated double weights = 3 [packed=true];
+  // The quantity decremented from the stored weights.
+  optional double delta = 4;
 }

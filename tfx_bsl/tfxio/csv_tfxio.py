@@ -62,9 +62,9 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
     self._raw_record_column_name = raw_record_column_name
     if schema is not None:
       feature_names = [f.name for f in schema.feature]
-      if set(feature_names) != set(column_names):
+      if not set(feature_names).issubset(set(column_names)):
         raise ValueError(
-            "Column names: {} does not match schema features: {}".format(
+            "Schema features are not a subset of column names: {} vs {}".format(
                 column_names, feature_names))
 
   def SupportAttachingRawRecords(self) -> bool:

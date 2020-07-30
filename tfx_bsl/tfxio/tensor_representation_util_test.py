@@ -19,13 +19,17 @@ from __future__ import print_function
 
 import sys
 
+import numpy as np
 import six
+import tensorflow as tf
+
 from tfx_bsl.arrow import path
 from tfx_bsl.tfxio import tensor_representation_util
 
 from google.protobuf import text_format
 from absl.testing import absltest
 from absl.testing import parameterized
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
@@ -33,6 +37,12 @@ _IS_LEGACY_SCHEMA = (
     'generate_legacy_feature_spec' in
     schema_pb2.Schema.DESCRIPTOR.fields_by_name)
 
+
+_ALL_EXAMPLE_CODER_TYPES = {
+    schema_pb2.FeatureType.INT: tf.int64,
+    schema_pb2.FeatureType.FLOAT: tf.float32,
+    schema_pb2.FeatureType.BYTES: tf.string
+}
 
 _INFER_TEST_CASES = [
     # Test different shapes
@@ -536,7 +546,181 @@ _GET_SOURCE_COLUMNS_TEST_CASES = [
 ]
 
 
-class TensorRepresentationUtilTest(parameterized.TestCase):
+def _MakeFixedLenFeatureTestCases():
+  result = []
+  base_tensor_rep_textpb = """
+                dense_tensor {{
+                  column_name: "dense_column"
+                  shape {{
+                    dim {{
+                      size: 2
+                    }}
+                  }}
+                  default_value {{
+                    {0}
+                  }}
+                }}"""
+  for t, dtype in _ALL_EXAMPLE_CODER_TYPES.items():
+    if t == schema_pb2.FeatureType.FLOAT:
+      default_value_textpb = 'float_value: 1.0'
+      default_values = [1.0, 1.0]
+      expected_parsed_results = np.array([1.0, 1.0])
+    elif t == schema_pb2.FeatureType.INT:
+      default_value_textpb = 'int_value: 1'
+      default_values = [1, 1]
+      expected_parsed_results = np.array([1, 1])
+    elif t == schema_pb2.FeatureType.BYTES:
+      default_value_textpb = 'bytes_value: "default"'
+      default_values = [b'default', b'default']
+      expected_parsed_results = np.array([b'default', b'default'])
+
+    tensor_rep_textpb = base_tensor_rep_textpb.format(default_value_textpb)
+    expected_feature = tf.io.FixedLenFeature(
+        shape=[2], dtype=dtype, default_value=default_values)
+    result.append({
+        'testcase_name':
+            'FixedLenFeature_{}'.format(schema_pb2.FeatureType.Name(t)),
+        'tensor_representation':
+            tensor_rep_textpb,
+        'feature_type':
+            t,
+        'tf_example':
+            text_format.Parse('', tf.train.Example()).SerializeToString(),
+        'expected_feature':
+            expected_feature,
+        'expected_parsed_results':
+            expected_parsed_results
+    })
+  return result
+
+
+def _MakeFixedLenFeatureNoDefaultTestCases():
+  result = []
+  tensor_representation_textpb = """
+                dense_tensor {
+                  column_name: "dense_column"
+                  shape {
+                    dim {
+                      size: 4
+                    }
+                  }
+                }"""
+  example_textpb = """
+  features {{
+    feature {{
+      key: "feat"
+      value {{ {0} }}
+    }}
+  }}
+  """
+  for t, dtype in _ALL_EXAMPLE_CODER_TYPES.items():
+    if t == schema_pb2.FeatureType.FLOAT:
+      value_textpb = """float_list { value: [1.0, 2.0, 3.0, 4.0] }"""
+      expected_parsed_results = np.array([1.0, 2.0, 3.0, 4.0])
+    elif t == schema_pb2.FeatureType.INT:
+      value_textpb = """int64_list { value: [1, 2, 3, 4] }"""
+      expected_parsed_results = np.array([1, 2, 3, 4])
+    elif t == schema_pb2.FeatureType.BYTES:
+      value_textpb = """bytes_list { value: ['one', 'two', 'three', 'four'] }"""
+      expected_parsed_results = np.array([b'one', b'two', b'three', b'four'])
+    expected_feature = tf.io.FixedLenFeature(
+        shape=[4], dtype=dtype, default_value=None)
+    result.append({
+        'testcase_name':
+            'FixedLenFeatureNoDefault_{}'.format(
+                schema_pb2.FeatureType.Name(t)),
+        'tensor_representation':
+            tensor_representation_textpb,
+        'feature_type':
+            t,
+        'tf_example':
+            text_format.Parse(
+                example_textpb.format(value_textpb),
+                tf.train.Example()).SerializeToString(),
+        'expected_feature':
+            expected_feature,
+        'expected_parsed_results':
+            expected_parsed_results
+    })
+  return result
+
+
+def _MakeVarLenSparseFeatureTestCases():
+  result = []
+  tensor_representation_textpb = """
+                 varlen_sparse_tensor {
+                   column_name: "varlen_sparse_tensor"
+                 }"""
+  if tf.executing_eagerly():
+    sparse_tensor_factory = tf.SparseTensor
+  else:
+    sparse_tensor_factory = tf.compat.v1.SparseTensorValue
+  expected_parsed_results = sparse_tensor_factory(
+      indices=np.zeros((0, 1)), values=np.array([]), dense_shape=[0])
+  for t, dtype in _ALL_EXAMPLE_CODER_TYPES.items():
+    expected_feature = tf.io.VarLenFeature(dtype=dtype)
+    result.append({
+        'testcase_name':
+            'VarLenSparseFeature_{}'.format(schema_pb2.FeatureType.Name(t)),
+        'tensor_representation':
+            tensor_representation_textpb,
+        'feature_type':
+            t,
+        'tf_example':
+            text_format.Parse('', tf.train.Example()).SerializeToString(),
+        'expected_feature':
+            expected_feature,
+        'expected_parsed_results':
+            expected_parsed_results
+    })
+  return result
+
+
+def _MakeSparseFeatureTestCases():
+  result = []
+  tensor_representation_textpb = """
+                 sparse_tensor {
+                   index_column_names: ["key"]
+                   value_column_name: "value"
+                   dense_shape {
+                     dim {
+                       size: 1
+                     }
+                   }
+                 }"""
+  if tf.executing_eagerly():
+    sparse_tensor_factory = tf.SparseTensor
+  else:
+    sparse_tensor_factory = tf.compat.v1.SparseTensorValue
+  expected_parsed_results = sparse_tensor_factory(
+      indices=np.zeros((0, 1)), values=np.array([]), dense_shape=[1])
+  for t, dtype in _ALL_EXAMPLE_CODER_TYPES.items():
+    expected_feature = tf.io.SparseFeature(
+        index_key=['key'], value_key='value', dtype=dtype, size=[1])
+    result.append({
+        'testcase_name':
+            'SparseFeature_{}'.format(schema_pb2.FeatureType.Name(t)),
+        'tensor_representation':
+            tensor_representation_textpb,
+        'feature_type':
+            t,
+        'tf_example':
+            text_format.Parse('', tf.train.Example()).SerializeToString(),
+        'expected_feature':
+            expected_feature,
+        'expected_parsed_results':
+            expected_parsed_results
+    })
+  return result
+
+
+_PARSE_EXAMPLE_TEST_CASES = _MakeFixedLenFeatureTestCases(
+) + _MakeFixedLenFeatureNoDefaultTestCases(
+) + _MakeVarLenSparseFeatureTestCases() + _MakeSparseFeatureTestCases()
+
+
+@test_util.run_all_in_graph_and_eager_modes
+class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
 
   @parameterized.named_parameters(
       *(_INFER_TEST_CASES + _LEGACY_INFER_TEST_CASES))
@@ -597,6 +781,65 @@ class TensorRepresentationUtilTest(parameterized.TestCase):
         [path.ColumnPath(e) for e in expected],
         tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
             text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())))
+
+  @parameterized.named_parameters(*_PARSE_EXAMPLE_TEST_CASES)
+  def testCreateTfExampleParserConfig(self, tensor_representation, feature_type,
+                                      tf_example, expected_feature,
+                                      expected_parsed_results):
+    tensor_representation = text_format.Parse(tensor_representation,
+                                              schema_pb2.TensorRepresentation())
+    feature = tensor_representation_util.CreateTfExampleParserConfig(
+        tensor_representation, feature_type)
+
+    # Checks that the parser configs are correct.
+    for actual_arg, expected_arg in zip(feature, expected_feature):
+      self.assertAllEqual(actual_arg, expected_arg)
+
+    # Checks that the parser configs can be used with tf.io.parse_example()
+    actual_tensors = tf.io.parse_example(tf_example, {'feat': feature})
+    actual = actual_tensors['feat']
+    if isinstance(actual, tf.SparseTensor) or isinstance(
+        actual, tf.compat.v1.SparseTensorValue):
+      self.assertAllEqual(actual.values, expected_parsed_results.values)
+      self.assertAllEqual(actual.indices, expected_parsed_results.indices)
+      self.assertAllEqual(actual.dense_shape,
+                          expected_parsed_results.dense_shape)
+    else:
+      self.assertAllEqual(actual, expected_parsed_results)
+
+  def testCreateTfExampleParserConfigInvalidDefaultValue(self):
+    tensor_representation = text_format.Parse(
+        """
+                dense_tensor {
+                  column_name: "dense_column"
+                  shape {
+                    dim {
+                      size: 1
+                    }
+                  }
+                  default_value {
+                    int_value: -1
+                  }
+                }""", schema_pb2.TensorRepresentation())
+    feature_type = schema_pb2.FLOAT
+    with self.assertRaisesRegex(
+        ValueError, 'FeatureType:.* is incompatible with default_value:.*'):
+      tensor_representation_util.CreateTfExampleParserConfig(
+          tensor_representation, feature_type)
+
+  def testCreateTfExampleParserConfigRagged(self):
+    feature_type = schema_pb2.INT
+    tensor_representation = text_format.Parse(
+        """
+                ragged_tensor {
+                  feature_path {
+                    step: "ragged_feature"
+                  }
+                }""", schema_pb2.TensorRepresentation())
+    with self.assertRaisesRegex(NotImplementedError,
+                                'TensorRepresentation: .* is not supported.'):
+      tensor_representation_util.CreateTfExampleParserConfig(
+          tensor_representation, feature_type)
 
 
 if __name__ == '__main__':
