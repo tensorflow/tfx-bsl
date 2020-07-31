@@ -340,15 +340,13 @@ Status MisraGriesSketch::Estimate(
 
   static constexpr char kValuesFieldName[] = "values";
   static constexpr char kCountsFieldName[] = "counts";
-  auto data_type = std::make_shared<arrow::StructType>(
-      std::vector<std::shared_ptr<arrow::Field>>{
-      std::make_shared<arrow::Field>(kValuesFieldName, arrow::large_binary()),
-      std::make_shared<arrow::Field>(kCountsFieldName, arrow::float32())
-  });
 
-  *values_and_counts_array = std::make_shared<arrow::StructArray>(
-      data_type, item_array->length(),
-      std::vector<std::shared_ptr<arrow::Array>>{item_array, count_array});
+  auto struct_array_or_error =
+      arrow::StructArray::Make(
+          std::vector<std::shared_ptr<arrow::Array>>{item_array, count_array},
+          std::vector<std::string>{kValuesFieldName, kCountsFieldName});
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(struct_array_or_error.status()));
+  *values_and_counts_array = std::move(struct_array_or_error).ValueOrDie();
   return Status::OK();
 }
 
