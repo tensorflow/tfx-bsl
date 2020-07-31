@@ -80,11 +80,11 @@ class RecordBasedTfxioTest(absltest.TestCase):
         record_based_tfxio.DetectCompressionType(
             [os.path.join(tmp_dir, "dataset-b*")]), b"")
 
-    with self.assertRaises(tf.errors.InvalidArgumentError):
-      record_based_tfxio.DetectCompressionType([
-          os.path.join(tmp_dir, "dataset-b*"),
-          os.path.join(tmp_dir, "dataset-a*")
-      ])
+    self.assertEqual(
+        record_based_tfxio.DetectCompressionType([
+            os.path.join(tmp_dir, "dataset-b*"),
+            os.path.join(tmp_dir, "dataset-a*")
+        ]), b"INVALID_MIXED_COMPRESSION_TYPES")
 
     # TODO(zhuo/andylou): also test the case where no file is matched, once
     # tf.io.matching_files does not blow up ASAN.
