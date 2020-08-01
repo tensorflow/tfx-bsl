@@ -40,8 +40,14 @@ class TFGraphRecordDecoder(tf.Module):
   interfaces listed in this base class available.
   """
 
-  def __init__(self):
-    super(TFGraphRecordDecoder, self).__init__(name=None)
+  def __init__(self, name: Text):
+    """Initializer.
+
+    Args:
+      name: Must be a valid TF scope name. May be used to create TF namescopes.
+        see https://www.tensorflow.org/api_docs/python/tf/Graph#name_scope.
+    """
+    super(TFGraphRecordDecoder, self).__init__(name=name)
 
   @tf.function(input_signature=[tf.TensorSpec(shape=(None,), dtype=tf.string)])
   def decode_record(self, records: List[bytes]) -> Dict[Text, TensorAlike]:
@@ -85,7 +91,7 @@ class LoadedDecoder(TFGraphRecordDecoder):
   """
 
   def __init__(self, loaded_module):
-    super(LoadedDecoder, self).__init__()
+    super(LoadedDecoder, self).__init__(name="LoadedDecoder")
     self._loaded_module = loaded_module
 
   def _decode_record_internal(self,

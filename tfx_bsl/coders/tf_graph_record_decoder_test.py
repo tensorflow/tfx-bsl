@@ -30,6 +30,9 @@ FLAGS = flags.FLAGS
 
 class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
+  def __init__(self):
+    super(_DecoderForTesting, self).__init__("DecoderForTesting")
+
   def _decode_record_internal(self, record):
     indices = tf.transpose(tf.stack([
         tf.range(tf.size(record), dtype=tf.int64),
