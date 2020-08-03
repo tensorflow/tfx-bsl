@@ -26,6 +26,7 @@ from apache_beam.testing import util as beam_testing_util
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.coders import tf_graph_record_decoder
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import record_to_tensor_tfxio
 from tfx_bsl.tfxio import telemetry_test_util
 
@@ -57,6 +58,17 @@ class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
 
 _RECORDS = [b"aaa", b"bbb"]
+_RECORDS_AS_TENSORS = [{
+    "st1":
+        tf.SparseTensor(values=[b"aaa"], indices=[[0, 0]], dense_shape=[1, 1]),
+    "st2":
+        tf.SparseTensor(values=[b"aaa"], indices=[[0, 0]], dense_shape=[1, 1])
+}, {
+    "st1":
+        tf.SparseTensor(values=[b"bbb"], indices=[[0, 0]], dense_shape=[1, 1]),
+    "st2":
+        tf.SparseTensor(values=[b"bbb"], indices=[[0, 0]], dense_shape=[1, 1])
+}]
 _TELEMETRY_DESCRIPTORS = ["Some", "Component"]
 
 
@@ -80,6 +92,11 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
     self._input_path = os.path.join(
         FLAGS.test_tmpdir, "recordtotensortfxiotest", unique_dir, "input")
     _write_input(self._input_path)
+
+  def _AssertSparseTensorEqual(self, lhs, rhs):
+    self.assertAllEqual(lhs.values, rhs.values)
+    self.assertAllEqual(lhs.indices, rhs.indices)
+    self.assertAllEqual(lhs.dense_shape, rhs.dense_shape)
 
   @parameterized.named_parameters(*[
       dict(testcase_name="attach_raw_records", attach_raw_records=True),
@@ -163,6 +180,52 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
       rb_pcoll = p | tfxio.BeamSource(batch_size=len(_RECORDS))
       beam_testing_util.assert_that(rb_pcoll, _assert_fn)
 
+  def test_tensorflow_dataset(self):
+    tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
+        self._input_path, self._decoder_path, ["some", "component"])
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, decoded_tensors_dict in enumerate(
+        tfxio.TensorFlowDataset(options=options)):
+      for key, tensor in decoded_tensors_dict.items():
+        self._AssertSparseTensorEqual(tensor, _RECORDS_AS_TENSORS[i][key])
+
+  def test_projected_tensorflow_dataset(self):
+    tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
+        self._input_path, self._decoder_path, ["some", "component"])
+    feature_name = "st1"
+    projected_tfxio = tfxio.Project([feature_name])
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, decoded_tensors_dict in enumerate(
+        projected_tfxio.TensorFlowDataset(options=options)):
+      self.assertIn(feature_name, decoded_tensors_dict)
+      self.assertLen(decoded_tensors_dict, 1)
+      tensor = decoded_tensors_dict[feature_name]
+      self._AssertSparseTensorEqual(tensor,
+                                    _RECORDS_AS_TENSORS[i][feature_name])
+
+  def test_tensorflow_dataset_with_label_key(self):
+    tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
+        self._input_path, self._decoder_path, ["some", "component"])
+    label_key = "st1"
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1, label_key=label_key)
+    for i, (decoded_tensors_dict, label_feature) in enumerate(
+        tfxio.TensorFlowDataset(options=options)):
+      self._AssertSparseTensorEqual(label_feature,
+                                    _RECORDS_AS_TENSORS[i][label_key])
+      for key, tensor in decoded_tensors_dict.items():
+        self._AssertSparseTensorEqual(tensor, _RECORDS_AS_TENSORS[i][key])
+
+  def test_tensorflow_dataset_with_invalid_label_key(self):
+    tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
+        self._input_path, self._decoder_path, ["some", "component"])
+    label_key = "invalid"
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1, label_key=label_key)
+    with self.assertRaisesRegex(ValueError, "The `label_key` provided.*"):
+      tfxio.TensorFlowDataset(options=options)
 
 if __name__ == "__main__":
   # Do not run these tests under TF1.x -- not supported.

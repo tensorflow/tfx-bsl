@@ -37,8 +37,8 @@ class TensorFlowDatasetOptions(
               batch_size: int,
               drop_final_batch: bool = False,
               num_epochs: Optional[int] = None,
-              shuffle: Optional[bool] = None,
-              shuffle_buffer_size: Optional[int] = None,
+              shuffle: bool = True,
+              shuffle_buffer_size: int = 10000,
               shuffle_seed: Optional[int] = None,
               label_key: Optional[Text] = None):
     """Returns a dataset options object.
