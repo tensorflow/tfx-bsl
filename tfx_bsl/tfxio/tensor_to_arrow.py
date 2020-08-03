@@ -22,6 +22,7 @@ import abc
 from typing import Dict, List, Text, Tuple, Union
 
 from absl import logging
+import numpy as np
 import pyarrow as pa
 import six
 import tensorflow as tf
@@ -168,8 +169,8 @@ class _VarLenSparseTensorHandler(_TypeHandler):
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
     r = tf.RaggedTensor.from_sparse(tensor)
     return [pa.ListArray.from_arrays(
-        pa.array(r.row_splits.numpy(), type=pa.int32()),
-        pa.array(r.values.numpy(), type=self._values_arrow_type))]
+        pa.array(np.asarray(r.row_splits), type=pa.int32()),
+        pa.array(np.asarray(r.values), type=self._values_arrow_type))]
 
   def arrow_fields(self) -> List[pa.Field]:
     return [
@@ -211,11 +212,11 @@ class _RaggedTensorHandler(_TypeHandler):
       """Recursively constructs nested arrow arrays from a tensor."""
       if isinstance(tensor, tf.RaggedTensor):
         values = tensor.values
-        row_splits = tensor.row_splits.numpy()
         return pa.ListArray.from_arrays(
-            offsets=row_splits, values=_create_nested_list(values))
+            offsets=np.asarray(tensor.row_splits),
+            values=_create_nested_list(values))
       else:
-        return pa.array(tensor.numpy())
+        return pa.array(np.asarray(tensor))
 
     return [_create_nested_list(tensor)]
 
