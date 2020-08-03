@@ -176,7 +176,9 @@ TEST(MisraGriesSketchTest, AddWithFewBuckets) {
 
   absl::flat_hash_map<std::string, double> counts =
       CreateCountsMap(mg.GetCounts());
-  EXPECT_EQ(counts["0"], k);
+  double estimated_count = counts["0"];
+  EXPECT_LE(k, estimated_count);
+  EXPECT_LE(estimated_count - mg.GetDelta(), k);
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(2 * k));
 }
 
