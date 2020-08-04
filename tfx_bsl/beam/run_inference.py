@@ -301,7 +301,7 @@ def _Predict(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
     predictions = (
         pcoll
         | 'RemotePredict' >> beam.ParDo(_RemotePredictDoFn(
-              inference_spec_type, pcoll.pipeline.options, data_type, tensor_adapter_config)))
+              inference_spec_type, pcoll.pipeline.options, data_type)))
   return (predictions
           | 'BuildPredictionLogForPredictions' >> beam.ParDo(
               _BuildPredictionLogForPredictionsDoFn()))
@@ -385,59 +385,24 @@ class _BaseDoFn(beam.DoFn):
 
 
   def __init__(
-    self, inference_spec_type: model_spec_pb2.InferenceSpecType,
-    tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None):
+    self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     super(_BaseDoFn, self).__init__()
     self._clock = None
     self.inference_spec_type = inference_spec_type
     self._metrics_collector = self._MetricsCollector(inference_spec_type)
-    self._tensor_adapter_config = tensor_adapter_config
-    self._io_tensor_spec = None   # This value may be None if the model is remote
 
   def setup(self):
     self._clock = _ClockFactory.make_clock()
 
+  @abc.abstractmethod
   def _extract_from_recordBatch(self, elements: pa.RecordBatch):
     """
     Function to extract the compatible input with model signature
+    return:
+      - serialized examples for metrics
+      - model input for processing and post processing
     """
-    serialized_examples = None
-    for column_name, column_array in zip(elements.schema.names, elements.columns):
-      if column_name == _RECORDBATCH_COLUMN:
-        column_type = column_array.flatten().type
-        if not (pa.types.is_binary(column_type) or pa.types.is_string(column_type)):
-          raise ValueError(
-            'Expected a list of serialized examples in bytes or as a string, got %s' %
-            type(example))
-        serialized_examples = column_array.flatten().to_pylist()
-        break
-
-    if (serialized_examples is None):
-      raise ValueError('Raw examples not found.')
-
-    model_input = None
-    if self._io_tensor_spec is None:    # Case when we are running remote inference
-      prepare_instances_serialized = (
-        self.inference_spec_type.ai_platform_prediction_model_spec.use_serialization_config)
-      model_input = bsl_util.RecordToJSON(elements, prepare_instances_serialized)
-    elif (len(self._io_tensor_spec.input_tensor_names) == 1):
-      model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
-    else:
-      if (self._tensor_adapter_config is None):
-        raise ValueError('Tensor adaptor config is required with a multi-input model')
-
-      input_tensor_names = self._io_tensor_spec.input_tensor_names
-      input_tensor_alias = self._io_tensor_spec.input_tensor_alias
-      _tensor_adapter = tensor_adapter.TensorAdapter(self._tensor_adapter_config)
-      dict_of_tensors = _tensor_adapter.ToBatchTensors(
-        elements, produce_eager_tensors = False)
-      filtered_tensors = bsl_util.filter_tensors_by_input_names(
-        dict_of_tensors, input_tensor_alias)
-
-      model_input = {}
-      for feature, tensor_name in zip(input_tensor_alias, input_tensor_names):
-        model_input[tensor_name] = filtered_tensors[feature]
-    return serialized_examples, model_input
+    raise NotImplementedError
 
   def process(self, elements: pa.RecordBatch) -> Iterable[Any]:
     batch_start_time = self._clock.get_current_time_in_microseconds()
@@ -507,9 +472,8 @@ class _RemotePredictDoFn(_BaseDoFn):
   """
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
-               pipeline_options: PipelineOptions, data_type: Text,
-               tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None):
-    super(_RemotePredictDoFn, self).__init__(inference_spec_type, tensor_adapter_config)
+               pipeline_options: PipelineOptions, data_type: Text):
+    super(_RemotePredictDoFn, self).__init__(inference_spec_type)
     self._api_client = None
     self._data_type = data_type
 
@@ -539,6 +503,13 @@ class _RemotePredictDoFn(_BaseDoFn):
     # TODO(b/151468119): Add tfx_bsl_version and tfx_bsl_py_version to
     # user agent once custom header is supported in googleapiclient.
     self._api_client = discovery.build('ml', 'v1')
+
+  def _extract_from_recordBatch(self, elements: pa.RecordBatch):
+    serialized_examples = bsl_util.ExtractSerializedExampleFromRecordBatch(elements)
+    prepare_instances_serialized = (
+      self.inference_spec_type.ai_platform_prediction_model_spec.use_serialization_config)
+    model_input = bsl_util.RecordToJSON(elements, prepare_instances_serialized)
+    return serialized_examples, model_input
 
   # Retry _REMOTE_INFERENCE_NUM_RETRIES times with exponential backoff.
   @retry.with_exponential_backoff(
@@ -614,7 +585,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
       self, inference_spec_type: model_spec_pb2.InferenceSpecType,
       shared_model_handle: shared.Shared, data_type,
       tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None):
-    super(_BaseBatchSavedModelDoFn, self).__init__(inference_spec_type, tensor_adapter_config)
+    super(_BaseBatchSavedModelDoFn, self).__init__(inference_spec_type)
     self._inference_spec_type = inference_spec_type
     self._shared_model_handle = shared_model_handle
     self._model_path = inference_spec_type.saved_model_spec.model_path
@@ -625,6 +596,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
       _get_tags(inference_spec_type))
     self._session = None
     self._data_type = data_type
+    self._tensor_adapter_config = tensor_adapter_config
 
   def setup(self):
     """Load the model.
@@ -703,6 +675,29 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
   def _has_tpu_tag(self) -> bool:
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
             tf.saved_model.TPU in self._tags)
+
+  def _extract_from_recordBatch(self, elements: pa.RecordBatch):
+    serialized_examples = bsl_util.ExtractSerializedExampleFromRecordBatch(elements)
+
+    model_input = None
+    if (len(self._io_tensor_spec.input_tensor_names) == 1):
+      model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
+    else:
+      if (self._tensor_adapter_config is None):
+        raise ValueError('Tensor adaptor config is required with a multi-input model')
+
+      input_tensor_names = self._io_tensor_spec.input_tensor_names
+      input_tensor_alias = self._io_tensor_spec.input_tensor_alias
+      _tensor_adapter = tensor_adapter.TensorAdapter(self._tensor_adapter_config)
+      dict_of_tensors = _tensor_adapter.ToBatchTensors(
+        elements, produce_eager_tensors = False)
+      filtered_tensors = bsl_util.filter_tensors_by_input_names(
+        dict_of_tensors, input_tensor_alias)
+
+      model_input = {}
+      for feature, tensor_name in zip(input_tensor_alias, input_tensor_names):
+        model_input[tensor_name] = filtered_tensors[feature]
+    return serialized_examples, model_input
 
   def run_inference(
     self, tensors: Mapping[Any, Any]) -> Mapping[Text, np.ndarray]:
@@ -830,21 +825,23 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
             'dimension, with the first having a size equal to the input batch '
             'size %s. Instead found %s' %
             (output_alias, batch_size, output.shape))
-    predict_log_tmpl = prediction_log_pb2.PredictLog()
-    predict_log_tmpl.request.model_spec.signature_name = signature_name
-    predict_log_tmpl.response.model_spec.signature_name = signature_name
-    for alias, tensor_type in input_tensor_types.items():
-      input_tensor_proto = predict_log_tmpl.request.inputs[alias]
-      input_tensor_proto.dtype = tf.as_dtype(tensor_type).as_datatype_enum
-      # TODO (Maxine): fix dimension?
-      input_tensor_proto.tensor_shape.dim.add().size = 1
+  
+    if include_request:
+      predict_log_tmpl = prediction_log_pb2.PredictLog()
+      predict_log_tmpl.request.model_spec.signature_name = signature_name
+      predict_log_tmpl.response.model_spec.signature_name = signature_name
+      for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
+        input_tensor_proto = predict_log_tmpl.request.inputs[alias]
+        input_tensor_proto.dtype = tf.as_dtype(input_tensor_types[alias]).as_datatype_enum
+        if len(input_tensor_alias) == 1:
+          input_tensor_proto.tensor_shape.dim.add().size = 1
+        else:
+          input_tensor_proto.tensor_shape.dim.add().size = len(elements[tensor_name][0])
 
-    result = []
-    for i in range(batch_size):
-      predict_log = prediction_log_pb2.PredictLog()
-      predict_log.CopyFrom(predict_log_tmpl)
-
-      if include_request:
+      result = []
+      for i in range(batch_size):
+        predict_log = prediction_log_pb2.PredictLog()
+        predict_log.CopyFrom(predict_log_tmpl)
         if len(input_tensor_alias) == 1:
           alias = input_tensor_alias[0]
           predict_log.request.inputs[alias].string_val.append(process_elements[i])
@@ -852,14 +849,14 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
           for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
             predict_log.request.inputs[alias].float_val.append(elements[tensor_name][i])
 
-      for output_alias, output in outputs.items():
-        # Mimic tensor::Split
-        tensor_proto = tf.make_tensor_proto(
-            values=output[i],
-            dtype=tf.as_dtype(output[i].dtype).as_datatype_enum,
-            shape=np.expand_dims(output[i], axis=0).shape)
-        predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
-      result.append(predict_log)
+    for output_alias, output in outputs.items():
+      # Mimic tensor::Split
+      tensor_proto = tf.make_tensor_proto(
+          values=output[i],
+          dtype=tf.as_dtype(output[i].dtype).as_datatype_enum,
+          shape=np.expand_dims(output[i], axis=0).shape)
+      predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
+    result.append(predict_log)
     return result
 
 

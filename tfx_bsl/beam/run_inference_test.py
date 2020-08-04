@@ -267,8 +267,8 @@ class RunRemoteInferenceExamplesTest(RunInferenceFixture):
 
   def setUp(self):
     super(RunRemoteInferenceExamplesTest, self).setUp()
-    self.example_path = self._get_output_data_dir('example')
-    self._prepare_predict_examples(self.example_path)
+    self._example_path = self._get_output_data_dir('example')
+    self._prepare_predict_examples(self._example_path)
     # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
     self._discovery_testdata_dir = os.path.join(
         os.path.join(os.path.dirname(__file__), 'testdata'),
@@ -286,7 +286,7 @@ class RunRemoteInferenceExamplesTest(RunInferenceFixture):
     self.pipeline = beam.Pipeline()
     self.pcoll = (
         self.pipeline
-        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self._example_path)
         | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
         | 'RunInference' >> run_inference.RunInferenceOnExamples(inference_spec_type))
 
@@ -1018,9 +1018,9 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
 
   def setUp(self):
     super(RunRemoteInferenceArrowTest, self).setUp()
+    self._example_path = self._get_output_data_dir('example')
+    self._prepare_predict_examples(self._example_path)
     # This is from https://ml.googleapis.com/$discovery/rest?version=v1.
-    self.example_path = self._get_output_data_dir('example')
-    self._prepare_predict_examples(self.example_path)
     self._discovery_testdata_dir = os.path.join(
         os.path.join(os.path.dirname(__file__), 'testdata'),
         'ml_discovery.json')
@@ -1041,7 +1041,7 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
       raw_record_column_name=_RECORDBATCH_COLUMN)
     self.pcoll = (
         self.pipeline
-        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self._example_path)
         | 'ConvertToRecordBatch' >> converter.BeamSource()
         | 'RunInference' >> run_inference.RunInferenceOnRecordBatch(
               inference_spec_type, DataType.EXAMPLE))
@@ -1167,19 +1167,9 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
       self._run_inference_with_beam()
 
   def test_request_body_with_binary_data(self):
-    example = text_format.Parse(
-      """
-      features {
-        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
-        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
-        feature { key: "y" value { int64_list { value: [1, 2] }}}
-        feature { key: "z" value { float_list { value: [4.5, 5, 5.5] }}}
-      }
-      """, tf.train.Example())
-    serialized_example_remote = [example.SerializeToString()]
     record_batch_remote = pa.RecordBatch.from_arrays(
       [
-        pa.array([["ASa8asdf"]], type=pa.list_(pa.binary())),
+        pa.array([["ASa8asdf", "ASa8asdf"]], type=pa.list_(pa.binary())),
         pa.array([["JLK7ljk3"]], type=pa.list_(pa.utf8())),
         pa.array([[1, 2]], type=pa.list_(pa.int32())),
         pa.array([[4.5, 5, 5.5]], type=pa.list_(pa.float32()))
@@ -1190,9 +1180,10 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
     result = list(bsl_util.RecordToJSON(record_batch_remote, False))
     self.assertEqual([
         {
-            'x_bytes': {
-                'b64': 'QVNhOGFzZGY='
-            },
+            'x_bytes': [
+              {'b64': 'QVNhOGFzZGY='}, 
+              {'b64': 'QVNhOGFzZGY='}
+            ],
             'x': 'JLK7ljk3',
             'y': [1, 2],
             'z': [4.5, 5, 5.5]

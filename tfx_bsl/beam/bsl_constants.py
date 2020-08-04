@@ -1,5 +1,5 @@
 _RECORDBATCH_COLUMN = '__RAW_RECORD__'
-KERAS_INPUT_SUFFIX = '_input'
+_KERAS_INPUT_SUFFIX = '_input'
 
 class DataType(object):
   EXAMPLE = 'EXAMPLE'

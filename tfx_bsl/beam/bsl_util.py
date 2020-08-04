@@ -27,8 +27,26 @@ import json
 import typing
 from typing import Dict, List, Text, Any, Set, Optional
 from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
-from tfx_bsl.beam.bsl_constants import KERAS_INPUT_SUFFIX
+from tfx_bsl.beam.bsl_constants import _KERAS_INPUT_SUFFIX
    
+
+def ExtractSerializedExampleFromRecordBatch(elements: pa.RecordBatch) -> List[Text]:
+  serialized_examples = None
+  for column_name, column_array in zip(elements.schema.names, elements.columns):
+    if column_name == _RECORDBATCH_COLUMN:
+      column_type = column_array.flatten().type
+      if not (pa.types.is_binary(column_type) or pa.types.is_string(column_type)):
+        raise ValueError(
+          'Expected a list of serialized examples in bytes or as a string, got %s' %
+          type(example))
+      serialized_examples = column_array.flatten().to_pylist()
+      break
+
+  if (serialized_examples is None):
+    raise ValueError('Raw examples not found.')
+
+  return serialized_examples
+
 
 def RecordToJSON(record_batch: pa.RecordBatch, prepare_instances_serialized) -> List[Text]:
   """Returns a JSON string translated from `record_batch`.
@@ -41,6 +59,9 @@ def RecordToJSON(record_batch: pa.RecordBatch, prepare_instances_serialized) -> 
   Args:
   record_batch: input RecordBatch.
   """
+
+  # TODO (b/155912552): Handle this for sequence example.
+
   def flatten(element: List[Any]):
     if len(element) == 1:
         return element[0]
@@ -60,16 +81,16 @@ def RecordToJSON(record_batch: pa.RecordBatch, prepare_instances_serialized) -> 
     return json.loads(df.to_json(orient='records'))
 
 
-def find_input_name_in_features(features: Set[Text],
-                                input_name: Text) -> Optional[Text]:
+def _find_input_name_in_features(features: Set[Text],
+                                 input_name: Text) -> Optional[Text]:
   """Maps input name to an entry in features. Returns None if not found."""
   if input_name in features:
     return input_name
   # Some keras models prepend '_input' to the names of the inputs
   # so try under '<name>_input' as well.
-  elif (input_name.endswith(KERAS_INPUT_SUFFIX) and
-        input_name[:-len(KERAS_INPUT_SUFFIX)] in features):
-    return input_name[:-len(KERAS_INPUT_SUFFIX)]
+  elif (input_name.endswith(_KERAS_INPUT_SUFFIX) and
+        input_name[:-len(_KERAS_INPUT_SUFFIX)] in features):
+    return input_name[:-len(_KERAS_INPUT_SUFFIX)]
   return None
 
 
@@ -93,13 +114,14 @@ def filter_tensors_by_input_names(
     return None
   result = {}
   tensor_keys = set(tensors.keys())
+
+  # The case where the model takes serialized examples as input.
+  if len(input_names) == 1 and _find_input_name_in_features(tensor_keys, input_names[0]):
+    return None
+
   for name in input_names:
-    tensor_name = find_input_name_in_features(tensor_keys, name)
+    tensor_name = _find_input_name_in_features(tensor_keys, name)
     if tensor_name is None:
-      # This should happen only in the case where the model takes serialized
-      # examples as input. Else raise an exception.
-      if len(input_names) == 1:
-        return None
       raise RuntimeError(
           'Input tensor not found: {}. Existing keys: {}.'.format(
               name, ','.join(tensors.keys())))
