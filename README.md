@@ -6,15 +6,19 @@
 TFX Basic Shared Libraries (`tfx_bsl`) contains libraries shared by many
 [TensorFlow eXtended (TFX)](https://www.tensorflow.org/tfx) components.
 
-Only APIs in tfx_bsl/public are intended for direct use by TFX users.
+__Only symbols exported by sub-modules under `tfx_bsl/public` are intended for
+direct use by TFX users__, including by standalone TFX library (e.g. TFDV, TFMA,
+TFT) users, TFX pipeline authors and TFX component authors. Those APIs will
+become stable and follow semantic versioning once `tfx_bsl` goes beyond `1.0`.
+
 APIs under other directories should be considered internal to TFX
 (and therefore there is no backward or forward compatibility guarantee for
 them).
 
-Each minor version of a TFX component or TFX itself, if it needs to
+Each minor version of a TFX library or TFX itself, if it needs to
 depend on `tfx_bsl`, will depend on a specific minor version of it (e.g.
-`tensorflow_data_validation` 0.14.\* will depend on and only work with `tfx_bsl`
-0.14.\*)
+`tensorflow_data_validation` 0.14.\* will depend on, and only work with,
+`tfx_bsl` 0.14.\*)
 
 ## Installing from PyPI
 

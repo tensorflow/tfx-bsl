@@ -3,6 +3,10 @@
 # Current Version(Still in Development)
 
 ## Major Features and Improvements
+*  Several TFXIO symbols are made public, which means:
+  * TFX users (both pipeline and component authors), and TFX libraries
+    (TFDV, TFMA, TFT) users may start using these symbols.
+  * We will be subject to semantic versioning once tfx_bsl goes beyond 1.0.
 *  TFRecord based TFXIO implementations now support reading from multiple file
    patterns.
 
