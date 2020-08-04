@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
-from typing import Dict, List, Text, Union
+from typing import Dict, List, Optional, Text, Union
 
 import six
 import tensorflow as tf
@@ -33,6 +33,9 @@ TensorAlike = Union[tf.Tensor, composite_tensor.CompositeTensor]
 @six.add_metaclass(abc.ABCMeta)
 class TFGraphRecordDecoder(tf.Module):
   """Base class for decoders that turns a list of bytes to (composite) tensors.
+
+  Sub-classes must implemented `_decode_record_internal()` (see its docstring
+  for requirements).
 
   Decoder instances can be saved as a SavedModel by `save_decoder()`.
   The SavedModel can be loaded back by `load_decoder()`. However, the loaded
@@ -75,12 +78,50 @@ class TFGraphRecordDecoder(tf.Module):
     Implementations must use TF ops to derive the result (composite) tensors, as
     this function will be traced and become a tf.function (thus a TF Graph).
 
+    The returned tensors must be batch-aligned (i.e. they should be at least
+    of rank 1, and their outer-most dimensions must be of the same size). They
+    do not have to be batch-aligned with the input tensor, but if that's the
+    case, an additional tensor must be provided among the results, to indicate
+    which input record a "row" in the output batch comes from. See
+    `record_index_tensor_name` for more details.
+
     Args:
       records: a 1-D string tensor that contains the records to be decoded.
 
     Returns:
       A dict of (composite) tensors.
     """
+
+  @tf.function(input_signature=[])
+  def _record_index_tensor_name_tensor(self) -> tf.experimental.Optional:
+    """tf.function to store record_index_tensor_name in SavedModel."""
+    if self.record_index_tensor_name is not None:
+      return tf.experimental.Optional.from_value(
+          self.record_index_tensor_name.encode())
+    return tf.experimental.Optional.empty(tf.TensorSpec(
+        shape=(), dtype=tf.string))
+
+  @property
+  def record_index_tensor_name(self) -> Optional[Text]:
+    """The name of the tensor indicating which record a slice is from.
+
+    The decoded tensors are batch-aligned among themselves, but they don't
+    necessarily have to be batch-aligned with the input records. If not,
+    sub-classes should implement this method to tie the batch dimension
+    with the input record.
+
+    The record index tensor must be a SparseTensor or a RaggedTensor of integral
+    type, and must be 2-D and must not contain "missing" values.
+
+    A record index tensor like the following:
+    [[0], [0], [2]]
+    means that of 3 "rows" in the output "batch", the first two rows came
+    from the first record, and the 3rd row came from the third record.
+
+    Returns:
+      The name of the record index tensor.
+    """
+    return None
 
 
 class LoadedDecoder(TFGraphRecordDecoder):
@@ -98,9 +139,21 @@ class LoadedDecoder(TFGraphRecordDecoder):
                               record: List[bytes]) -> Dict[Text, TensorAlike]:
     return self._loaded_module.decode_record(record)
 
+  @property
+  def record_index_tensor_name(self) -> Optional[Text]:
+    optional_name = self._loaded_module._record_index_tensor_name_tensor()  # pylint: disable=protected-access
+    if optional_name.has_value():
+      return optional_name.get_value().numpy().decode()
+    return None
+
 
 def save_decoder(decoder: TFGraphRecordDecoder, path: Text) -> None:
   """Saves a TFGraphRecordDecoder to a SavedModel."""
+  if decoder.record_index_tensor_name is not None:
+    assert decoder.record_index_tensor_name in decoder.output_type_specs(), (
+        "Invalid decoder: record_index_tensor_name: {} not in output "
+        "tensors: {}".format(decoder.record_index_tensor_name,
+                             decoder.output_type_specs().keys()))
   tf.saved_model.save(decoder, path)
 
 

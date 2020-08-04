@@ -18,7 +18,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import uuid
+import tempfile
 
 from absl import flags
 import apache_beam as beam
@@ -57,6 +57,34 @@ class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
     }
 
 
+class _DecoderForTestingWithRecordIndex(_DecoderForTesting):
+
+  def _decode_record_internal(self, record):
+    result = super(
+        _DecoderForTestingWithRecordIndex, self)._decode_record_internal(record)
+    result["ragged_record_index"] = tf.RaggedTensor.from_row_splits(
+        values=tf.range(tf.size(record), dtype=tf.int64),
+        row_splits=tf.range(tf.size(record) + 1, dtype=tf.int64))
+    result["sparse_record_index"] = result["ragged_record_index"].to_sparse()
+    return result
+
+
+class _DecoderForTestingWithRaggedRecordIndex(
+    _DecoderForTestingWithRecordIndex):
+
+  @property
+  def record_index_tensor_name(self):
+    return "ragged_record_index"
+
+
+class _DecoderForTestingWithSparseRecordIndex(
+    _DecoderForTestingWithRecordIndex):
+
+  @property
+  def record_index_tensor_name(self):
+    return "sparse_record_index"
+
+
 _RECORDS = [b"aaa", b"bbb"]
 _RECORDS_AS_TENSORS = [{
     "st1":
@@ -72,45 +100,91 @@ _RECORDS_AS_TENSORS = [{
 _TELEMETRY_DESCRIPTORS = ["Some", "Component"]
 
 
-def _write_input(path):
-  tf.io.gfile.makedirs(os.path.dirname(path))
-  with tf.io.TFRecordWriter(path) as w:
+def _write_input():
+  result = os.path.join(tempfile.mkdtemp(dir=FLAGS.test_tmpdir), "input")
+  with tf.io.TFRecordWriter(result) as w:
     for r in _RECORDS:
       w.write(r)
+
+  return result
+
+
+def _write_decoder(decoder=_DecoderForTesting()):
+  result = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
+  tf_graph_record_decoder.save_decoder(decoder, result)
+  return result
 
 
 class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):
     super(RecordToTensorTfxioTest, self).setUp()
-    unique_dir = uuid.uuid4().hex
-    self._decoder_path = os.path.join(
-        FLAGS.test_tmpdir, "recordtotensortfxiotest", unique_dir)
-    tf_graph_record_decoder.save_decoder(
-        _DecoderForTesting(), self._decoder_path)
+    self._input_path = _write_input()
 
-    self._input_path = os.path.join(
-        FLAGS.test_tmpdir, "recordtotensortfxiotest", unique_dir, "input")
-    _write_input(self._input_path)
-
-  def _AssertSparseTensorEqual(self, lhs, rhs):
+  def _assert_sparse_tensor_equal(self, lhs, rhs):
     self.assertAllEqual(lhs.values, rhs.values)
     self.assertAllEqual(lhs.indices, rhs.indices)
     self.assertAllEqual(lhs.dense_shape, rhs.dense_shape)
 
+  # pylint: disable=unnecessary-lambda
+  # the create_decoder lambdas may seem unnecessary, but they are picklable, and
+  # the classes (not the instances of those classes) are not.
   @parameterized.named_parameters(*[
-      dict(testcase_name="attach_raw_records", attach_raw_records=True),
-      dict(testcase_name="noattach_raw_records", attach_raw_records=False)
+      dict(testcase_name="attach_raw_records",
+           attach_raw_records=True,
+           create_decoder=lambda: _DecoderForTesting()),
+      dict(testcase_name="attach_raw_records_with_ragged_record_index",
+           attach_raw_records=True,
+           create_decoder=lambda: _DecoderForTestingWithRaggedRecordIndex()),
+      dict(testcase_name="attach_raw_records_with_sparse_record_index",
+           attach_raw_records=True,
+           create_decoder=lambda: _DecoderForTestingWithSparseRecordIndex()),
+      dict(testcase_name="noattach_raw_records",
+           attach_raw_records=False,
+           create_decoder=lambda: _DecoderForTesting()),
+      dict(testcase_name="noattach_raw_records_but_with_record_index",
+           attach_raw_records=False,
+           create_decoder=lambda: _DecoderForTestingWithSparseRecordIndex()),
   ])
-  def test_simple(self, attach_raw_records):
+  # pylint: enable=unnecessary-lambda
+  def test_beam_source_and_tensor_adapter(
+      self, attach_raw_records, create_decoder):
+    decoder = create_decoder()
     raw_record_column_name = "_raw_records" if attach_raw_records else None
+    decoder_path = _write_decoder(decoder)
     tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, self._decoder_path, _TELEMETRY_DESCRIPTORS,
+        self._input_path, decoder_path, _TELEMETRY_DESCRIPTORS,
         raw_record_column_name=raw_record_column_name)
-    expected_fields = [
-        pa.field("st1", pa.list_(pa.binary())),
-        pa.field("st2", pa.list_(pa.binary())),
-    ]
+    expected_tensor_representations = {
+        "st1":
+            text_format.Parse("""varlen_sparse_tensor { column_name: "st1" }""",
+                              schema_pb2.TensorRepresentation()),
+        "st2":
+            text_format.Parse("""varlen_sparse_tensor { column_name: "st2" }""",
+                              schema_pb2.TensorRepresentation())
+    }
+    if isinstance(decoder, _DecoderForTestingWithRecordIndex):
+      expected_fields = [
+          pa.field("ragged_record_index", pa.list_(pa.int64())),
+          pa.field("sparse_record_index", pa.list_(pa.int64())),
+          pa.field("st1", pa.list_(pa.binary())),
+          pa.field("st2", pa.list_(pa.binary())),
+      ]
+      expected_tensor_representations["ragged_record_index"] = (
+          text_format.Parse(
+              """ragged_tensor {
+                   feature_path: { step: "ragged_record_index" }
+                   row_partition_dtype: INT64
+                 }""", schema_pb2.TensorRepresentation()))
+      expected_tensor_representations["sparse_record_index"] = (
+          text_format.Parse(
+              """varlen_sparse_tensor { column_name: "sparse_record_index" }""",
+              schema_pb2.TensorRepresentation()))
+    else:
+      expected_fields = [
+          pa.field("st1", pa.list_(pa.binary())),
+          pa.field("st2", pa.list_(pa.binary())),
+      ]
     if attach_raw_records:
       raw_record_column_type = (
           pa.large_list(pa.large_binary())
@@ -119,28 +193,22 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
           pa.field(raw_record_column_name, raw_record_column_type))
     self.assertTrue(tfxio.ArrowSchema().equals(
         pa.schema(expected_fields)), tfxio.ArrowSchema())
+
     self.assertEqual(
-        tfxio.TensorRepresentations(), {
-            "st1":
-                text_format.Parse(
-                    """varlen_sparse_tensor { column_name: "st1" }""",
-                    schema_pb2.TensorRepresentation()),
-            "st2":
-                text_format.Parse(
-                    """varlen_sparse_tensor { column_name: "st2" }""",
-                    schema_pb2.TensorRepresentation())
-        })
+        tfxio.TensorRepresentations(), expected_tensor_representations)
 
     tensor_adapter = tfxio.TensorAdapter()
     self.assertEqual(tensor_adapter.TypeSpecs(),
-                     _DecoderForTesting().output_type_specs())
+                     decoder.output_type_specs())
 
     def _assert_fn(list_of_rb):
       self.assertLen(list_of_rb, 1)
       rb = list_of_rb[0]
       self.assertTrue(rb.schema.equals(tfxio.ArrowSchema()))
+      if attach_raw_records:
+        self.assertEqual(rb.column(rb.num_columns - 1).flatten().to_pylist(),
+                         _RECORDS)
       tensors = tensor_adapter.ToBatchTensors(rb)
-      self.assertLen(tensors, 2)
       for tensor_name in ("st1", "st2"):
         self.assertIn(tensor_name, tensors)
         st = tensors[tensor_name]
@@ -158,8 +226,9 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
         "tensor", "tfrecords_gzip")
 
   def test_project(self):
+    decoder_path = _write_decoder()
     tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, self._decoder_path, ["some", "component"])
+        self._input_path, decoder_path, ["some", "component"])
     projected = tfxio.Project(["st1"])
     self.assertIn("st1", projected.TensorRepresentations())
     self.assertNotIn("st2", projected.TensorRepresentations())
@@ -181,18 +250,20 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
       beam_testing_util.assert_that(rb_pcoll, _assert_fn)
 
   def test_tensorflow_dataset(self):
+    decoder_path = _write_decoder()
     tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, self._decoder_path, ["some", "component"])
+        self._input_path, decoder_path, ["some", "component"])
     options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1)
     for i, decoded_tensors_dict in enumerate(
         tfxio.TensorFlowDataset(options=options)):
       for key, tensor in decoded_tensors_dict.items():
-        self._AssertSparseTensorEqual(tensor, _RECORDS_AS_TENSORS[i][key])
+        self._assert_sparse_tensor_equal(tensor, _RECORDS_AS_TENSORS[i][key])
 
   def test_projected_tensorflow_dataset(self):
+    decoder_path = _write_decoder()
     tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, self._decoder_path, ["some", "component"])
+        self._input_path, decoder_path, ["some", "component"])
     feature_name = "st1"
     projected_tfxio = tfxio.Project([feature_name])
     options = dataset_options.TensorFlowDatasetOptions(
@@ -202,25 +273,27 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
       self.assertIn(feature_name, decoded_tensors_dict)
       self.assertLen(decoded_tensors_dict, 1)
       tensor = decoded_tensors_dict[feature_name]
-      self._AssertSparseTensorEqual(tensor,
-                                    _RECORDS_AS_TENSORS[i][feature_name])
+      self._assert_sparse_tensor_equal(
+          tensor, _RECORDS_AS_TENSORS[i][feature_name])
 
   def test_tensorflow_dataset_with_label_key(self):
+    decoder_path = _write_decoder()
     tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, self._decoder_path, ["some", "component"])
+        self._input_path, decoder_path, ["some", "component"])
     label_key = "st1"
     options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1, label_key=label_key)
     for i, (decoded_tensors_dict, label_feature) in enumerate(
         tfxio.TensorFlowDataset(options=options)):
-      self._AssertSparseTensorEqual(label_feature,
-                                    _RECORDS_AS_TENSORS[i][label_key])
+      self._assert_sparse_tensor_equal(
+          label_feature, _RECORDS_AS_TENSORS[i][label_key])
       for key, tensor in decoded_tensors_dict.items():
-        self._AssertSparseTensorEqual(tensor, _RECORDS_AS_TENSORS[i][key])
+        self._assert_sparse_tensor_equal(tensor, _RECORDS_AS_TENSORS[i][key])
 
   def test_tensorflow_dataset_with_invalid_label_key(self):
+    decoder_path = _write_decoder()
     tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, self._decoder_path, ["some", "component"])
+        self._input_path, decoder_path, ["some", "component"])
     label_key = "invalid"
     options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1, label_key=label_key)
