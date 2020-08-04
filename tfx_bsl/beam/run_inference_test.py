@@ -29,6 +29,9 @@ except ImportError:
 import apache_beam as beam
 from apache_beam.metrics.metric import MetricsFilter
 from apache_beam.options import pipeline_options
+from apache_beam.testing.test_stream import ElementEvent
+from apache_beam.testing.test_stream import ProcessingTimeEvent
+from apache_beam.testing.test_stream import TestStream
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
 from googleapiclient import discovery
@@ -81,6 +84,63 @@ class RunInferenceFixture(tf.test.TestCase):
         prediction_log.MergeFromString(record_string)
         results.append(prediction_log)
     return results
+
+  def _build_keras_model(self, add):
+    """Builds a dummy keras model with one input and output."""
+    inp = tf.keras.layers.Input((1,), name='input')
+    out = tf.keras.layers.Lambda(lambda x: x + add)(inp)
+    m = tf.keras.models.Model(inp, out)
+    return m
+
+  def _new_model(self, model_path, add):
+    """Exports a keras model in the SavedModel format."""
+    class WrapKerasModel(tf.keras.Model):
+      """Wrapper class to apply a signature to a keras model."""
+      def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+      @tf.function(input_signature=[
+          tf.TensorSpec(shape=[None], dtype=tf.string, name='inputs')
+      ])
+      def call(self, serialized_example):
+        features = {
+          'input': tf.compat.v1.io.FixedLenFeature(
+            [1],
+            dtype=tf.float32,
+            default_value=0
+          )
+        }
+        input_tensor_dict = tf.io.parse_example(serialized_example, features)
+        return self.model(input_tensor_dict)
+
+    model = self._build_keras_model(add)
+    wrapped_model = WrapKerasModel(model)
+    tf.compat.v1.keras.experimental.export_saved_model(
+      wrapped_model, model_path, serving_only=True
+    )
+    return self._get_saved_model_spec(model_path)
+
+  def _decode_value(self, pl):
+    """Returns output value from prediction log."""
+    out_tensor = pl.predict_log.response.outputs['output_1']
+    arr = tf.make_ndarray(out_tensor)
+    x = arr[0][0]
+    return x
+
+  def _make_example(self, x):
+    """Builds a TFExample object with a single value."""
+    feature = {}
+    feature['input'] = tf.train.Feature(
+        float_list=tf.train.FloatList(value=[x]))
+    ex = tf.train.Example(features=tf.train.Features(feature=feature))
+    return ex
+
+  def _get_saved_model_spec(self, model_path):
+    """Returns an InferenceSpecType object for a saved model path."""
+    return model_spec_pb2.InferenceSpecType(
+      saved_model_spec=model_spec_pb2.SavedModelSpec(
+          model_path=model_path))
 
 
 class RunOfflineInferenceTest(RunInferenceFixture):
@@ -652,63 +712,6 @@ class RunRemoteInferenceTest(RunInferenceFixture):
 
 class RunInferenceCoreTest(RunInferenceFixture):
 
-  def _build_keras_model(self, add):
-    """Builds a dummy keras model with one input and output."""
-    inp = tf.keras.layers.Input((1,), name='input')
-    out = tf.keras.layers.Lambda(lambda x: x + add)(inp)
-    m = tf.keras.models.Model(inp, out)
-    return m
-
-  def _new_model(self, model_path, add):
-    """Exports a keras model in the SavedModel format."""
-    class WrapKerasModel(tf.keras.Model):
-      """Wrapper class to apply a signature to a keras model."""
-      def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-      @tf.function(input_signature=[
-          tf.TensorSpec(shape=[None], dtype=tf.string, name='inputs')
-      ])
-      def call(self, serialized_example):
-        features = {
-          'input': tf.compat.v1.io.FixedLenFeature(
-            [1],
-            dtype=tf.float32,
-            default_value=0
-          )
-        }
-        input_tensor_dict = tf.io.parse_example(serialized_example, features)
-        return self.model(input_tensor_dict)
-
-    model = self._build_keras_model(add)
-    wrapped_model = WrapKerasModel(model)
-    tf.compat.v1.keras.experimental.export_saved_model(
-      wrapped_model, model_path, serving_only=True
-    )
-    return self._get_saved_model_spec(model_path)
-
-  def _decode_value(self, pl):
-    """Returns output value from prediction log."""
-    out_tensor = pl.predict_log.response.outputs['output_1']
-    arr = tf.make_ndarray(out_tensor)
-    x = arr[0][0]
-    return x
-
-  def _make_example(self, x):
-    """Builds a TFExample object with a single value."""
-    feature = {}
-    feature['input'] = tf.train.Feature(
-        float_list=tf.train.FloatList(value=[x]))
-    ex = tf.train.Example(features=tf.train.Features(feature=feature))
-    return ex
-
-  def _get_saved_model_spec(self, model_path):
-    """Returns an InferenceSpecType object for a saved model path."""
-    return model_spec_pb2.InferenceSpecType(
-      saved_model_spec=model_spec_pb2.SavedModelSpec(
-          model_path=model_path))
-
   def test_batch_queries_single_model(self):
     spec = self._get_saved_model_spec('/example/model')
     QUERIES = [(spec, self._make_example(i)) for i in range(100)]
@@ -728,26 +731,26 @@ class RunInferenceCoreTest(RunInferenceFixture):
   # TODO(hgarrereyn): Switch _BatchElements to use GroupIntoBatches once
   #   BEAM-2717 is fixed so examples are grouped by inference spec key.
   #
-  # def test_batch_queries_multiple_models(self):
-  #   spec1 = self._get_saved_model_spec('/example/model1')
-  #   spec2 = self._get_saved_model_spec('/example/model2')
-  #
-  #   QUERIES = []
-  #   for i in range(100):
-  #     QUERIES.append((spec1 if i % 2 == 0 else spec2, self._make_example(i)))
-  #
-  #   CORRECT = {example.SerializeToString(): spec for spec, example in QUERIES}
-  #
-  #   def _check_batch(batch):
-  #     """Assert examples are grouped with the correct inference spec."""
-  #     spec, examples = batch
-  #     assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
-  #
-  #   with beam.Pipeline() as p:
-  #     queries = p | 'Build queries' >> beam.Create(QUERIES)
-  #     batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
-  #
-  #     _ = batches | 'Check' >> beam.Map(_check_batch)
+  def test_batch_queries_multiple_models(self):
+    spec1 = self._get_saved_model_spec('/example/model1')
+    spec2 = self._get_saved_model_spec('/example/model2')
+  
+    QUERIES = []
+    for i in range(100):
+      QUERIES.append((spec1 if i % 2 == 0 else spec2, self._make_example(i)))
+  
+    CORRECT = {example.SerializeToString(): spec for spec, example in QUERIES}
+  
+    def _check_batch(batch):
+      """Assert examples are grouped with the correct inference spec."""
+      spec, examples = batch
+      assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
+  
+    with beam.Pipeline() as p:
+      queries = p | 'Build queries' >> beam.Create(QUERIES)
+      batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
+  
+      _ = batches | 'Check' >> beam.Map(_check_batch)
 
   def test_inference_on_queries(self):
     spec = self._new_model(self._get_output_data_dir('model1'), 100)
@@ -771,6 +774,153 @@ class RunInferenceCoreTest(RunInferenceFixture):
       values,
       [100,101,102,103,104,105,106,107,108,109]
     )
+
+
+class RunStreamingModelInferenceTest(RunInferenceFixture):
+
+  def setUp(self):
+    super(RunStreamingModelInferenceTest, self).setUp()
+
+  def testLateModel(self):
+    """Single model specified dynamically."""
+    inference_spec_type = self._new_model(
+      self._get_output_data_dir('model'),
+      100
+    )
+    predictions_path = self._get_output_data_dir('predictions')
+
+    with beam.Pipeline() as p:
+      model = p | 'Create model' >> beam.Create([inference_spec_type])
+      examples = (
+        p
+        | 'Create examples' >> beam.Create(range(20)) \
+        | 'Convert to TFExample' >> beam.Map(self._make_example)
+      )
+      _ = (
+        examples
+        | 'RunInference' >> run_inference.RunInferenceImpl(model) \
+        | 'WritePredictions' >> beam.io.WriteToTFRecord(
+          predictions_path,
+          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog))
+      )
+
+    results = self._get_results(predictions_path)
+    values = set([int(self._decode_value(x)) for x in results])
+    self.assertEqual(values, set(range(100,120)))
+
+  def testSeveralModels(self):
+    """Several models specified dynamically."""
+    spec_1 = self._new_model(self._get_output_data_dir('model1'), 100)
+    spec_2 = self._new_model(self._get_output_data_dir('model2'), 200)
+    spec_3 = self._new_model(self._get_output_data_dir('model3'), 300)
+
+    predictions_path = self._get_output_data_dir('predictions')
+
+    h = TestStreamHelper()
+    h.add_stream(
+        'examples',
+        range(20),
+        range(20)
+    )
+    h.add_stream(
+        'models',
+        [spec_1, spec_2, spec_3],
+        [4.5, 10.5, 15.5]
+    )
+    stream = h.build()
+
+    # TODO(hgarrereyn): this test doesn't work in streaming mode because
+    # records are never written
+    options = pipeline_options.PipelineOptions(streaming=False)
+    with beam.Pipeline(options=options) as p:
+      s = p | 'Stream' >> stream
+      models = s['models']
+      examples = (
+        s['examples']
+        | 'Convert to TFExample' >> beam.Map(self._make_example)
+      )
+      _ = (
+        examples
+        | 'RunInference' >> run_inference.RunInferenceImpl(models) \
+        | 'WritePredictions' >> beam.io.WriteToTFRecord(
+          predictions_path,
+          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog))
+      )
+
+    results = self._get_results(predictions_path)
+    values = set([int(self._decode_value(x)) for x in results])
+    self.assertEqual(
+      values,
+      set([
+        100,101,102,103,104,105,106,107,108,109,110,
+        211,212,213,214,215,
+        316,317,318,319
+      ])
+    )
+
+  def testQueries(self):
+    """Several models specified in queries."""
+    spec_1 = self._new_model(self._get_output_data_dir('model1'), 100)
+    spec_2 = self._new_model(self._get_output_data_dir('model2'), 200)
+    spec_3 = self._new_model(self._get_output_data_dir('model3'), 300)
+
+    predictions_path = self._get_output_data_dir('predictions')
+
+    QUERIES = [
+      (spec_1, self._make_example(0)),
+      (spec_2, self._make_example(1)),
+      (spec_3, self._make_example(2)),
+      (spec_1, self._make_example(3)),
+      (spec_2, self._make_example(4)),
+      (spec_3, self._make_example(5)),
+      (spec_1, self._make_example(6)),
+      (spec_2, self._make_example(7)),
+      (spec_3, self._make_example(8)),
+      (spec_1, self._make_example(9)),
+      (spec_2, self._make_example(10)),
+      (spec_3, self._make_example(11)),
+    ]
+
+    # TODO(hgarrereyn): this test doesn't work in streaming mode because
+    # records are never written
+    options = pipeline_options.PipelineOptions(streaming=False)
+    with beam.Pipeline(options=options) as p:
+      _ = (
+        p
+        | 'Queries' >> beam.Create(QUERIES) \
+        | 'RunInference' >> run_inference.RunInferenceImpl() \
+        | 'WritePredictions' >> beam.io.WriteToTFRecord(
+          predictions_path,
+          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog))
+      )
+
+    results = self._get_results(predictions_path)
+    values = set([int(self._decode_value(x)) for x in results])
+    self.assertEqual(
+      values,
+      set([
+        100,103,106,109,
+        201,204,207,210,
+        302,305,308,311
+      ])
+    )
+
+
+class TestStreamHelper(object):
+  """Helper object to build a test stream with tagged outputs."""
+  def __init__(self):
+    self.events = []
+    self.tags = set([None])
+
+  def add_stream(self, tag, values, timestamps):
+    self.tags.add(tag)
+    for v,ts in zip(values, timestamps):
+      self.events.append(ElementEvent(
+          tag=tag, timestamped_values=[beam.window.TimestampedValue(v,ts)]))
+
+  def build(self):
+    events = sorted(self.events, key=lambda x: x.timestamped_values[0].timestamp)
+    return TestStream(events=events, output_tags=self.tags)
 
 
 if __name__ == '__main__':

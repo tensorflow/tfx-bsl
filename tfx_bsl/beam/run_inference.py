@@ -106,17 +106,25 @@ class OperationType(object):
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(ExampleType)
+@beam.typehints.with_input_types(Union[ExampleType, QueryType])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInferenceImpl(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: Union[model_spec_pb2.InferenceSpecType,
+                               beam.pvalue.PCollection] = None
 ) -> beam.pvalue.PCollection:
   """Implementation of RunInference API.
 
   Args:
-    examples: A PCollection containing examples.
-    inference_spec_type: Model inference endpoint.
+    examples: A PCollection containing examples. If inference_spec_type is
+      None, this is interpreted as a PCollection of queries:
+      (InferenceSpecType, Example)
+    inference_spec_type: Model inference endpoint. Can be one of:
+      - InferenceSpecType: specifies a fixed model to use for inference.
+      - PCollection[InferenceSpecType]: specifies a secondary PCollection of
+        models. Each example will use the most recent model for inference.
+      - None: indicates that the primary PCollection contains
+        (InferenceSpecType, Example) tuples.
 
   Returns:
     A PCollection containing prediction logs.
@@ -124,11 +132,22 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
   Raises:
     ValueError; when operation is not supported.
   """
-  logging.info('RunInference on model: %s', inference_spec_type)
-
-  queries = examples | 'Format as queries' >> beam.Map(lambda x: (None, x))
-  predictions = queries | '_RunInferenceCore (fixed)' >> _RunInferenceCore(
-    fixed_inference_spec_type=inference_spec_type)
+  predictions = None
+  if type(inference_spec_type) is model_spec_pb2.InferenceSpecType:
+    logging.info('RunInference on model: %s', inference_spec_type)
+    queries = examples | 'Format as queries' >> beam.Map(lambda x: (None, x))
+    predictions = queries | '_RunInferenceCore (fixed)' >> _RunInferenceCore(
+      fixed_inference_spec_type=inference_spec_type)
+  elif type(inference_spec_type) is beam.pvalue.PCollection:
+    logging.info('RunInference on dynamic models')
+    queries = examples | 'Join examples' >> _TemporalJoin(inference_spec_type)
+    predictions = queries | '_RunInferenceCore (dynamic)' >> _RunInferenceCore()
+  elif inference_spec_type is None:
+    logging.info('RunInference on queries')
+    predictions = examples | '_RunInferenceCore (queries)' >> _RunInferenceCore()
+  else:
+    raise ValueError('Invalid type for inference_spec_type: %s'
+                     % type(inference_spec_type))
 
   return predictions
 
@@ -220,22 +239,18 @@ def _BatchQueries(queries: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
     return (key, (inference_spec, example))
 
   def _to_query_batch(
-    query_list: List[Tuple[bytes, QueryType]]
+    query_list: Tuple[bytes, List[QueryType]]
   ) -> _QueryBatchType:
     """Converts a list of queries to a logical _QueryBatch."""
-    inference_spec = query_list[0][1][0]
-    examples = [x[1][1] for x in query_list]
+    inference_spec = query_list[1][0][0]
+    examples = [x[1] for x in query_list[1]]
     return (inference_spec, examples)
 
   batches = (
     queries
     | 'Serialize inference_spec as key' >> beam.Map(_add_key)
-    # TODO(hgarrereyn): Use of BatchElements is a temporary workaround to
-    #   enable RunInference to run on Dataflow v1 runner until BEAM-2717
-    #   is fixed. BatchElements does not performing a grouping operation
-    #   and therefore, _BatchQueries currently operates on queries that all
-    #   contain the same inference spec.
-    | 'Batch' >> beam.BatchElements()
+    # TODO(hgarrereyn): GroupIntoBatches with automatic batch sizes
+    | 'Batch' >> beam.GroupIntoBatches(1000)
     | 'Convert to QueryBatch' >> beam.Map(_to_query_batch)
   )
   return batches
@@ -738,7 +753,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     if self._has_tpu_tag():
       # TODO(b/131873699): Support TPU inference.
       raise ValueError('TPU inference is not supported yet.')
-    self._session = self._load_model()
+    self._session = self._load_model(inference_spec_type)
 
   def _validate_model(self):
     """Optional subclass model validation hook.
@@ -748,7 +763,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     """
     pass
 
-  def _load_model(self):
+  def _load_model(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     """Load a saved model into memory.
 
     Returns:
@@ -772,7 +787,8 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
 
     if not self._model_path:
       raise ValueError('Model path is not valid.')
-    return self._shared_model_handle.acquire(load)
+    return self._shared_model_handle.acquire(
+      load, tag=inference_spec_type.SerializeToString())
 
   def _pre_process(self) -> _IOTensorSpec:
     # Pre process functions will validate for each signature.
@@ -1409,3 +1425,73 @@ class _ClockFactory(object):
         and not _is_cygwin()):
       return _FineGrainedClock()
     return _Clock()
+
+
+class _TemporalJoinStream(object):
+  PRIMARY = 1
+  SECONDARY = 2
+
+
+class _TemporalJoinDoFn(beam.DoFn):
+  """A stateful DoFn that joins two PCollection streams.
+
+  CACHE: holds the most recent item from the secondary stream
+  EARLY_PRIMARY: holds any items from the primary stream received before the
+    first item from the secondary stream
+  """
+  CACHE = beam.transforms.userstate.CombiningValueStateSpec(
+      'cache', combine_fn=beam.combiners.ToListCombineFn())
+
+  EARLY_PRIMARY = beam.transforms.userstate.CombiningValueStateSpec(
+      'early_primary', combine_fn=beam.combiners.ToListCombineFn())
+
+  def process(
+    self,
+    x,
+    cache=beam.DoFn.StateParam(CACHE),
+    early_primary=beam.DoFn.StateParam(EARLY_PRIMARY)
+  ):
+    key, tup = x
+    value, stream_type = tup
+
+    if stream_type == _TemporalJoinStream.PRIMARY:
+      cached = cache.read()
+      if len(cached) == 0:
+        # accumulate in early_primary
+        early_primary.add(value)
+      else:
+        return [(cached[0], value)]
+    elif stream_type == _TemporalJoinStream.SECONDARY:
+      cache.clear()
+      cache.add(value)
+
+      # dump any cached values from primary
+      primary = early_primary.read()
+      if len(primary) > 0:
+        early_primary.clear()
+        return [(value, x) for x in primary]
+    else:
+      return []
+
+
+@beam.ptransform_fn
+def _TemporalJoin(primary, secondary):
+  """Performs a temporal join of two PCollections.
+
+  Returns tuples of the type (b,a) where:
+  - a is from the primary stream
+  - b is from the secondary stream
+  - b is the most recent item at the time a is processed (or a was processed
+    before b and b is the first item in the stream)
+  """
+  tag_primary = primary | 'primary' >> beam.Map(
+      lambda x: (x, _TemporalJoinStream.PRIMARY))
+  tag_secondary = secondary | 'secondary' >> beam.Map(
+      lambda x: (x, _TemporalJoinStream.SECONDARY))
+
+  joined = [tag_primary, tag_secondary] \
+            | beam.Flatten() \
+            | 'Fake keys' >> beam.Map(lambda x: (0,x)) \
+            | 'Join' >> beam.ParDo(_TemporalJoinDoFn())
+
+  return joined
