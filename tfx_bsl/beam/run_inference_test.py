@@ -728,9 +728,6 @@ class RunInferenceCoreTest(RunInferenceFixture):
 
       _ = batches | 'Check' >> beam.Map(_check_batch)
 
-  # TODO(hgarrereyn): Switch _BatchElements to use GroupIntoBatches once
-  #   BEAM-2717 is fixed so examples are grouped by inference spec key.
-  #
   def test_batch_queries_multiple_models(self):
     spec1 = self._get_saved_model_spec('/example/model1')
     spec2 = self._get_saved_model_spec('/example/model2')
