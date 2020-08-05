@@ -52,9 +52,18 @@ tf_workspace(
     tf_repo_name = "org_tensorflow",
 )
 
-load("//third_party:arrow_configure.bzl", "arrow_configure")
+# LINT.IfChange(arrow_version)
+ARROW_COMMIT = "ff7ee06020949daf66ac05090753e1a17736d9fa"  # 0.17.1
+# LINT.ThenChange(third_party/arrow/util/config.h)
 
-arrow_configure(name = "arrow")
+http_archive(
+    name = "arrow",
+    build_file = "//third_party:arrow.BUILD",
+    strip_prefix = "arrow-%s" % ARROW_COMMIT,
+    sha256 = "2fca47067e97417d6ba0574b6b90a66752176ac4315a93e6e42d7af8c312e1c1",
+    urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
+    patches = ["//third_party:arrow.patch"],
+)
 
 # Specify the minimum required bazel version.
 load("@org_tensorflow//tensorflow:version_check.bzl", "check_bazel_version_at_least")

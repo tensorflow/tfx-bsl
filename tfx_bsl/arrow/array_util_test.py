@@ -47,8 +47,7 @@ class ArrayUtilTest(parameterized.TestCase):
     for f in itertools.chain(functions_expecting_list_array,
                              functions_expecting_array,
                              functions_expecting_binary_array):
-      with self.assertRaisesRegex(
-          TypeError, "incompatible function arguments"):
+      with self.assertRaises((TypeError, RuntimeError)):
         f(1)
 
     for f in functions_expecting_list_array:

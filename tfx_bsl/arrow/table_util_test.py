@@ -547,7 +547,7 @@ class DataFrameToRecordBatchTest(parameterized.TestCase):
 
     actual_row_counts = collections.Counter()
     for col in rb_data.columns:
-      row = tuple(col)
+      row = tuple(col.to_pylist())
       actual_row_counts[row] += 1
     self.assertDictEqual(actual_row_counts, expected_row_counts)
 
@@ -557,6 +557,7 @@ class DataFrameToRecordBatchTest(parameterized.TestCase):
 
     actual_row_counts = collections.Counter()
     for col in canonicalized_rb_data.columns:
+      col = col.to_pylist()
       row = (col[0][0], col[1][0])
       actual_row_counts[row] += 1
     self.assertDictEqual(actual_row_counts, expected_row_counts)

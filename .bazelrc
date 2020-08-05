@@ -1,0 +1,4 @@
+# This macro is needed in order for tfx-bsl to build statically with
+# arrow.
+# See tfx_bsl/cc/pybind11/arrow_casters.h
+build --copt=-DTFX_BSL_USE_ARROW_C_ABI

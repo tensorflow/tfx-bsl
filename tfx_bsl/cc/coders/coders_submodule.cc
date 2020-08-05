@@ -15,7 +15,6 @@
 
 #include <memory>
 
-#include "arrow/python/pyarrow.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/coders/example_coder.h"
 #include "tfx_bsl/cc/coders/example_numpy_decoder.h"
@@ -29,7 +28,6 @@ namespace tfx_bsl {
 namespace py = pybind11;
 
 void DefineCodersSubmodule(py::module main_module) {
-  arrow::py::import_pyarrow();
   auto m = main_module.def_submodule("coders");
   m.doc() = "Coders.";
 

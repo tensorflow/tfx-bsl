@@ -13,7 +13,6 @@
 // limitations under the License.
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 
-#include "arrow/python/pyarrow.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/arrow/table_util.h"
@@ -252,7 +251,6 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
 }  // namespace
 
 void DefineArrowSubmodule(pybind11::module main_module) {
-  arrow::py::import_pyarrow();
   auto m = main_module.def_submodule("arrow");
   m.doc() = "Arrow utilities.";
   DefineArrayUtilSubmodule(m);
