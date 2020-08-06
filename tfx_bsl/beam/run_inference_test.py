@@ -700,8 +700,7 @@ class RunInferenceCoreTest(RunInferenceFixture):
     feature = {}
     feature['input'] = tf.train.Feature(
         float_list=tf.train.FloatList(value=[x]))
-    ex = tf.train.Example(features=tf.train.Features(feature=feature))
-    return ex
+    return tf.train.Example(features=tf.train.Features(feature=feature))
 
   def _get_saved_model_spec(self, model_path):
     """Returns an InferenceSpecType object for a saved model path."""
@@ -720,7 +719,7 @@ class RunInferenceCoreTest(RunInferenceFixture):
       assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
 
     with beam.Pipeline() as p:
-      queries = p | 'Build queries' >> beam.Create(QUERIES)
+      queries = p | 'Queries' >> beam.Create(QUERIES)
       batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
 
       _ = batches | 'Check' >> beam.Map(_check_batch)
@@ -744,7 +743,7 @@ class RunInferenceCoreTest(RunInferenceFixture):
   #     assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
   #
   #   with beam.Pipeline() as p:
-  #     queries = p | 'Build queries' >> beam.Create(QUERIES)
+  #     queries = p | 'Queries' >> beam.Create(QUERIES)
   #     batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
   #
   #     _ = batches | 'Check' >> beam.Map(_check_batch)
