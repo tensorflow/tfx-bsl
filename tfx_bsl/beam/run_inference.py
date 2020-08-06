@@ -105,14 +105,9 @@ class OperationType(object):
   MULTIHEAD = 'MULTIHEAD'
 
 
-@beam.ptransform_fn
 @beam.typehints.with_input_types(Union[ExampleType, QueryType])
-@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceImpl(  # pylint: disable=invalid-name
-    examples: beam.pvalue.PCollection,
-    inference_spec_type: Union[model_spec_pb2.InferenceSpecType,
-                               beam.pvalue.PCollection] = None
-) -> beam.pvalue.PCollection:
+# TODO(BEAM-10258): add type output annotations for polymorphic with_errors API
+class RunInferenceImpl(beam.PTransform):
   """Implementation of RunInference API.
 
   Args:
@@ -128,28 +123,63 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
 
   Returns:
     A PCollection containing prediction logs.
+    Or, if with_errors() is enabled, a dict containing predictions and errors:
+    {'predictions': ..., 'errors': ...}
 
   Raises:
     ValueError; when operation is not supported.
   """
-  predictions = None
-  if type(inference_spec_type) is model_spec_pb2.InferenceSpecType:
-    logging.info('RunInference on model: %s', inference_spec_type)
-    queries = examples | 'Format as queries' >> beam.Map(lambda x: (None, x))
-    predictions = queries | '_RunInferenceCore (fixed)' >> _RunInferenceCore(
-      fixed_inference_spec_type=inference_spec_type)
-  elif type(inference_spec_type) is beam.pvalue.PCollection:
-    logging.info('RunInference on dynamic models')
-    queries = examples | 'Join examples' >> _TemporalJoin(inference_spec_type)
-    predictions = queries | '_RunInferenceCore (dynamic)' >> _RunInferenceCore()
-  elif inference_spec_type is None:
-    logging.info('RunInference on queries')
-    predictions = examples | '_RunInferenceCore (queries)' >> _RunInferenceCore()
-  else:
-    raise ValueError('Invalid type for inference_spec_type: %s'
-                     % type(inference_spec_type))
+  def __init__(
+    self, inference_spec_type: Union[model_spec_pb2.InferenceSpecType,
+                                     beam.pvalue.PCollection] = None
+  ):
+    self._inference_spec_type = inference_spec_type
+    self._with_errors = False
 
-  return predictions
+  def with_errors(self):
+    """Enables runtime error handling.
+
+    Once enabled, RunInference will catch runtime errors and return a dict
+    containing a predictions stream and an errors stream:
+    {
+      'predictions': ...,
+      'errors': ...
+    }
+    """
+    self._with_errors = True
+    return self
+
+  def expand(self, examples):
+    inference_results = None
+    if type(self._inference_spec_type) is model_spec_pb2.InferenceSpecType:
+      logging.info('RunInference on model: %s', self._inference_spec_type)
+      inference_results = (
+        examples
+        | 'Format as queries' >> beam.Map(lambda x: (None, x))
+        | '_RunInferenceCore (fixed)' >> _RunInferenceCore(
+          fixed_inference_spec_type=self._inference_spec_type,
+          catch_errors=self._with_errors)
+      )
+    elif type(self._inference_spec_type) is beam.pvalue.PCollection:
+      logging.info('RunInference on dynamic models')
+      inference_results = (
+        examples
+        | 'Join examples' >> _TemporalJoin(self._inference_spec_type)
+        | '_RunInferenceCore (dynamic)' >> _RunInferenceCore(
+          catch_errors=self._with_errors))
+    elif self._inference_spec_type is None:
+      logging.info('RunInference on queries')
+      inference_results = (
+        examples | '_RunInferenceCore (queries)' >> _RunInferenceCore(
+          catch_errors=self._with_errors))
+    else:
+      raise ValueError('Invalid type for inference_spec_type: %s'
+                       % type(self._inference_spec_type))
+
+    if self._with_errors:
+      return inference_results
+    else:
+      return inference_results['predictions']
 
 
 @beam.ptransform_fn
@@ -157,14 +187,15 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _RunInferenceCore(
     queries: beam.pvalue.PCollection,
-    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None,
+    catch_errors: bool = False
 ) -> beam.pvalue.PCollection:
   """Runs inference on queries and returns prediction logs.
 
   This internal run inference implementation operates on queries. Internally,
   these queries are grouped by model and inference runs in batches. If a
   fixed_inference_spec_type is provided, this spec is used for all inference
-  requests which enables pre-configuring the model durign pipeline
+  requests which enables pre-configuring the model during pipeline
   construction.
 
   Args:
@@ -173,24 +204,39 @@ def _RunInferenceCore(
       specified, this is "preloaded" during inference and models specified in
       query tuples are ignored. This requires the InferenceSpecType to be known
       at pipeline creation time.
+    catch_errors: if True, runtime errors will be caught and emitted in a
+      separate 'errors' PCollection. Otherwise, runtime errors will be thrown
+      in their original location.
 
   Returns:
-    A PCollection containing prediction logs.
+    A dict containing a prediction and error PCollection:
+    {
+      'predictions': ...,
+      'errors': ...
+    }
+    If catch_errors is False, the 'errors' PCollection will be empty.
 
   Raises:
-    ValueError; when operation is not supported.
+    ValueError; when the fixed_inference_spec_type is invalid.
   """
   batched_queries = queries | 'BatchQueries' >> _BatchQueries()
-  predictions = None
+  inference_results = None
 
   if fixed_inference_spec_type is None:
     # operation type is determined at runtime
+    def _tag_operation_type(batch):
+      if not catch_errors:
+        return beam.pvalue.TaggedOutput(_get_operation_type(batch[0]), batch)
+      else:
+        try:
+          return beam.pvalue.TaggedOutput(_get_operation_type(batch[0]), batch)
+        except Exception as e:
+          return beam.pvalue.TaggedOutput('errors', (e, batch))
+
     tagged = (
-      batched_queries | 'Tag by operation' >> beam.Map(
-        lambda batch: beam.pvalue.TaggedOutput(
-          _get_operation_type(batch[0]), batch)
-      )
+      batched_queries | 'Tag by operation' >> beam.Map(_tag_operation_type)
       .with_outputs(
+        'errors',
         OperationType.CLASSIFICATION,
         OperationType.REGRESSION,
         OperationType.PREDICTION,
@@ -198,32 +244,51 @@ def _RunInferenceCore(
       )
     )
 
-    predictions = [
-      tagged[OperationType.CLASSIFICATION] | 'Classify' >> _Classify(),
-      tagged[OperationType.REGRESSION] | 'Regress' >> _Regress(),
-      tagged[OperationType.PREDICTION] | 'Predict' >> _Predict(),
-      tagged[OperationType.MULTIHEAD] | 'MultiInference' >> _MultiInference()
-    ] | beam.Flatten()
+    operation_inference_results = [
+      tagged[OperationType.CLASSIFICATION] | 'Classify' >> _Classify(
+        catch_errors=catch_errors),
+      tagged[OperationType.REGRESSION] | 'Regress' >> _Regress(
+        catch_errors=catch_errors),
+      tagged[OperationType.PREDICTION] | 'Predict' >> _Predict(
+        catch_errors=catch_errors),
+      tagged[OperationType.MULTIHEAD] | 'MultiInference' >> _MultiInference(
+        catch_errors=catch_errors)
+    ]
+
+    predictions = (
+      [x['predictions'] for x in operation_inference_results]
+      | 'Flatten predictions' >> beam.Flatten())
+
+    errors = (
+      [tagged['errors']] + [x['errors'] for x in operation_inference_results]
+      | 'Flatten errors' >> beam.Flatten())
+
+    inference_results = {'predictions': predictions, 'errors': errors}
   else:
     # operation type is determined at pipeline construction time
     operation_type = _get_operation_type(fixed_inference_spec_type)
 
     if operation_type == OperationType.CLASSIFICATION:
-      predictions = batched_queries | 'Classify' >> _Classify(
-        fixed_inference_spec_type=fixed_inference_spec_type)
+      inference_results = batched_queries | 'Classify' >> _Classify(
+        fixed_inference_spec_type=fixed_inference_spec_type,
+        catch_errors=catch_errors)
     elif operation_type == OperationType.REGRESSION:
-      predictions = batched_queries | 'Regress' >> _Regress(
-        fixed_inference_spec_type=fixed_inference_spec_type)
+      inference_results = batched_queries | 'Regress' >> _Regress(
+        fixed_inference_spec_type=fixed_inference_spec_type,
+        catch_errors=catch_errors)
     elif operation_type == OperationType.PREDICTION:
-      predictions = batched_queries | 'Predict' >> _Predict(
-        fixed_inference_spec_type=fixed_inference_spec_type)
+      inference_results = batched_queries | 'Predict' >> _Predict(
+        fixed_inference_spec_type=fixed_inference_spec_type,
+        catch_errors=catch_errors)
     elif operation_type == OperationType.MULTIHEAD:
-      predictions = (batched_queries | 'MultiInference' >> _MultiInference(
-        fixed_inference_spec_type=fixed_inference_spec_type))
+      inference_results = (
+        batched_queries | 'MultiInference' >> _MultiInference(
+          fixed_inference_spec_type=fixed_inference_spec_type,
+          catch_errors=catch_errors))
     else:
       raise ValueError('Unsupported operation_type %s' % operation_type)
 
-  return predictions
+  return inference_results
 
 
 @beam.ptransform_fn
@@ -268,29 +333,38 @@ _Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Classify(
     pcoll: beam.pvalue.PCollection,
-    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None,
+    catch_errors: bool = False
 ): # pylint: disable=invalid-name
   """Performs classify PTransform."""
-  raw_predictions = None
+  inference_results = None
 
   if fixed_inference_spec_type is None:
     tagged = pcoll | 'Tag inference type' >> _TagUsingInProcessInference()
     tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform()
-    raw_predictions = (
+    inference_results = (
       tagged['local']
-      | 'Classify' >> beam.ParDo(_BatchClassifyDoFn(shared.Shared())))
+      | 'Classify' >> _ParDoExceptionWrapper(
+        _BatchClassifyDoFn(shared.Shared()),
+        catch_errors=catch_errors))
   else:
     if _using_in_process_inference(fixed_inference_spec_type):
-      raw_predictions = (
+      inference_results = (
         pcoll
-        | 'Classify' >> beam.ParDo(_BatchClassifyDoFn(shared.Shared(),
-            fixed_inference_spec_type=fixed_inference_spec_type)))
+        | 'Classify' >> _ParDoExceptionWrapper(
+          _BatchClassifyDoFn(
+            shared.Shared(),
+            fixed_inference_spec_type=fixed_inference_spec_type),
+          catch_errors=catch_errors))
     else:
       raise NotImplementedError
 
-  return (raw_predictions
-          | 'BuildPredictionLogForClassifications' >> beam.ParDo(
-              _BuildPredictionLogForClassificationsDoFn()))
+  predictions = (
+    inference_results[None]
+    | 'BuildPredictionLogForClassifications' >> beam.ParDo(
+      _BuildPredictionLogForClassificationsDoFn()))
+
+  return {'predictions': predictions, 'errors': inference_results['errors']}
 
 
 @beam.ptransform_fn
@@ -298,29 +372,38 @@ def _Classify(
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Regress(
     pcoll: beam.pvalue.PCollection,
-    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None,
+    catch_errors: bool = False
 ): # pylint: disable=invalid-name
   """Performs regress PTransform."""
-  raw_predictions = None
+  inference_results = None
 
   if fixed_inference_spec_type is None:
     tagged = pcoll | 'Tag inference type' >> _TagUsingInProcessInference()
     tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform()
-    raw_predictions = (
+    inference_results = (
       tagged['local']
-      | 'Regress' >> beam.ParDo(_BatchRegressDoFn(shared.Shared())))
+      | 'Regress' >> _ParDoExceptionWrapper(
+        _BatchRegressDoFn(shared.Shared()),
+        catch_errors=catch_errors))
   else:
     if _using_in_process_inference(fixed_inference_spec_type):
-      raw_predictions = (
+      inference_results = (
         pcoll
-        | 'Regress' >> beam.ParDo(_BatchRegressDoFn(shared.Shared(),
-            fixed_inference_spec_type=fixed_inference_spec_type)))
+        | 'Regress' >> _ParDoExceptionWrapper(
+          _BatchRegressDoFn(
+            shared.Shared(),
+            fixed_inference_spec_type=fixed_inference_spec_type),
+          catch_errors=catch_errors))
     else:
       raise NotImplementedError
 
-  return (raw_predictions
-          | 'BuildPredictionLogForRegressions' >> beam.ParDo(
-              _BuildPredictionLogForRegressionsDoFn()))
+  predictions = (
+    inference_results[None]
+    | 'BuildPredictionLogForRegressions' >> beam.ParDo(
+      _BuildPredictionLogForRegressionsDoFn()))
+
+  return {'predictions': predictions, 'errors': inference_results['errors']}
 
 
 @beam.ptransform_fn
@@ -328,39 +411,61 @@ def _Regress(
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Predict(
     pcoll: beam.pvalue.PCollection,
-    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None,
+    catch_errors: bool = False
 ): # pylint: disable=invalid-name
   """Performs predict PTransform."""
   raw_predictions = None
+  errors = None
 
   if fixed_inference_spec_type is None:
     tagged = pcoll | 'Tag inference type' >> _TagUsingInProcessInference()
-    local_predictions = (
+    local_inference_results = (
       tagged['local']
-      | 'Predict' >> beam.ParDo(_BatchPredictDoFn(shared.Shared())))
-    remote_predictions = (
+      | 'Predict' >> _ParDoExceptionWrapper(
+        _BatchPredictDoFn(shared.Shared()),
+        catch_errors=catch_errors))
+    remote_inference_results = (
       tagged['remote']
-      | 'RemotePredict' >> beam.ParDo(
-        _RemotePredictDoFn(pcoll.pipeline.options)))
-    raw_predictions = (
-      [local_predictions, remote_predictions]
-      | 'Merge predictions' >> beam.Flatten())
-  else:
-    if _using_in_process_inference(fixed_inference_spec_type):
-      raw_predictions = (
-        pcoll
-        | 'Predict' >> beam.ParDo(_BatchPredictDoFn(shared.Shared(),
-            fixed_inference_spec_type=fixed_inference_spec_type)))
-    else:
-      raw_predictions = (
-        pcoll
-        | 'RemotePredict' >> beam.ParDo(_RemotePredictDoFn(
-            pcoll.pipeline.options,
-            fixed_inference_spec_type=fixed_inference_spec_type)))
+      | 'RemotePredict' >> _ParDoExceptionWrapper(
+        _RemotePredictDoFn(pcoll.pipeline.options),
+        catch_errors=catch_errors))
 
-  return (raw_predictions
-          | 'BuildPredictionLogForPredictions' >> beam.ParDo(
-              _BuildPredictionLogForPredictionsDoFn()))
+    raw_predictions = (
+      [local_inference_results[None], remote_inference_results[None]]
+      | 'Merge predictions' >> beam.Flatten())
+
+    errors = (
+      [local_inference_results['errors'], remote_inference_results['errors']]
+      | 'Merge errors' >> beam.Flatten())
+  else:
+    inference_results = None
+    if _using_in_process_inference(fixed_inference_spec_type):
+      inference_results = (
+        pcoll
+        | 'Predict' >> _ParDoExceptionWrapper(
+          _BatchPredictDoFn(
+            shared.Shared(),
+            fixed_inference_spec_type=fixed_inference_spec_type),
+          catch_errors=catch_errors))
+    else:
+      inference_results = (
+        pcoll
+        | 'RemotePredict' >> _ParDoExceptionWrapper(
+          _RemotePredictDoFn(
+            pcoll.pipeline.options,
+            fixed_inference_spec_type=fixed_inference_spec_type),
+          catch_errors=catch_errors))
+
+    raw_predictions = inference_results[None]
+    errors = inference_results['errors']
+
+  predictions = (
+    raw_predictions
+    | 'BuildPredictionLogForPredictions' >> beam.ParDo(
+      _BuildPredictionLogForPredictionsDoFn()))
+
+  return {'predictions': predictions, 'errors': errors}
 
 
 @beam.ptransform_fn
@@ -368,31 +473,38 @@ def _Predict(
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _MultiInference(
     pcoll: beam.pvalue.PCollection,
-    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None,
+    catch_errors: bool = False
 ): # pylint: disable=invalid-name
   """Performs multi inference PTransform."""
-  raw_predictions = None
+  inference_results = None
 
   if fixed_inference_spec_type is None:
     tagged = pcoll | 'Tag inference type' >> _TagUsingInProcessInference()
     tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform()
-    raw_predictions = (
+    inference_results = (
       tagged['local']
-      | 'MultiInference' >> beam.ParDo(
-          _BatchMultiInferenceDoFn(shared.Shared())))
+      | 'MultiInference' >> _ParDoExceptionWrapper(
+        _BatchMultiInferenceDoFn(shared.Shared()),
+        catch_errors=catch_errors))
   else:
     if _using_in_process_inference(fixed_inference_spec_type):
-      raw_predictions = (
+      inference_results = (
         pcoll
-        | 'MultiInference' >> beam.ParDo(_BatchMultiInferenceDoFn(
+        | 'MultiInference' >> _ParDoExceptionWrapper(
+          _BatchMultiInferenceDoFn(
             shared.Shared(),
-            fixed_inference_spec_type=fixed_inference_spec_type)))
+            fixed_inference_spec_type=fixed_inference_spec_type),
+          catch_errors=catch_errors))
     else:
       raise NotImplementedError
 
-  return (raw_predictions
-          | 'BuildMultiInferenceLog' >> beam.ParDo(
-              _BuildMultiInferenceLogDoFn()))
+  predictions = (
+    inference_results[None]
+    | 'BuildMultiInferenceLog' >> beam.ParDo(
+      _BuildMultiInferenceLogDoFn()))
+
+  return {'predictions': predictions, 'errors': inference_results['errors']}
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -1495,3 +1607,41 @@ def _TemporalJoin(primary, secondary):
             | 'Join' >> beam.ParDo(_TemporalJoinDoFn())
 
   return joined
+
+
+@beam.ptransform_fn
+def _ParDoExceptionWrapper(
+    pcoll: beam.pvalue.PCollection,
+    dofn: beam.DoFn,
+    catch_errors: bool = False
+):
+  """Runs a ParDo operation and optionally catches exceptions.
+
+  Args:
+    pcoll: input pcollection
+    dofn: a beam.DoFn that may raise exceptions
+    catch_errors:
+      - if True, errors raised in DoFn.process will be caught and emitted
+        in a separate 'errors' PCollection.
+      - if False, errors from the internal DoFn will not be caught
+
+  Returns: a DoOutputsTuple containing an additional 'errors' stream.
+  """
+  def _WrapDoFn(dofn, catch_errors=False):
+    if catch_errors:
+      _native_process = dofn.process
+      def _process(x):
+        out = None
+        try:
+          out = _native_process(x)
+        except Exception as e:
+          out = [beam.pvalue.TaggedOutput('errors', (e, x))]
+        return out
+
+      dofn.process = _process
+
+    return dofn
+
+  return (
+    pcoll
+    | beam.ParDo(_WrapDoFn(dofn, catch_errors)).with_outputs('errors'))

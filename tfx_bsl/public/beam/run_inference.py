@@ -29,14 +29,9 @@ from typing import Union
 from tensorflow_serving.apis import prediction_log_pb2
 
 
-@beam.ptransform_fn
 @beam.typehints.with_input_types(Union[ExampleType, QueryType])
-@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInference(  # pylint: disable=invalid-name
-    examples: beam.pvalue.PCollection,
-    inference_spec_type: Union[model_spec_pb2.InferenceSpecType,
-                               beam.pvalue.PCollection] = None
-) -> beam.pvalue.PCollection:
+# TODO(BEAM-10258): add type output annotations for polymorphic with_errors API
+class RunInference(run_inference.RunInferenceImpl):
   """Run inference with a model.
 
    There are two types of inference you can perform using this PTransform:
@@ -62,6 +57,16 @@ def RunInference(  # pylint: disable=invalid-name
      spec will be grouped together and inference will operate on batches of
      examples. To use this api, don't provide an inference_spec_type parameter.
 
+  By default, exceptions encountered at runtime will be raised. To disable this
+  behavior, you can use `RunInference(...).with_errors()` to catch runtime
+  errors and emit them in a separate stream. After enabling this, the return
+  type of this PTransform becomes a dict containing a prediction PCollection
+  and an error PCollection:
+  {
+    'predictions': ...,
+    'errors': ...
+  }
+
   TODO(b/131873699): Add support for the following features:
   1. Bytes as Input.
   2. PTable Input.
@@ -79,8 +84,7 @@ def RunInference(  # pylint: disable=invalid-name
 
   Returns:
     A PCollection containing prediction logs.
+    Or, if with_errors() is enabled, a dict containing predictions and errors:
+    {'predictions': ..., 'errors': ...}
   """
-
-  return (
-      examples |
-      'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
+  pass

@@ -59,131 +59,6 @@ class RunInferenceFixture(tf.test.TestCase):
               """, tf.train.Example()),
     ]
 
-  def _get_output_data_dir(self, sub_dir=None):
-    test_dir = self._testMethodName
-    path = os.path.join(
-        os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR', self.get_temp_dir()),
-        test_dir)
-    if not tf.io.gfile.exists(path):
-      tf.io.gfile.makedirs(path)
-    if sub_dir is not None:
-      path = os.path.join(path, sub_dir)
-    return path
-
-  def _prepare_predict_examples(self, example_path):
-    with tf.io.TFRecordWriter(example_path) as output_file:
-      for example in self._predict_examples:
-        output_file.write(example.SerializeToString())
-
-  def _get_results(self, prediction_log_path):
-    results = []
-    for f in tf.io.gfile.glob(prediction_log_path + '-?????-of-?????'):
-      record_iterator = tf.compat.v1.io.tf_record_iterator(path=f)
-      for record_string in record_iterator:
-        prediction_log = prediction_log_pb2.PredictionLog()
-        prediction_log.MergeFromString(record_string)
-        results.append(prediction_log)
-    return results
-
-  def _build_keras_model(self, add):
-    """Builds a dummy keras model with one input and output."""
-    inp = tf.keras.layers.Input((1,), name='input')
-    out = tf.keras.layers.Lambda(lambda x: x + add)(inp)
-    m = tf.keras.models.Model(inp, out)
-    return m
-
-  def _new_model(self, model_path, add):
-    """Exports a keras model in the SavedModel format."""
-    class WrapKerasModel(tf.keras.Model):
-      """Wrapper class to apply a signature to a keras model."""
-      def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-      @tf.function(input_signature=[
-          tf.TensorSpec(shape=[None], dtype=tf.string, name='inputs')
-      ])
-      def call(self, serialized_example):
-        features = {
-          'input': tf.compat.v1.io.FixedLenFeature(
-            [1],
-            dtype=tf.float32,
-            default_value=0
-          )
-        }
-        input_tensor_dict = tf.io.parse_example(serialized_example, features)
-        return self.model(input_tensor_dict)
-
-    model = self._build_keras_model(add)
-    wrapped_model = WrapKerasModel(model)
-    tf.compat.v1.keras.experimental.export_saved_model(
-      wrapped_model, model_path, serving_only=True
-    )
-    return self._get_saved_model_spec(model_path)
-
-  def _decode_value(self, pl):
-    """Returns output value from prediction log."""
-    out_tensor = pl.predict_log.response.outputs['output_1']
-    arr = tf.make_ndarray(out_tensor)
-    x = arr[0][0]
-    return x
-
-  def _make_example(self, x):
-    """Builds a TFExample object with a single value."""
-    feature = {}
-    feature['input'] = tf.train.Feature(
-        float_list=tf.train.FloatList(value=[x]))
-    ex = tf.train.Example(features=tf.train.Features(feature=feature))
-    return ex
-
-  def _get_saved_model_spec(self, model_path):
-    """Returns an InferenceSpecType object for a saved model path."""
-    return model_spec_pb2.InferenceSpecType(
-      saved_model_spec=model_spec_pb2.SavedModelSpec(
-          model_path=model_path))
-
-
-class RunOfflineInferenceTest(RunInferenceFixture):
-
-  def setUp(self):
-    super(RunOfflineInferenceTest, self).setUp()
-    self._predict_examples = [
-        text_format.Parse(
-            """
-              features {
-                feature { key: "input1" value { float_list { value: 0 }}}
-              }
-              """, tf.train.Example()),
-        text_format.Parse(
-            """
-              features {
-                feature { key: "input1" value { float_list { value: 1 }}}
-              }
-              """, tf.train.Example()),
-    ]
-    self._multihead_examples = [
-        text_format.Parse(
-            """
-            features {
-              feature {key: "x" value { float_list { value: 0.8 }}}
-              feature {key: "y" value { float_list { value: 0.2 }}}
-            }
-            """, tf.train.Example()),
-        text_format.Parse(
-            """
-            features {
-              feature {key: "x" value { float_list { value: 0.6 }}}
-              feature {key: "y" value { float_list { value: 0.1 }}}
-            }
-            """, tf.train.Example()),
-    ]
-
-
-  def _prepare_multihead_examples(self, example_path):
-    with tf.io.TFRecordWriter(example_path) as output_file:
-      for example in self._multihead_examples:
-        output_file.write(example.SerializeToString())
-
   def _build_predict_model(self, model_path):
     """Exports the dummy sum predict model."""
 
@@ -277,6 +152,135 @@ class RunOfflineInferenceTest(RunInferenceFixture):
           sess, [tf.compat.v1.saved_model.tag_constants.SERVING],
           signature_def_map=signature_def_map)
       builder.save()
+
+  def _get_output_data_dir(self, sub_dir=None):
+    test_dir = self._testMethodName
+    path = os.path.join(
+        os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR', self.get_temp_dir()),
+        test_dir)
+    if not tf.io.gfile.exists(path):
+      tf.io.gfile.makedirs(path)
+    if sub_dir is not None:
+      path = os.path.join(path, sub_dir)
+    return path
+
+  def _prepare_predict_examples(self, example_path):
+    with tf.io.TFRecordWriter(example_path) as output_file:
+      for example in self._predict_examples:
+        output_file.write(example.SerializeToString())
+
+  def _get_results(self, prediction_log_path):
+    results = []
+    for f in tf.io.gfile.glob(prediction_log_path + '-?????-of-?????'):
+      record_iterator = tf.compat.v1.io.tf_record_iterator(path=f)
+      for record_string in record_iterator:
+        prediction_log = prediction_log_pb2.PredictionLog()
+        prediction_log.MergeFromString(record_string)
+        results.append(prediction_log)
+    return results
+
+  def _build_keras_model(self, add):
+    """Builds a dummy keras model with one input and output."""
+    inp = tf.keras.layers.Input((1,), name='input')
+    out = tf.keras.layers.Lambda(lambda x: x + add)(inp)
+    m = tf.keras.models.Model(inp, out)
+    return m
+
+  def _new_model(self, model_path, add):
+    """Exports a keras model in the SavedModel format."""
+    class WrapKerasModel(tf.keras.Model):
+      """Wrapper class to apply a signature to a keras model."""
+      def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+      @tf.function(input_signature=[
+          tf.TensorSpec(shape=[None], dtype=tf.string, name='inputs')
+      ])
+      def call(self, serialized_example):
+        features = {
+          'input': tf.compat.v1.io.FixedLenFeature(
+            [1],
+            dtype=tf.float32,
+            default_value=0
+          )
+        }
+        input_tensor_dict = tf.io.parse_example(serialized_example, features)
+        return self.model(input_tensor_dict)
+
+    model = self._build_keras_model(add)
+    wrapped_model = WrapKerasModel(model)
+    tf.compat.v1.keras.experimental.export_saved_model(
+      wrapped_model, model_path, serving_only=True
+    )
+    return self._get_saved_model_spec(model_path)
+
+  def _decode_value(self, pl):
+    """Returns output value from prediction log."""
+    out_tensor = pl.predict_log.response.outputs['output_1']
+    arr = tf.make_ndarray(out_tensor)
+    x = arr[0][0]
+    return x
+
+  def _make_example(self, x):
+    """Builds a Example object with a single value."""
+    feature = {}
+    feature['input'] = tf.train.Feature(
+        float_list=tf.train.FloatList(value=[x]))
+    ex = tf.train.Example(features=tf.train.Features(feature=feature))
+    return ex
+
+  def _make_sequence_example(self):
+    """Builds an empty SequenceExample."""
+    ex = tf.train.SequenceExample()
+    return ex
+
+  def _get_saved_model_spec(self, model_path):
+    """Returns an InferenceSpecType object for a saved model path."""
+    return model_spec_pb2.InferenceSpecType(
+      saved_model_spec=model_spec_pb2.SavedModelSpec(
+          model_path=model_path))
+
+
+class RunOfflineInferenceTest(RunInferenceFixture):
+
+  def setUp(self):
+    super(RunOfflineInferenceTest, self).setUp()
+    self._predict_examples = [
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example()),
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 1 }}}
+              }
+              """, tf.train.Example()),
+    ]
+    self._multihead_examples = [
+        text_format.Parse(
+            """
+            features {
+              feature {key: "x" value { float_list { value: 0.8 }}}
+              feature {key: "y" value { float_list { value: 0.2 }}}
+            }
+            """, tf.train.Example()),
+        text_format.Parse(
+            """
+            features {
+              feature {key: "x" value { float_list { value: 0.6 }}}
+              feature {key: "y" value { float_list { value: 0.1 }}}
+            }
+            """, tf.train.Example()),
+    ]
+
+  def _prepare_multihead_examples(self, example_path):
+    with tf.io.TFRecordWriter(example_path) as output_file:
+      for example in self._multihead_examples:
+        output_file.write(example.SerializeToString())
 
   def _run_inference_with_beam(self, example_path, inference_spec_type,
                                prediction_log_path):
@@ -756,14 +760,16 @@ class RunInferenceCoreTest(RunInferenceFixture):
 
     options = pipeline_options.PipelineOptions(streaming=False)
     with beam.Pipeline(options=options) as p:
-      _ = (
+      inference_result = (
         p
         | 'Queries' >> beam.Create(QUERIES) \
-        | '_RunInferenceCore' >> run_inference._RunInferenceCore() \
+        | '_RunInferenceCore' >> run_inference._RunInferenceCore())
+
+      _ = (
+        inference_result['predictions']
         | 'WritePredictions' >> beam.io.WriteToTFRecord(
           predictions_path,
-          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog))
-      )
+          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
 
     results = self._get_results(predictions_path)
     values = [int(self._decode_value(x)) for x in results]
@@ -778,7 +784,7 @@ class RunStreamingModelInferenceTest(RunInferenceFixture):
   def setUp(self):
     super(RunStreamingModelInferenceTest, self).setUp()
 
-  def testLateModel(self):
+  def test_late_model(self):
     """Single model specified dynamically."""
     inference_spec_type = self._new_model(
       self._get_output_data_dir('model'),
@@ -805,7 +811,7 @@ class RunStreamingModelInferenceTest(RunInferenceFixture):
     values = set([int(self._decode_value(x)) for x in results])
     self.assertEqual(values, set(range(100,120)))
 
-  def testSeveralModels(self):
+  def test_several_models(self):
     """Several models specified dynamically."""
     spec_1 = self._new_model(self._get_output_data_dir('model1'), 100)
     spec_2 = self._new_model(self._get_output_data_dir('model2'), 200)
@@ -855,7 +861,7 @@ class RunStreamingModelInferenceTest(RunInferenceFixture):
       ])
     )
 
-  def testQueries(self):
+  def test_queries(self):
     """Several models specified in queries."""
     spec_1 = self._new_model(self._get_output_data_dir('model1'), 100)
     spec_2 = self._new_model(self._get_output_data_dir('model2'), 200)
@@ -901,6 +907,143 @@ class RunStreamingModelInferenceTest(RunInferenceFixture):
         302,305,308,311
       ])
     )
+
+  def test_bad_dynamic_model(self):
+    """A bad dynamic model."""
+    spec_1 = self._new_model(self._get_output_data_dir('model1'), 100)
+    spec_2 = self._get_saved_model_spec('model_that_doesnt_exist')
+
+    predictions_path = self._get_output_data_dir('predictions')
+
+    QUERIES = [
+      (spec_1, self._make_example(0)),
+      (spec_2, self._make_example(1)),
+      (spec_1, self._make_example(2)),
+      (spec_2, self._make_example(3)),
+      (spec_1, self._make_example(4)),
+      (spec_2, self._make_example(5)),
+    ]
+
+    with self.assertRaisesRegexp(IOError, 'SavedModel file does not exist.*'):
+      options = pipeline_options.PipelineOptions(streaming=False)
+      with beam.Pipeline(options=options) as p:
+        _ = (
+          p
+          | 'Queries' >> beam.Create(QUERIES) \
+          | 'RunInference' >> run_inference.RunInferenceImpl() \
+          | 'WritePredictions' >> beam.io.WriteToTFRecord(
+            predictions_path,
+            coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog))
+        )
+
+  def test_bad_dynamic_model_error_stream(self):
+    """A bad dynamic model + with_errors()."""
+    spec_1 = self._new_model(self._get_output_data_dir('model1'), 100)
+    spec_2 = self._get_saved_model_spec('model_that_doesnt_exist')
+
+    predictions_path = self._get_output_data_dir('predictions')
+
+    QUERIES = [
+      (spec_1, self._make_example(0)),
+      (spec_2, self._make_example(1)),
+      (spec_1, self._make_example(2)),
+      (spec_2, self._make_example(3)),
+      (spec_1, self._make_example(4)),
+      (spec_2, self._make_example(5)),
+    ]
+
+    def _check_error(errors):
+      self.assertLen(errors, 1)
+      self.assertEqual(type(errors[0][0]), IOError)
+
+    options = pipeline_options.PipelineOptions(streaming=False)
+    with beam.Pipeline(options=options) as p:
+      inference_results = (
+        p
+        | 'Queries' >> beam.Create(QUERIES) \
+        | 'RunInference' >> run_inference.RunInferenceImpl().with_errors())
+      _ = (
+        inference_results['predictions']
+        | 'WritePredictions' >> beam.io.WriteToTFRecord(
+          predictions_path,
+          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
+      _ = (
+        inference_results['errors']
+        | 'ToList' >> beam.combiners.ToList()
+        | 'Check error' >> beam.Map(_check_error))
+
+    results = self._get_results(predictions_path)
+    values = set([int(self._decode_value(x)) for x in results])
+    self.assertEqual(
+      values,
+      set([100,102,104])
+    )
+
+  def test_invalid_example_type(self):
+    """Unsupported example type passed to classify."""
+    model_path = self._get_output_data_dir('model')
+    self._build_multihead_model(model_path)
+
+    predictions_path = self._get_output_data_dir('predictions')
+
+    spec = model_spec_pb2.InferenceSpecType(
+      saved_model_spec=model_spec_pb2.SavedModelSpec(
+        model_path=model_path, signature_name=['classify_sum']))
+
+    QUERIES = [
+      (spec, self._make_sequence_example()),
+      (spec, self._make_sequence_example()),
+      (spec, self._make_sequence_example())
+    ]
+
+    with self.assertRaisesRegexp(ValueError, 'Classify only supports tf.train.Example*'):
+      options = pipeline_options.PipelineOptions(streaming=False)
+      with beam.Pipeline(options=options) as p:
+        _ = (
+          p
+          | 'Queries' >> beam.Create(QUERIES) \
+          | 'RunInference' >> run_inference.RunInferenceImpl() \
+          | 'WritePredictions' >> beam.io.WriteToTFRecord(
+            predictions_path,
+            coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog))
+        )
+
+  def test_invalid_example_type_error_stream(self):
+    """Unsupported example type passed to classify + with_errors()."""
+    model_path = self._get_output_data_dir('model')
+    self._build_multihead_model(model_path)
+
+    predictions_path = self._get_output_data_dir('predictions')
+
+    spec = model_spec_pb2.InferenceSpecType(
+      saved_model_spec=model_spec_pb2.SavedModelSpec(
+        model_path=model_path, signature_name=['classify_sum']))
+
+    QUERIES = [
+      (spec, self._make_sequence_example()),
+      (spec, self._make_sequence_example()),
+      (spec, self._make_sequence_example())
+    ]
+
+    def _check_error(errors):
+      self.assertLen(errors, 1)
+      self.assertEqual(type(errors[0][0]), ValueError)
+
+    options = pipeline_options.PipelineOptions(streaming=False)
+    with beam.Pipeline(options=options) as p:
+      inference_results = (
+        p
+        | 'Queries' >> beam.Create(QUERIES)
+        | 'RunInference' >> run_inference.RunInferenceImpl().with_errors())
+      _ = (
+        inference_results['predictions']
+        | 'WritePredictions' >> beam.io.WriteToTFRecord(
+          predictions_path,
+          coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
+      _ = (
+        inference_results['errors']
+        | 'ToList' >> beam.combiners.ToList()
+        | 'Check error' >> beam.Map(_check_error))
 
 
 class TestStreamHelper(object):
