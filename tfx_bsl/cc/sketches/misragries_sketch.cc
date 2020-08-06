@@ -29,7 +29,7 @@ namespace {
 
 // Accounts for rounding error due to float arithmetic.
 bool LessThanOrEqualToZero(double value) {
-  // TODO(monicadsong@): Investigate if weighted/unweighted cases should use
+  // TODO(monicadsong): Investigate if weighted/unweighted cases should use
   // different values of kEpsilon.
   static constexpr double kEpsilon = 1e-8;
   return (value < kEpsilon);
@@ -181,7 +181,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
           item_counts_.insert(std::pair<std::string, double>(item, weight));
       // Item is already in map.
       if (!insertion_pair.second) {
-        // TODO(monicadsong@): Investigate and test the accumulated numerical
+        // TODO(monicadsong): Investigate and test the accumulated numerical
         // error due to floating point summation. See Kahan summation algorithm
         // for a possible solution.
         insertion_pair.first->second += weight;
@@ -258,8 +258,6 @@ Status MisraGriesSketch::Merge(MisraGriesSketch& other) {
       insertion_pair.first->second += item.second;
     }
   }
-  // TODO(monicadsong@): Check if adding the delta_ is correct. Currently this
-  // steps inflates the estimates (but still stays within acceptable error).
   delta_ += other.delta_;
   Compress();
   return Status::OK();
@@ -365,7 +363,7 @@ MisraGriesSketch MisraGriesSketch::Deserialize(absl::string_view encoded) {
   MisraGries mg_proto;
   mg_proto.ParseFromArray(encoded.data(), encoded.size());
   MisraGriesSketch mg_sketch{mg_proto.num_buckets()};
-  if (mg_proto.has_delta()) {
+  if (mg_proto.delta() > 0.) {
     mg_sketch.delta_ = mg_proto.delta();
   }
   int num_items = mg_proto.items_size();
