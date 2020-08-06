@@ -214,23 +214,14 @@ def _RunInferenceCore(
 def _BatchQueries(queries: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
   """Groups queries into batches."""
 
-  def _add_key(query: QueryType) -> Tuple[bytes, QueryType]:
-    """Adds serialized proto as key for QueryType tuples."""
-    inference_spec, example = query
-    key = (inference_spec.SerializeToString() if inference_spec else b'')
-    return (key, (inference_spec, example))
-
-  def _to_query_batch(
-    query_list: List[Tuple[bytes, QueryType]]
-  ) -> _QueryBatchType:
+  def _to_query_batch(query_list: List[QueryType]) -> _QueryBatchType:
     """Converts a list of queries to a logical _QueryBatch."""
-    inference_spec = query_list[0][1][0]
-    examples = [x[1][1] for x in query_list]
+    inference_spec = query_list[0][0]
+    examples = [x[1] for x in query_list]
     return (inference_spec, examples)
 
   batches = (
     queries
-    | 'AddKey' >> beam.Map(_add_key)
     # TODO(hgarrereyn): Use of BatchElements is a temporary workaround to
     #   enable RunInference to run on Dataflow v1 runner until BEAM-2717
     #   is fixed. BatchElements does not performing a grouping operation

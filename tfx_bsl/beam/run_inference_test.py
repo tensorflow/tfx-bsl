@@ -708,22 +708,6 @@ class RunInferenceCoreTest(RunInferenceFixture):
       saved_model_spec=model_spec_pb2.SavedModelSpec(
           model_path=model_path))
 
-  def test_batch_queries_single_model(self):
-    spec = self._get_saved_model_spec('/example/model')
-    QUERIES = [(spec, self._make_example(i)) for i in range(100)]
-    CORRECT = {example.SerializeToString(): spec for spec, example in QUERIES}
-
-    def _check_batch(batch):
-      """Assert examples are grouped with the correct inference spec."""
-      spec, examples = batch
-      assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
-
-    with beam.Pipeline() as p:
-      queries = p | 'Queries' >> beam.Create(QUERIES)
-      batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
-
-      _ = batches | 'Check' >> beam.Map(_check_batch)
-
   # TODO(hgarrereyn): Switch _BatchElements to use GroupIntoBatches once
   #   BEAM-2717 is fixed so examples are grouped by inference spec key.
   #
