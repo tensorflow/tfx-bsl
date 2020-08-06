@@ -683,25 +683,22 @@ class RunOfflineInferenceArrowTest(RunInferenceFixture):
 
   def _run_inference_with_beam(self, example_path, inference_spec_type,
                                prediction_log_path, include_config = False):
-    # test RunInferenceOnRecordBatch
+    # test _RunInferenceOnRecordBatch
     converter = tf_example_record.TFExampleBeamRecord(
-      physical_format="inmem",
-      telemetry_descriptors=[],
-      raw_record_column_name=_RECORDBATCH_COLUMN)
+      physical_format="inmem", telemetry_descriptors=[],
+      schema=self.schema, raw_record_column_name=_RECORDBATCH_COLUMN)
 
     if include_config:
-      tfxio = test_util.InMemoryTFExampleRecord(
-        schema=self.schema, raw_record_column_name=_RECORDBATCH_COLUMN)
       tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-        arrow_schema=tfxio.ArrowSchema(),
-        tensor_representations=tfxio.TensorRepresentations())
+        arrow_schema=converter.ArrowSchema(),
+        tensor_representations=converter.TensorRepresentations())
 
       with beam.Pipeline() as pipeline:
         _ = (
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInference' >> run_inference.RunInferenceOnRecordBatch(
+          | 'RunInference' >> run_inference._RunInferenceOnRecordBatch(
               inference_spec_type, DataType.EXAMPLE, tensor_adapter_config)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
@@ -712,7 +709,7 @@ class RunOfflineInferenceArrowTest(RunInferenceFixture):
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInference' >> run_inference.RunInferenceOnRecordBatch(
+          | 'RunInference' >> run_inference._RunInferenceOnRecordBatch(
                 inference_spec_type, DataType.EXAMPLE)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
@@ -978,7 +975,7 @@ class RunOfflineInferenceArrowTest(RunInferenceFixture):
         pipeline 
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
         | 'ConvertToRecordBatch' >> converter.BeamSource()
-        | 'RunInference' >> run_inference.RunInferenceOnRecordBatch(
+        | 'RunInference' >> run_inference._RunInferenceOnRecordBatch(
               inference_spec_type, DataType.EXAMPLE))
     run_result = pipeline.run()
     run_result.wait_until_finish()
@@ -1043,7 +1040,7 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
         self.pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self._example_path)
         | 'ConvertToRecordBatch' >> converter.BeamSource()
-        | 'RunInference' >> run_inference.RunInferenceOnRecordBatch(
+        | 'RunInference' >> run_inference._RunInferenceOnRecordBatch(
               inference_spec_type, DataType.EXAMPLE))
 
   def _run_inference_with_beam(self):
@@ -1161,7 +1158,7 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
           | 'CreateExamples' >> beam.Create([example])
           | 'ParseExamples' >> beam.Map(lambda x: x.SerializeToString())
           | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInference' >> run_inference.RunInferenceOnRecordBatch(
+          | 'RunInference' >> run_inference._RunInferenceOnRecordBatch(
                   inference_spec_type, DataType.EXAMPLE))
 
       self._run_inference_with_beam()

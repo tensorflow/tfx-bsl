@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Run batch inference on saved model and private APIs of inference."""
+"""Run batch inference on saved model with private APIs of inference."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -130,24 +130,29 @@ def RunInferenceOnExamples(  # pylint: disable=invalid-name
   """
 
   data_type = DataType.EXAMPLE
+  operation_type = _get_operation_type(inference_spec_type)
+  proximity_descriptor = (
+    _METRICS_DESCRIPTOR_IN_PROCESS
+    if _using_in_process_inference(inference_spec_type)
+    else _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
   converter = tf_example_record.TFExampleBeamRecord(
     physical_format="inmem",
-    telemetry_descriptors=[],
+    telemetry_descriptors=[
+      _METRICS_DESCRIPTOR_INFERENCE,
+      operation_type, proximity_descriptor],
     schema=schema,
     raw_record_column_name=_RECORDBATCH_COLUMN)
 
   tensor_adapter_config = None
   if schema:
-    tfxio = test_util.InMemoryTFExampleRecord(
-      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
     tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-      arrow_schema=tfxio.ArrowSchema(),
-      tensor_representations=tfxio.TensorRepresentations())
+      arrow_schema=converter.ArrowSchema(),
+      tensor_representations=converter.TensorRepresentations())
 
   return (examples
           | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
           | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInferenceImpl' >> RunInferenceOnRecordBatch(
+          | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
                   inference_spec_type, data_type,
                   tensor_adapter_config=tensor_adapter_config))
 
@@ -180,24 +185,29 @@ def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
   """
 
   data_type = DataType.SEQUENCEEXAMPLE
+  operation_type = _get_operation_type(inference_spec_type)
+  proximity_descriptor = (
+    _METRICS_DESCRIPTOR_IN_PROCESS
+    if _using_in_process_inference(inference_spec_type)
+    else _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
   converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
     physical_format="inmem",
-    telemetry_descriptors=[],
+    telemetry_descriptors=[
+      _METRICS_DESCRIPTOR_INFERENCE,
+      operation_type, proximity_descriptor],
     schema=schema,
     raw_record_column_name=_RECORDBATCH_COLUMN)
 
   tensor_adapter_config = None
   if schema:
-    tfxio = test_util.InMemoryTFExampleRecord(
-      schema=schema, raw_record_column_name=_RECORDBATCH_COLUMN)
     tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-      arrow_schema=tfxio.ArrowSchema(),
-      tensor_representations=tfxio.TensorRepresentations())
+      arrow_schema=converter.ArrowSchema(),
+      tensor_representations=converter.TensorRepresentations())
 
   return (examples
           | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
           | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInferenceImpl' >> RunInferenceOnRecordBatch(
+          | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
                   inference_spec_type, data_type,
                   tensor_adapter_config=tensor_adapter_config))
 
@@ -205,7 +215,7 @@ def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
 @beam.ptransform_fn
 @beam.typehints.with_input_types(pa.RecordBatch)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceOnRecordBatch(  # pylint: disable=invalid-name
+def _RunInferenceOnRecordBatch(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType, data_type: Text,
     tensor_adapter_config: Optional[tensor_adapter.TensorAdapterConfig] = None
@@ -217,7 +227,8 @@ def RunInferenceOnRecordBatch(  # pylint: disable=invalid-name
     inference_spec_type: Model inference endpoint.
     tensor_adapter_config [Optional]: Tensor adapter config which specifies how to
       obtain tensors from the Arrow RecordBatch.
-        - Not required when running inference with remote model or 1 input
+        - Not required when running inference with remote model or
+          serialized example as the single input tensor
 
   Returns:
     A PCollection containing prediction logs.
@@ -421,6 +432,15 @@ class _BaseDoFn(beam.DoFn):
   def run_inference(
     self, tensors: Mapping[Any, Any]
   ) -> Union[Mapping[Text, np.ndarray], Sequence[Mapping[Text, Any]]]:
+    """
+    Run inference with extracted model input.
+
+    Parameters:
+      tensors: a dictionary consists of tensor names and tensors
+        in the form of ndArray, SparceTensorValues, etc.
+        - ex: { 'x': SparseTensorValue }
+              { 'y': [[1, 2, 3], [3, 4, 5] ...] }
+    """
     raise NotImplementedError
 
   @abc.abstractmethod
@@ -504,7 +524,8 @@ class _RemotePredictDoFn(_BaseDoFn):
     # user agent once custom header is supported in googleapiclient.
     self._api_client = discovery.build('ml', 'v1')
 
-  def _extract_from_recordBatch(self, elements: pa.RecordBatch):
+  def _extract_from_recordBatch(
+    self, elements: pa.RecordBatch) -> Tuple[List[Text], List[Mapping[Any, Any]]]:
     serialized_examples = bsl_util.ExtractSerializedExampleFromRecordBatch(elements)
     prepare_instances_serialized = (
       self.inference_spec_type.ai_platform_prediction_model_spec.use_serialization_config)
@@ -648,7 +669,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
           list(signature.signature_def.inputs.values())[0].dtype !=
           tf.string.as_datatype_enum):
         raise ValueError(
-            'With 1 input, dtype is expected to be %s, got %s' %
+            'With 1 input, dtype is expected to be %s for serialized examples, got %s' %
             tf.string.as_datatype_enum,
             list(signature.signature_def.inputs.values())[0].dtype)
       io_tensor_specs.append(_signature_pre_process(signature.signature_def))
@@ -676,14 +697,15 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
             tf.saved_model.TPU in self._tags)
 
-  def _extract_from_recordBatch(self, elements: pa.RecordBatch):
+  def _extract_from_recordBatch(
+    self, elements: pa.RecordBatch) -> Tuple[List[Text], Mapping[Any, Any]]:
     serialized_examples = bsl_util.ExtractSerializedExampleFromRecordBatch(elements)
 
     model_input = None
     if (len(self._io_tensor_spec.input_tensor_names) == 1):
       model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
     else:
-      if (self._tensor_adapter_config is None):
+      if not self._tensor_adapter_config:
         raise ValueError('Tensor adaptor config is required with a multi-input model')
 
       input_tensor_names = self._io_tensor_spec.input_tensor_names

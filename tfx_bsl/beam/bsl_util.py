@@ -18,17 +18,16 @@ from __future__ import division
 # Standard __future__ imports
 from __future__ import print_function
 
-
 import numpy as np
 import pyarrow as pa
 import pandas as pd
 import base64
 import json
 import typing
-from typing import Dict, List, Text, Any, Set, Optional
+from typing import Dict, List, Text, Any, Set, Mapping, Optional
 from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
-from tfx_bsl.beam.bsl_constants import _KERAS_INPUT_SUFFIX
-   
+
+_KERAS_INPUT_SUFFIX = '_input'
 
 def ExtractSerializedExampleFromRecordBatch(elements: pa.RecordBatch) -> List[Text]:
   serialized_examples = None
@@ -42,19 +41,23 @@ def ExtractSerializedExampleFromRecordBatch(elements: pa.RecordBatch) -> List[Te
       serialized_examples = column_array.flatten().to_pylist()
       break
 
-  if (serialized_examples is None):
+  if not serialized_examples:
     raise ValueError('Raw examples not found.')
 
   return serialized_examples
 
 
-def RecordToJSON(record_batch: pa.RecordBatch, prepare_instances_serialized) -> List[Text]:
-  """Returns a JSON string translated from `record_batch`.
+def RecordToJSON(
+  record_batch: pa.RecordBatch, prepare_instances_serialized) -> List[Mapping[Text, Any]]:
+  """Returns a list of JSON dictionaries translated from `record_batch`.
 
     The conversion will take in a recordbatch that contains features from a 
     tf.train.Example and will return a list of dict like string (JSON) where 
     each item is a JSON representation of an example.
-    - return format: [{ feature1: value1, ... }, ...]
+
+    Return:
+      List of JSON dictionaries
+      - format: [{ feature1: value1, feature2: [value2_1, value2_2]... }, ...]
 
   Args:
   record_batch: input RecordBatch.
