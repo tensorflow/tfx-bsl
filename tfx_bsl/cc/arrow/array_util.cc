@@ -14,6 +14,7 @@
 #include "tfx_bsl/cc/arrow/array_util.h"
 
 #include "arrow/array/concatenate.h"
+#include "arrow/compute/kernels/match.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
@@ -273,10 +274,26 @@ Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
 Status ValueCounts(const std::shared_ptr<arrow::Array>& array,
                    std::shared_ptr<arrow::Array>* values_and_counts_array) {
   arrow::compute::FunctionContext ctx;
-  std::shared_ptr<arrow::Array> result;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
       arrow::compute::ValueCounts(&ctx, array, values_and_counts_array)));
   return Status::OK();
+}
+
+Status IndexIn(const std::shared_ptr<arrow::Array>& values,
+             const std::shared_ptr<arrow::Array>& value_set,
+             std::shared_ptr<arrow::Array>* matched_value_set_indices) {
+  arrow::compute::FunctionContext ctx;
+  arrow::compute::Datum result;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::compute::Match(
+      &ctx, values, value_set, &result)));
+  if (result.is_array()) {
+    *matched_value_set_indices = result.make_array();
+    return Status::OK();
+  } else {
+    return errors::Internal(absl::StrCat("Match result Datum is not an array ",
+                                         "but an instance of type",
+                                         result.type()->name()));
+  }
 }
 
 // TODO(zhuo): Make this return LargeListArray once consumers can handle it.

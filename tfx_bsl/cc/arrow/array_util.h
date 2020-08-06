@@ -64,6 +64,11 @@ Status ValueCounts(
     const std::shared_ptr<arrow::Array>& array,
     std::shared_ptr<arrow::Array>* values_and_counts_array);
 
+// IndexIn examines each slot in values against a value_set array."
+Status IndexIn(const std::shared_ptr<arrow::Array>& values,
+               const std::shared_ptr<arrow::Array>& value_set,
+               std::shared_ptr<arrow::Array>* matched_value_set_indices);
+
 // Makes an Arrow ListArray from parent indices and values.
 // For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] and
 // values_array_py is (an arrow Array of) [0, 1, 2, 3, 4], then the result will

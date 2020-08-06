@@ -197,6 +197,12 @@ class ArrayUtilTest(parameterized.TestCase):
     self.assertDictEqual(self._value_counts_struct_array_to_dict(
         array_util.ValueCounts(empty_array)), expected_result)
 
+  def test_match(self):
+    values = pa.array([99, 42, 3, None])
+    value_set = pa.array([3, 3, 99])
+    self.assertEqual([1, None, 0, None],
+                     list(array_util.IndexIn(values, value_set)))
+
 _MAKE_LIST_ARRAY_INVALID_INPUT_TEST_CASES = [
     dict(
         testcase_name="parent_indices_not_arrow_int64",

@@ -107,7 +107,29 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       py::doc("Get counts of values in the array. Returns a struct array "
               "<values, counts>."),
       py::call_guard<py::gil_scoped_release>());
-
+  m.def(
+      "IndexIn",
+      [](const std::shared_ptr<arrow::Array>& values,
+         const std::shared_ptr<arrow::Array>& value_set) {
+        std::shared_ptr<arrow::Array> result;
+        Status s = IndexIn(values, value_set, &result);
+        if (!s.ok()) {
+          throw std::runtime_error(s.ToString());
+        }
+        return result;
+      },
+      py::doc(
+          "IndexIn examines each slot in a vaues against a value_set array.\n\n"
+          "If the value is not found in value_set, null will be output."
+          "If found, the index of occurrence within value_set "
+          "(ignoring duplicates) will be output.\n\n"
+          "For example given values = [99, 42, 3, null] and"
+          "value_set = [3, 3, 99], the output will be = [1, null, 0, null]\n\n"
+          "Note: Null in the values is considered to match"
+          "a null in the value_set array. For example given"
+          "values = [99, 42, 3, null] and value_set = [3, 99, null],"
+          "the output will be = [1, null, 0, 2]"),
+      py::call_guard<py::gil_scoped_release>());
   m.def(
       "MakeListArrayFromParentIndicesAndValues",
       [](size_t num_parents,
@@ -159,7 +181,6 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
           "contains the size of the bounding-box of `list_array`. Note that "
           "nulls and empty lists are not distinguished in the COO form."),
       py::call_guard<py::gil_scoped_release>());
-
   m.def("FillNullLists", [](const std::shared_ptr<arrow::Array>& list_array,
                             const std::shared_ptr<arrow::Array>& fill_with) {
     std::shared_ptr<arrow::Array> result;
