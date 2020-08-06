@@ -92,8 +92,9 @@ class TFGraphRecordDecoder(tf.Module):
       A dict of (composite) tensors.
     """
 
+  # Add the return type annotation once we drop TF 1.15 support.
   @tf.function(input_signature=[])
-  def _record_index_tensor_name_tensor(self) -> tf.experimental.Optional:
+  def _record_index_tensor_name_tensor(self):
     """tf.function to store record_index_tensor_name in SavedModel."""
     if self.record_index_tensor_name is not None:
       return tf.experimental.Optional.from_value(
