@@ -806,7 +806,6 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_examples.size(); ++i) {
-    arena.Reset();
     auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
     for (const auto& p : example->features().feature()) {
@@ -852,7 +851,6 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
 
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_examples.size(); ++i) {
-    arena.Reset();
     auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
     TFX_BSL_RETURN_IF_ERROR(
@@ -1024,7 +1022,6 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
-    arena.Reset();
     auto* sequence_example =
         google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
@@ -1121,7 +1118,6 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
 
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
-    arena.Reset();
     auto* sequence_example =
         google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
@@ -1456,7 +1452,6 @@ Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
   serialized_examples->resize(record_batch.num_rows());
   for (int example_index = 0; example_index < record_batch.num_rows();
        ++example_index) {
-    arena.Reset();
     auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
     auto* feature_map = example->mutable_features()->mutable_feature();
     for (const auto& p : feature_encoders) {
