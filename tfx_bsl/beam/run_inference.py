@@ -122,7 +122,7 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
     A PCollection containing prediction logs.
 
   Raises:
-    ValueError; when operation is not supported.
+    ValueError: when operation is not supported.
   """
   logging.info('RunInference on model: %s', inference_spec_type)
 
@@ -150,8 +150,8 @@ def _RunInferenceCore(
   be loaded dynamically at runtime.
 
   Args:
-    queries: A PCollection containing QueryType tuples
-    fixed_inference_spec_type: an optional model inference endpoint. If
+    queries: A PCollection containing QueryType tuples.
+    fixed_inference_spec_type: An optional model inference endpoint. If
       specified, this is "preloaded" during inference and models specified in
       query tuples are ignored. This requires the InferenceSpecType to be known
       at pipeline creation time.
@@ -160,7 +160,7 @@ def _RunInferenceCore(
     A PCollection containing prediction logs.
 
   Raises:
-    ValueError; when operation is not supported.
+    ValueError: when operation is not supported.
   """
   batched_queries = queries | 'BatchQueries' >> _BatchQueries()
   predictions = None
@@ -937,15 +937,19 @@ def _BuildInferenceOperation(
   """Construct an operation specific inference sub-pipeline.
 
   Args:
-    name: name of the operation (e.g. "Classify")
-    in_process_dofn: a _BaseBatchSavedModelDoFn class to use for in-process
-      inference
-    remote_dofn: an optional DoFn that is used for remote inference
-    build_prediction_log_dofn: a DoFn that can build prediction logs from the
-      output of `in_process_dofn` and `remote_dofn`
+    name: Name of the operation (e.g. "Classify").
+    in_process_dofn: A _BaseBatchSavedModelDoFn class to use for in-process
+      inference.
+    remote_dofn: An optional DoFn that is used for remote inference. If not
+      provided, attempts at remote inference will throw a NotImplementedError.
+    build_prediction_log_dofn: A DoFn that can build prediction logs from the
+      output of `in_process_dofn` and `remote_dofn`.
 
   Returns:
-    A PTransform of the type (_QueryBatchType -> PredictionLog)
+    A PTransform of the type (_QueryBatchType -> PredictionLog).
+
+  Raises:
+    NotImplementedError: if remote inference is attempted and not supported.
   """
   @beam.ptransform_fn
   @beam.typehints.with_input_types(_QueryBatchType)
@@ -974,6 +978,7 @@ def _BuildInferenceOperation(
           [in_process_result, remote_result]
           | 'FlattenResult' >> beam.Flatten())
       else:
+        tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform()
         raw_result = in_process_result
     else:
       if _using_in_process_inference(fixed_inference_spec_type):
@@ -983,11 +988,14 @@ def _BuildInferenceOperation(
             shared.Shared(),
             fixed_inference_spec_type=fixed_inference_spec_type)))
       else:
-        raw_result = (
-          pcoll
-          | ('Remote%s' % name) >> beam.ParDo(remote_dofn(
-            pcoll.pipeline.options,
-            fixed_inference_spec_type=fixed_inference_spec_type)))
+        if remote_dofn:
+          raw_result = (
+            pcoll
+            | ('Remote%s' % name) >> beam.ParDo(remote_dofn(
+              pcoll.pipeline.options,
+              fixed_inference_spec_type=fixed_inference_spec_type)))
+        else:
+          raise NotImplementedError()
 
     return (
       raw_result
