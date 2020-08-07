@@ -69,6 +69,20 @@ class NamedObject(object):
     return self._name
 
 
+class NamedMarker(object):
+
+  def __init__(self, name, count):
+    self._name = name
+    self._count = count
+    self._count.add_ref()
+
+  def __del__(self):
+    self._count.release_ref()
+
+  def get_name(self):
+    return self._name
+
+
 class Sequence(object):
 
   def __init__(self):
@@ -236,6 +250,35 @@ class SharedTest(absltest.TestCase):
     s3 = second_handle.acquire(sequence.make_acquire_fn())
     self.assertEqual('sequence3', f3.get_name())
     self.assertEqual('sequence4', s3.get_name())
+
+  def testTagCacheEviction(self):
+    count1 = Count()
+    count2 = Count()
+    shared_handle = shared.Shared()
+
+    def acquire_fn_1():
+      return NamedMarker('obj_1', count1)
+
+    def acquire_fn_2():
+      return NamedMarker('obj_2', count2)
+
+    # With no tag, shared handle does not know when to evict objects
+    p1 = shared_handle.acquire(acquire_fn_1)
+    assert p1.get_name() == 'obj_1'
+    p1 = shared_handle.acquire(acquire_fn_2)
+    assert p1.get_name() == 'obj_1'
+    gc.collect()
+    self.assertEqual(1, count1.get_active())
+    self.assertEqual(0, count2.get_active())
+
+    # Cache eviction can be forced by specifying different tags
+    p1 = shared_handle.acquire(acquire_fn_1, tag='1')
+    assert p1.get_name() == 'obj_1'
+    p1 = shared_handle.acquire(acquire_fn_2, tag='2')
+    assert p1.get_name() == 'obj_2'
+    gc.collect()
+    self.assertEqual(0, count1.get_active())
+    self.assertEqual(1, count2.get_active())
 
 
 if __name__ == '__main__':
