@@ -102,6 +102,13 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
     rt = got["record_index"]
     self.assertAllEqual(rt, tf.ragged.constant([[0], [1]]))
 
+    # Also test that .record_index_tensor_name can be accessed in graph
+    # mode.
+    with tf.compat.v1.Graph().as_default():
+      self.assertFalse(tf.executing_eagerly())
+      loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
+      self.assertEqual(loaded.record_index_tensor_name, "record_index")
+
   def test_no_record_index_tensor_name(self):
     decoder = _DecoderForTesting()
     self.assertIsNone(decoder.record_index_tensor_name)
@@ -109,6 +116,11 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
     tf_graph_record_decoder.save_decoder(decoder, self._tmp_dir)
     loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
     self.assertIsNone(loaded.record_index_tensor_name)
+
+    with tf.compat.v1.Graph().as_default():
+      self.assertFalse(tf.executing_eagerly())
+      loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
+      self.assertIsNone(loaded.record_index_tensor_name)
 
   def test_do_not_save_if_record_index_tensor_name_invalid(self):
     decoder = _DecoderForTestWithInvalidRecordIndexTensorName()

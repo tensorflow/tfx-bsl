@@ -94,13 +94,14 @@ class TFGraphRecordDecoder(tf.Module):
 
   # Add the return type annotation once we drop TF 1.15 support.
   @tf.function(input_signature=[])
-  def _record_index_tensor_name_tensor(self):
+  def _record_index_tensor_name_tensor(self) -> tf.Tensor:
     """tf.function to store record_index_tensor_name in SavedModel."""
+    record_index_tensor_name = b""
     if self.record_index_tensor_name is not None:
-      return tf.experimental.Optional.from_value(
-          self.record_index_tensor_name.encode())
-    return tf.experimental.Optional.empty(tf.TensorSpec(
-        shape=(), dtype=tf.string))
+      assert self.record_index_tensor_name, (
+          "record_index_tensor_name must not be an empty string")
+      record_index_tensor_name = self.record_index_tensor_name.encode()
+    return tf.constant(record_index_tensor_name, dtype=tf.string, shape=())
 
   @property
   def record_index_tensor_name(self) -> Optional[Text]:
@@ -119,6 +120,8 @@ class TFGraphRecordDecoder(tf.Module):
     means that of 3 "rows" in the output "batch", the first two rows came
     from the first record, and the 3rd row came from the third record.
 
+    The name must not be an empty string.
+
     Returns:
       The name of the record index tensor.
     """
@@ -135,6 +138,19 @@ class LoadedDecoder(TFGraphRecordDecoder):
   def __init__(self, loaded_module):
     super(LoadedDecoder, self).__init__(name="LoadedDecoder")
     self._loaded_module = loaded_module
+    if tf.executing_eagerly():
+      record_index_tensor_name = (
+          self._loaded_module._record_index_tensor_name_tensor().numpy()
+          .decode())
+    else:
+      # We need to evaluate ._record_index_tensor_name_tensor(). We do that
+      # in a new graph to avoid polluting the current default graph.
+      with tf.compat.v1.Graph().as_default():
+        record_index_tensor_name = (
+            self._loaded_module._record_index_tensor_name_tensor().eval(
+                session=tf.compat.v1.Session()).decode())
+    self._record_index_tensor_name = (
+        record_index_tensor_name if record_index_tensor_name else None)
 
   def _decode_record_internal(self,
                               record: List[bytes]) -> Dict[Text, TensorAlike]:
@@ -142,10 +158,7 @@ class LoadedDecoder(TFGraphRecordDecoder):
 
   @property
   def record_index_tensor_name(self) -> Optional[Text]:
-    optional_name = self._loaded_module._record_index_tensor_name_tensor()  # pylint: disable=protected-access
-    if optional_name.has_value():
-      return optional_name.get_value().numpy().decode()
-    return None
+    return self._record_index_tensor_name
 
 
 def save_decoder(decoder: TFGraphRecordDecoder, path: Text) -> None:
