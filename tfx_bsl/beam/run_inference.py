@@ -167,24 +167,13 @@ def _RunInferenceCore(
 
   if fixed_inference_spec_type is None:
     # operation type is determined at runtime
-    tagged = (
-      batched_queries | 'TagByOperation' >> beam.Map(
-        lambda batch: beam.pvalue.TaggedOutput(
-          _get_operation_type(batch[0]), batch)
-      )
-      .with_outputs(
-        OperationType.CLASSIFICATION,
-        OperationType.REGRESSION,
-        OperationType.PREDICTION,
-        OperationType.MULTIHEAD
-      )
-    )
+    split = batched_queries | 'SplitByOperation' >> _SplitByOperation()
 
     predictions = [
-      tagged[OperationType.CLASSIFICATION] | 'Classify' >> _Classify(),
-      tagged[OperationType.REGRESSION] | 'Regress' >> _Regress(),
-      tagged[OperationType.PREDICTION] | 'Predict' >> _Predict(),
-      tagged[OperationType.MULTIHEAD] | 'MultiInference' >> _MultiInference()
+      split[OperationType.CLASSIFICATION] | 'Classify' >> _Classify(),
+      split[OperationType.REGRESSION] | 'Regress' >> _Regress(),
+      split[OperationType.PREDICTION] | 'Predict' >> _Predict(),
+      split[OperationType.MULTIHEAD] | 'MultiInference' >> _MultiInference()
     ] | beam.Flatten()
   else:
     # operation type is determined at pipeline construction time
@@ -231,6 +220,44 @@ def _BatchQueries(queries: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
     | 'ToQueryBatch' >> beam.Map(_to_query_batch)
   )
   return batches
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(_QueryBatchType)
+@beam.typehints.with_output_types(_QueryBatchType)
+def _SplitByOperation(batches):
+  """A PTransform that splits a _QueryBatchType PCollection based on operation.
+
+  Returns a DoOutputsTuple with keys:
+    - OperationType.CLASSIFICATION
+    - OperationType.REGRESSION
+    - OperationType.PREDICTION
+    - OperationType.MULTIHEAD
+  """
+  class _SplitDoFn(beam.DoFn):
+    def __init__(self):
+      self._cache = {}
+
+    def process(self, batch):
+      inference_spec, _ = batch
+
+      key = inference_spec.SerializeToString()
+      operation_type = self._cache.get(key)
+
+      if operation_type is None:
+        operation_type = _get_operation_type(inference_spec)
+        self._cache[key] = operation_type
+
+      return [beam.pvalue.TaggedOutput(operation_type, batch)]
+
+  return (
+    batches
+    | 'SplitDoFn' >> beam.ParDo(_SplitDoFn()).with_outputs(
+        OperationType.CLASSIFICATION,
+        OperationType.REGRESSION,
+        OperationType.PREDICTION,
+        OperationType.MULTIHEAD
+    ))
 
 
 _IOTensorSpec = collections.namedtuple(
