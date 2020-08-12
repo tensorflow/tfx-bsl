@@ -146,15 +146,18 @@ def _RunInferenceCore(
   these queries are grouped by model and inference runs in batches. If a
   fixed_inference_spec_type is provided, this spec is used for all inference
   requests which enables pre-configuring the model during pipeline
-  construction. If the fixed_inference_spec_type is not provided, models will
-  be loaded dynamically at runtime.
+  construction. If the fixed_inference_spec_type is not provided, each input
+  query must contain a valid InferenceSpecType and models will be loaded
+  dynamically at runtime.
 
   Args:
     queries: A PCollection containing QueryType tuples.
     fixed_inference_spec_type: An optional model inference endpoint. If
       specified, this is "preloaded" during inference and models specified in
       query tuples are ignored. This requires the InferenceSpecType to be known
-      at pipeline creation time.
+      at pipeline creation time. If this fixed_inference_spec_type is not
+      provided, each input query must contain a valid InferenceSpecType and
+      models will be loaded dynamically at runtime.
 
   Returns:
     A PCollection containing prediction logs.
@@ -162,6 +165,10 @@ def _RunInferenceCore(
   Raises:
     ValueError: when operation is not supported.
   """
+  # TODO(BEAM-2717): Currently batching by inferenc spec is not supported and
+  #   it is assumed that all queries share the same inference spec. Once
+  #   BEAM-2717 is fixed, we can use beam.GroupIntoBatches and remove this
+  #   constraint.
   batched_queries = queries | 'BatchQueries' >> _BatchQueries()
   predictions = None
 
@@ -243,6 +250,9 @@ def _SplitByOperation(batches):
     - OperationType.REGRESSION
     - OperationType.PREDICTION
     - OperationType.MULTIHEAD
+
+  Raises:
+    ValueError: If any inference_spec_type is None.
   """
   class _SplitDoFn(beam.DoFn):
     def __init__(self):
@@ -250,6 +260,9 @@ def _SplitByOperation(batches):
 
     def process(self, batch):
       inference_spec, _ = batch
+
+      if inference_spec is None:
+        raise ValueError("InferenceSpecType cannot be None.")
 
       key = inference_spec.SerializeToString()
       operation_type = self._cache.get(key)
@@ -998,7 +1011,7 @@ def _BuildInferenceOperation(
     raw_result = None
 
     if fixed_inference_spec_type is None:
-      tagged = pcoll | 'TagInferenceType' >> _TagUsingInProcessInference()
+      tagged = pcoll | ('TagInferenceType%s' % name) >> _TagUsingInProcessInference()
 
       in_process_result = (
         tagged['in_process']
