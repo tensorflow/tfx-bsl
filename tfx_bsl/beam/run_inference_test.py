@@ -709,25 +709,26 @@ class RunInferenceCoreTest(RunInferenceFixture):
           model_path=model_path))
 
   # TODO(hgarrereyn): Switch _BatchElements to use GroupIntoBatches once
-  #   BEAM-2717 is fixed so examples are grouped by inference spec key.
+  #   BEAM-2717 is fixed so examples are grouped by inference spec key. The
+  #   following test indicates desired but currently unsupported behavior:
   #
   # def test_batch_queries_multiple_models(self):
   #   spec1 = self._get_saved_model_spec('/example/model1')
   #   spec2 = self._get_saved_model_spec('/example/model2')
   #
-  #   QUERIES = []
+  #   queries = []
   #   for i in range(100):
-  #     QUERIES.append((spec1 if i % 2 == 0 else spec2, self._make_example(i)))
+  #     queries.append((spec1 if i % 2 == 0 else spec2, self._make_example(i)))
   #
-  #   CORRECT = {example.SerializeToString(): spec for spec, example in QUERIES}
+  #   correct = {example.SerializeToString(): spec for spec, example in queries}
   #
   #   def _check_batch(batch):
   #     """Assert examples are grouped with the correct inference spec."""
   #     spec, examples = batch
-  #     assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
+  #     assert all([correct[x.SerializeToString()] == spec for x in examples])
   #
   #   with beam.Pipeline() as p:
-  #     queries = p | 'Queries' >> beam.Create(QUERIES)
+  #     queries = p | 'Queries' >> beam.Create(queries)
   #     batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
   #
   #     _ = batches | 'Check' >> beam.Map(_check_batch)
@@ -735,13 +736,13 @@ class RunInferenceCoreTest(RunInferenceFixture):
   def test_inference_on_queries(self):
     spec = self._new_model(self._get_output_data_dir('model1'), 100)
     predictions_path = self._get_output_data_dir('predictions')
-    QUERIES = [(spec, self._make_example(i)) for i in range(10)]
+    queries = [(spec, self._make_example(i)) for i in range(10)]
 
     options = pipeline_options.PipelineOptions(streaming=False)
     with beam.Pipeline(options=options) as p:
       _ = (
         p
-        | 'Queries' >> beam.Create(QUERIES) \
+        | 'Queries' >> beam.Create(queries) \
         | '_RunInferenceCore' >> run_inference._RunInferenceCore() \
         | 'WritePredictions' >> beam.io.WriteToTFRecord(
           predictions_path,

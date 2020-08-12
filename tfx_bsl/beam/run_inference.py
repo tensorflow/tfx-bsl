@@ -165,7 +165,7 @@ def _RunInferenceCore(
   Raises:
     ValueError: when operation is not supported.
   """
-  # TODO(BEAM-2717): Currently batching by inferenc spec is not supported and
+  # TODO(BEAM-2717): Currently batching by inference spec is not supported and
   #   it is assumed that all queries share the same inference spec. Once
   #   BEAM-2717 is fixed, we can use beam.GroupIntoBatches and remove this
   #   constraint.
@@ -1028,7 +1028,8 @@ def _BuildInferenceOperation(
           [in_process_result, remote_result]
           | 'FlattenResult' >> beam.Flatten())
       else:
-        tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform()
+        tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform(
+          'Remote inference is not supported for operation type: %s' % name)
         raw_result = in_process_result
     else:
       if _using_in_process_inference(fixed_inference_spec_type):
@@ -1045,7 +1046,8 @@ def _BuildInferenceOperation(
               pcoll.pipeline.options,
               fixed_inference_spec_type=fixed_inference_spec_type)))
         else:
-          raise NotImplementedError()
+          raise NotImplementedError('Remote inference is not supported for'
+                                    'operation type: %s' % name)
 
     return (
       raw_result
@@ -1290,10 +1292,11 @@ def _TagUsingInProcessInference(
 
 
 @beam.ptransform_fn
-def _NotImplementedTransform(pcoll: beam.pvalue.PCollection):
+def _NotImplementedTransform(
+  pcoll: beam.pvalue.PCollection, message: Text = ''):
   """Raises NotImplementedError for each value in the input PCollection."""
   def _raise(x):
-    raise NotImplementedError
+    raise NotImplementedError(message)
   pcoll | beam.Map(_raise)
 
 
