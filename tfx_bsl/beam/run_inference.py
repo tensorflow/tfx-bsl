@@ -44,8 +44,8 @@ import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
-from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
-    Tuple, Union, Optional
+from typing import Any, Generator, Iterable, List, Mapping, Optional, \
+  Sequence, Text, Tuple, Union
 
 # TODO(b/140306674): stop using the internal TF API.
 from tensorflow.python.saved_model import loader_impl
@@ -227,6 +227,16 @@ def _BatchQueries(queries: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
 @beam.typehints.with_output_types(_QueryBatchType)
 def _SplitByOperation(batches):
   """A PTransform that splits a _QueryBatchType PCollection based on operation.
+
+  Benchmarks demonstrated that this transform was a bottleneck (comprising
+  nearly 25% of the total RunInference walltime) since looking up the operation
+  type requires reading the saved model signature from disk. To improve
+  performance, we use a caching layer inside each DoFn instance that saves a
+  mapping of:
+
+    {inference_spec.SerializeToString(): operation_type}
+
+  In practice this cache reduces _SplitByOperation walltime by more than 90%.
 
   Returns a DoOutputsTuple with keys:
     - OperationType.CLASSIFICATION
