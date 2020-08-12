@@ -53,7 +53,7 @@ def RunInference(  # pylint: disable=invalid-name
   Args:
     examples: A PCollection containing examples.
     inference_spec_type: Model inference endpoint.
-    Schema [optional]: required for models that requires
+    schema [optional]: required for predict models that requires
       multi-tensor inputs.
 
   Returns:
@@ -85,7 +85,7 @@ def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
   Args:
     examples: A PCollection containing sequence examples.
     inference_spec_type: Model inference endpoint.
-    Schema [optional]: required for models that requires
+    schema [optional]: required for predict models that requires
       multi-tensor inputs.
 
   Returns:

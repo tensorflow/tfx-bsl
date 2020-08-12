@@ -29,7 +29,7 @@ from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
 
 _KERAS_INPUT_SUFFIX = '_input'
 
-def ExtractSerializedExampleFromRecordBatch(elements: pa.RecordBatch) -> List[Text]:
+def ExtractSerializedExamplesFromRecordBatch(elements: pa.RecordBatch) -> List[Text]:
   serialized_examples = None
   for column_name, column_array in zip(elements.schema.names, elements.columns):
     if column_name == _RECORDBATCH_COLUMN:
@@ -64,12 +64,6 @@ def RecordToJSON(
   """
 
   # TODO (b/155912552): Handle this for sequence example.
-
-  def flatten(element: List[Any]):
-    if len(element) == 1:
-        return element[0]
-    return element
-
   df = record_batch.to_pandas()
   if prepare_instances_serialized: 
     return [{'b64': base64.b64encode(value).decode()} for value in df[_RECORDBATCH_COLUMN]]
@@ -80,10 +74,11 @@ def RecordToJSON(
 
     if _RECORDBATCH_COLUMN in df.columns:
       df = df.drop(labels=_RECORDBATCH_COLUMN, axis=1)
-    df = df.applymap(lambda x: flatten(x))
+    df = df.applymap(lambda values: values[0] if len(values) == 1 else values)
     return json.loads(df.to_json(orient='records'))
 
 
+# TODO: Reuse these functions in TFMA.
 def _find_input_name_in_features(features: Set[Text],
                                  input_name: Text) -> Optional[Text]:
   """Maps input name to an entry in features. Returns None if not found."""
