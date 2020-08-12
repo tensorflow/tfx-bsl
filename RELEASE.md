@@ -1,6 +1,6 @@
 # `tfx_bsl` release notes
 
-# Current Version(Still in Development)
+# Version 0.23.0
 
 ## Major Features and Improvements
 *  Several TFXIO symbols are made public, which means:
@@ -18,20 +18,26 @@
    -  Custom built `tfx_bsl` does not have to maintain ABI compatiblity with
       a specific `pyarrow` installation. Custom builds don't need to be
       manylinux-conformant.
+
 ## Bug Fixes and Other Changes
 
 *   Starting from this version, the windows wheel will be built with VS 2015.
 *   `run_all_tests` will fail with exit code -2 if no tests are discovered.
 *   Stopped requiring `avro-python3`.
-*   Depends on `apache-beam[gcp]>=2.22,<3`.
-*   Example coders will ignore duplicate feature names in the TFMD schema
-    (only the first one counts). It is a temporary measure until TFDV can
-    check and prevent duplications. DO NOT rely on this behavior.
+*   Example coders will ignore duplicate feature names in the TFMD schema (only
+    the first one counts). It is a temporary measure until TFDV can check and
+    prevent duplications. DO NOT rely on this behavior.
 *   CsvTFXIO now allows skipping CSV headers (`set skip_header_lines`).
 *   CsvTFXIO now requires `telemetry_descriptors` to construct.
+*   Depends on `apache-beam[gcp]>=2.23,<3`.
 *   Depends on `pyarrow>=0.17,<0.18`.
+*   Depends on `tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,<3`.
+*   Depends on `tensorflow-metadata>=0.23,<0.24`.
+*   Depends on `tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,<3`.
 
 ## Breaking changes
+
+*   N/A
 
 ## Deprecations
 
