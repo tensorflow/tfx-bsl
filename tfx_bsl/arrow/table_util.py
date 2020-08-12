@@ -86,7 +86,10 @@ def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
   first_schema = record_batches[0].schema
   assert any([r.num_rows > 0 for r in record_batches]), (
       "Unable to merge empty RecordBatches.")
-  if all([r.schema.equals(first_schema) for r in record_batches[1:]]):
+  if (all([r.schema.equals(first_schema) for r in record_batches[1:]])
+      # combine_chunks() cannot correctly handle the case where there are
+      # 0 column.
+      and first_schema):
     one_chunk_table = pa.Table.from_batches(record_batches).combine_chunks()
     batches = one_chunk_table.to_batches(max_chunksize=None)
     assert len(batches) == 1

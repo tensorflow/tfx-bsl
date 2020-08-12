@@ -403,6 +403,15 @@ class MergeRecordBatchesTest(parameterized.TestCase):
           "Column {}:\nexpected:{}\ngot: {}".format(
               column_name, expected_output[column_name], column))
 
+  def test_merge_0_column_record_batches(self):
+    record_batches = ([
+        pa.table([pa.array([1, 2, 3])],
+                 ["ignore"]).remove_column(0).to_batches(max_chunksize=None)[0]
+    ] * 3)
+    merged = table_util.MergeRecordBatches(record_batches)
+    self.assertEqual(merged.num_rows, 9)
+    self.assertEqual(merged.num_columns, 0)
+
 
 _GET_TOTAL_BYTE_SIZE_TEST_NAMED_PARAMS = [
     dict(testcase_name="table", factory=pa.Table.from_arrays),
