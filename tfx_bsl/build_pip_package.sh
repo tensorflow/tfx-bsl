@@ -46,7 +46,7 @@ if is_windows; then
   TFX_BSL_EXTENSION="tfx_bsl/cc/tfx_bsl_extension.pyd"
   cp -f "${BUILD_WORKSPACE_DIRECTORY}/bazel-out/x64_windows-opt/bin/${TFX_BSL_EXTENSION}" \
     "${BUILD_WORKSPACE_DIRECTORY}/${TFX_BSL_EXTENSION}"
-  cp -f "${BUILD_WORKSPACE_DIRECTORY}"/bazel-genfiles/tfx_bsl/public/proto/*.py \
+  cp -f "${BUILD_WORKSPACE_DIRECTORY}"/bazel-out/x64_windows-opt/bin/tfx_bsl/public/proto/*.py \
     "${BUILD_WORKSPACE_DIRECTORY}"/tfx_bsl/public/proto
 else
   # If run by "bazel run", $(pwd) is the .runfiles dir that contains all the

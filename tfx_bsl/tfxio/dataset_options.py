@@ -22,8 +22,8 @@ import collections
 from typing import Optional, Text
 
 
-class TensorflowDatasetOptions(
-    collections.namedtuple('TensorflowDatasetOptions', [
+class TensorFlowDatasetOptions(
+    collections.namedtuple('TensorFlowDatasetOptions', [
         'batch_size', 'drop_final_batch', 'num_epochs', 'shuffle',
         'shuffle_buffer_size', 'shuffle_seed', 'label_key'
     ])):
@@ -37,8 +37,8 @@ class TensorflowDatasetOptions(
               batch_size: int,
               drop_final_batch: bool = False,
               num_epochs: Optional[int] = None,
-              shuffle: Optional[bool] = None,
-              shuffle_buffer_size: Optional[int] = None,
+              shuffle: bool = True,
+              shuffle_buffer_size: int = 10000,
               shuffle_seed: Optional[int] = None,
               label_key: Optional[Text] = None):
     """Returns a dataset options object.
@@ -63,7 +63,7 @@ class TensorflowDatasetOptions(
         the tuple is the label tensor and the dict (the first term) will not
         contain the label feature.
     """
-    return super(TensorflowDatasetOptions,
+    return super(TensorFlowDatasetOptions,
                  cls).__new__(cls, batch_size, drop_final_batch, num_epochs,
                               shuffle, shuffle_buffer_size, shuffle_seed,
                               label_key)

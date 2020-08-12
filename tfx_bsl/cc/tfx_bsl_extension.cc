@@ -26,13 +26,25 @@
 #include "tfx_bsl/cc/sketches/sketches_submodule.h"
 #include "include/pybind11/pybind11.h"
 
+#ifndef TFX_BSL_USE_ARROW_C_ABI
+#include "arrow/python/pyarrow.h"
+#endif
+
 namespace tfx_bsl {
+namespace {
+void MaybeImportPyarrow() {
+#ifndef TFX_BSL_USE_ARROW_C_ABI
+  arrow::py::import_pyarrow();
+#endif
+}
+}  // namespace
 
 PYBIND11_MODULE(
     tfx_bsl_extension,  // this must be kept the same as the "extension_name"
                            // param in the build rule
     m) {
   m.doc() = "TFX Basic Shared Libraries extension module";
+  MaybeImportPyarrow();
   DefineArrowSubmodule(m);
   DefineCodersSubmodule(m);
   DefineSketchesSubmodule(m);

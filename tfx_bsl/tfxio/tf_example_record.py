@@ -237,7 +237,7 @@ class TFExampleRecord(_TFExampleRecordBase):
 
   def TensorFlowDataset(
       self,
-      options: dataset_options.TensorflowDatasetOptions) -> tf.data.Dataset:
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
     """Creates a TFRecordDataset that yields Tensors.
 
     The serialized tf.Examples are parsed by `tf.io.parse_example` to create
@@ -247,7 +247,7 @@ class TFExampleRecord(_TFExampleRecordBase):
 
     Args:
       options: an options object for the tf.data.Dataset. See
-        `dataset_options.TensorflowDatasetOptions` for more details.
+        `dataset_options.TensorFlowDatasetOptions` for more details.
 
     Returns:
       A dataset of `dict` elements, (or a tuple of `dict` elements and label).
@@ -268,11 +268,12 @@ class TFExampleRecord(_TFExampleRecordBase):
           feature_name] = tensor_representation_util.CreateTfExampleParserConfig(
               tensor_representation, feature_type)
 
+    file_pattern = tf.convert_to_tensor(self._file_pattern)
     return tf.data.experimental.make_batched_features_dataset(
-        self._file_pattern,
+        file_pattern,
         features=features,
         batch_size=options.batch_size,
-        reader_args=["GZIP"],
+        reader_args=[record_based_tfxio.DetectCompressionType(file_pattern)],
         num_epochs=options.num_epochs,
         shuffle=options.shuffle,
         shuffle_buffer_size=options.shuffle_buffer_size,

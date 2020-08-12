@@ -18,6 +18,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import unittest
 
 from absl import flags
 import apache_beam as beam
@@ -29,7 +30,6 @@ from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry_test_util
 from tfx_bsl.tfxio import tf_example_record
 from google.protobuf import text_format
-from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 from absl.testing import absltest
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -364,10 +364,10 @@ class TfExampleRecordTest(tf.test.TestCase):
       record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
-  @test_util.run_all_in_graph_and_eager_modes
-  def testTensorflowDataset(self):
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testTensorFlowDataset(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
-    options = dataset_options.TensorflowDatasetOptions(
+    options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1)
     for i, parsed_examples_dict in enumerate(
         tfxio.TensorFlowDataset(options=options)):
@@ -376,10 +376,10 @@ class TfExampleRecordTest(tf.test.TestCase):
         self._AssertSparseTensorEqual(
             tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
 
-  @test_util.run_all_in_graph_and_eager_modes
-  def testTensorflowDatasetWithLabelKey(self):
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testTensorFlowDatasetWithLabelKey(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
-    options = dataset_options.TensorflowDatasetOptions(
+    options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1, label_key="string_feature")
     for i, (parsed_examples_dict, label_feature) in enumerate(
         tfxio.TensorFlowDataset(options=options)):
@@ -390,12 +390,12 @@ class TfExampleRecordTest(tf.test.TestCase):
         self._AssertSparseTensorEqual(
             tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
 
-  @test_util.run_all_in_graph_and_eager_modes
-  def testProjectedTensorflowDataset(self):
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testProjectedTensorFlowDataset(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
     feature_name = "string_feature"
     projected_tfxio = tfxio.Project([feature_name])
-    options = dataset_options.TensorflowDatasetOptions(
+    options = dataset_options.TensorFlowDatasetOptions(
         batch_size=1, shuffle=False, num_epochs=1)
     for i, parsed_examples_dict in enumerate(
         projected_tfxio.TensorFlowDataset(options=options)):

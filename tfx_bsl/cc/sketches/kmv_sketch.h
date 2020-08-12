@@ -37,10 +37,9 @@ namespace sketches {
 //   Counting Distinct Elements in a Data Stream. RANDOM 2002.
 //   http://cs.haifa.ac.il/~ilan/randomized_algorithms/bar-yosef_jayram.pdf
 //
-// The KmvSketch class implements the KMV algorithm. The size of the sketch
-// in the class does not depend on the size of the dataset and thus can be
-// computed efficiently for large datasets. The sketch can be stored on disk
-// for usage later.
+// KmvSketch does not depend on the size of the dataset and thus can be computed
+// efficiently for large datasets. The implementation outputs a summary that can
+// be stored on disk for usage later.
 class KmvSketch {
  public:
   // KmvSketch is copyable and movable.

@@ -42,18 +42,12 @@ class _BinaryDistribution(Distribution):
 # Get version from version module.
 with open('tfx_bsl/version.py') as fp:
   globals_dict = {}
-  exec (fp.read(), globals_dict)  # pylint: disable=exec-used
+  exec(fp.read(), globals_dict)  # pylint: disable=exec-used
 __version__ = globals_dict['__version__']
 
 # Get the long description from the README file.
 with open('README.md') as fp:
   _LONG_DESCRIPTION = fp.read()
-
-# Get pyarrow dependency.
-with open('third_party/pyarrow_version.bzl') as fp:
-  globals_dict = {}
-  exec (fp.read(), globals_dict)  # pylint: disable=exec-used
-  _PYARROW_VERSION_REQUIREMENT = globals_dict['PY_DEP']
 
 
 setup(
@@ -94,11 +88,12 @@ setup(
         'numpy>=1.16,<2',
         'pandas>=0.24,<2',
         'protobuf>=3.7,<4',
+        'pyarrow>=0.17,<0.18',
         'six>=1.12,<2',
         'tensorflow>=1.15,!=2.0.*,<3',
         'tensorflow-metadata>=0.22.2,<0.23',
         'tensorflow-serving-api>=1.15,<3',
-    ] + [_PYARROW_VERSION_REQUIREMENT],
+    ],
     python_requires='>=3.5,<4',
     packages=find_packages(),
     include_package_data=True,

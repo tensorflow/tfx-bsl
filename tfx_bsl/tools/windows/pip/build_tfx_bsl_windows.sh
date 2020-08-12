@@ -35,34 +35,16 @@ function tfx_bsl::build_from_head_windows {
   source "tfx_bsl/tools/windows/bazel/common_env.sh" \
     || { echo "Failed to source common_env.sh" >&2; exit 1; }
 
-  # Recreate an empty bazelrc file under source root
-  export TMP_BAZELRC=.tmp.bazelrc
-  rm -f "${TMP_BAZELRC}"
-  touch "${TMP_BAZELRC}"
-
-  function cleanup {
-    # Remove all options in .tmp.bazelrc
-    echo "" > "${TMP_BAZELRC}"
-  }
-  trap cleanup EXIT
-
   # Enable short object file path to avoid long path issue on Windows.
-  echo "startup --output_user_root=${TMPDIR}" >> "${TMP_BAZELRC}"
-
-  if ! grep -q "import %workspace%/${TMP_BAZELRC}" .bazelrc; then
-    echo "import %workspace%/${TMP_BAZELRC}" >> .bazelrc
-  fi
+  echo "startup --output_user_root=${TMPDIR}" >> .bazelrc
 
   # Upgrade pip, setuptools and wheel packages.
   "${PYTHON_BIN_PATH}" -m pip install --upgrade pip && \
   pip install setuptools --upgrade && \
   pip install wheel --upgrade && \
+  pip install "numpy>=1.16,<2"
   pip freeze --all || { echo "Failed to prepare pip."; exit 1; }
 
-  pyarrow_requirement=$(python -c "fp = open('third_party/pyarrow_version.bzl', 'r'); d = {}; exec(fp.read(), d); fp.close(); print(d['PY_DEP'])") || \
-    { echo "Unable to get pyarrow requirement."; exit 1; }
-  pip install "${pyarrow_requirement}" && \
-  ./configure.sh && \
   bazel run -c opt --copt=-DWIN32_LEAN_AND_MEAN tfx_bsl:build_pip_package || \
     { echo "Unable to build tfx_bsl."; exit 1; }
   echo "dist/*.whl"

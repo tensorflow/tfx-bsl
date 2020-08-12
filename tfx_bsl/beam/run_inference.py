@@ -698,7 +698,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     if not self._model_path:
       raise ValueError('Model path is not valid.')
     return self._shared_model_handle.acquire(
-      load, tag=inference_spec_type.SerializeToString())
+      load, tag=inference_spec_type.SerializeToString().decode('latin-1'))
 
   def _pre_process(self) -> _IOTensorSpec:
     # Pre process functions will validate for each signature.

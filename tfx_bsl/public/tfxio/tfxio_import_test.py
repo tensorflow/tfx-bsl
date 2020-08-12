@@ -26,7 +26,7 @@ class TfxioImportTest(absltest.TestCase):
     # pylint: disable=g-import-not-at-top,unused-import
     from tfx_bsl.public.tfxio import BeamRecordCsvTFXIO
     from tfx_bsl.public.tfxio import CsvTFXIO
-    from tfx_bsl.public.tfxio import TensorflowDatasetOptions
+    from tfx_bsl.public.tfxio import TensorFlowDatasetOptions
     from tfx_bsl.public.tfxio import TensorAdapter
     from tfx_bsl.public.tfxio import TensorAdapterConfig
     from tfx_bsl.public.tfxio import TensorRepresentations

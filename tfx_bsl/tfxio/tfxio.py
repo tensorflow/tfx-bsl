@@ -82,14 +82,14 @@ class TFXIO(object):
   @abc.abstractmethod
   def TensorFlowDataset(
       self,
-      options: dataset_options.TensorflowDatasetOptions) -> tf.data.Dataset:
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
     """Returns a tf.data.Dataset of TF inputs.
 
     May raise an error if the TFMD schema was not provided at construction time.
 
     Args:
       options: an options object for the tf.data.Dataset. Look at
-        `dataset_options.TensorflowDatasetOptions` for more details.
+        `dataset_options.TensorFlowDatasetOptions` for more details.
     """
 
   @abc.abstractmethod
@@ -202,7 +202,7 @@ class _ProjectedTFXIO(TFXIO):
 
   def TensorFlowDataset(
       self,
-      options: dataset_options.TensorflowDatasetOptions) -> tf.data.Dataset:
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
     return self.projected.TensorFlowDataset(options)
 
   def _ProjectImpl(self, unused_tensor_names: List[Text]) -> "TFXIO":

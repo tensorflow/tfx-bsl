@@ -47,8 +47,7 @@ class ArrayUtilTest(parameterized.TestCase):
     for f in itertools.chain(functions_expecting_list_array,
                              functions_expecting_array,
                              functions_expecting_binary_array):
-      with self.assertRaisesRegex(
-          TypeError, "incompatible function arguments"):
+      with self.assertRaises((TypeError, RuntimeError)):
         f(1)
 
     for f in functions_expecting_list_array:
@@ -197,6 +196,12 @@ class ArrayUtilTest(parameterized.TestCase):
     expected_result = {}
     self.assertDictEqual(self._value_counts_struct_array_to_dict(
         array_util.ValueCounts(empty_array)), expected_result)
+
+  def test_match(self):
+    values = pa.array([99, 42, 3, None])
+    value_set = pa.array([3, 3, 99])
+    self.assertEqual([1, None, 0, None],
+                     list(array_util.IndexIn(values, value_set)))
 
 _MAKE_LIST_ARRAY_INVALID_INPUT_TEST_CASES = [
     dict(
