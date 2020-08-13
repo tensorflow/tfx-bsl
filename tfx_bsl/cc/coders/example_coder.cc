@@ -52,8 +52,8 @@ absl::string_view KindToStr(tensorflow::Feature::KindCase kind) {
 }
 
 // Implementation notes:
-// A large (perhaps ~5x?) improvement in parsing performance (which is ~70% of
-// parsing+arrow_building) is possible if we directly use
+// A ~2x improvement in the end-to-end (serialzied protos to RecordBatch)
+// performance improvement  is possible if we directly use
 // proto2::io::CodedInputSteam and bypass the creation of the Example objects.
 Status ParseExample(const absl::string_view serialized_example,
                     tensorflow::Example* example) {
