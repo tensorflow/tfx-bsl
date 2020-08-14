@@ -679,7 +679,7 @@ class RunInferenceCoreTest(RunInferenceFixture):
           )
         }
         input_tensor_dict = tf.io.parse_example(serialized_example, features)
-        return self.model(input_tensor_dict)
+        return {'output': self.model(input_tensor_dict)}
 
     model = self._build_keras_model(add)
     wrapped_model = WrapKerasModel(model)
@@ -690,7 +690,7 @@ class RunInferenceCoreTest(RunInferenceFixture):
 
   def _decode_value(self, pl):
     """Returns output value from prediction log."""
-    out_tensor = pl.predict_log.response.outputs['output_1']
+    out_tensor = pl.predict_log.response.outputs['output']
     arr = tf.make_ndarray(out_tensor)
     x = arr[0][0]
     return x
