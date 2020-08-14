@@ -104,12 +104,10 @@ pass `-b <branchname>` to the `git clone` command.
 
 ### 3. Build the pip package
 
-TFDV uses Bazel to build the pip package from source. Before invoking the
-following commands, make sure the `python` in your `$PATH` is the one of the
-target version and has NumPy.
-
+`tfx_bsl` wheel is Python version dependent -- to build the pip package that
+works for a specific Python version, use that Python binary to run:
 ```shell
-bazel run -c opt tfx_bsl:build_pip_package
+python setup.py bdist_wheel
 ```
 
 You can find the generated `.whl` file in the `dist` subdirectory.

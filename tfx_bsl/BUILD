@@ -19,7 +19,7 @@ _py_extension = select({
 })
 
 sh_binary(
-    name = "build_pip_package",
-    srcs = ["build_pip_package.sh"],
+    name = "move_generated_files",
+    srcs = ["move_generated_files.sh"],
     data = _py_extension + _public_protos,
 )

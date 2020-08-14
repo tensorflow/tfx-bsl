@@ -44,8 +44,6 @@ function tfx_bsl::build_from_head_windows {
   pip install wheel --upgrade && \
   pip install "numpy>=1.16,<2"
   pip freeze --all || { echo "Failed to prepare pip."; exit 1; }
-
-  bazel run -c opt --copt=-DWIN32_LEAN_AND_MEAN tfx_bsl:build_pip_package || \
-    { echo "Unable to build tfx_bsl."; exit 1; }
+  "${PYTHON_BIN_PATH}" setup.py bdist_wheel
   echo "dist/*.whl"
 }

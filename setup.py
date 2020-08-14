@@ -13,20 +13,79 @@
 # limitations under the License.
 """Package Setup script for TFX BSL."""
 
+# pylint:disable=g-bad-import-order
+# setuptools must be imported prior to distutils.
+import setuptools
+from distutils import spawn
+from distutils.command import build
+# pylint:enable=g-bad-import-order
+import os
+import subprocess
+
 from setuptools import find_packages
 from setuptools import setup
 from setuptools.command.install import install
 from setuptools.dist import Distribution
 
 
+class _BuildCommand(build.build):
+  """Build everything that is needed to install.
+
+  This overrides the original distutils "build" command to to run gen_proto
+  command before any sub_commands.
+
+  build command is also invoked from bdist_wheel and install command, therefore
+  this implementation covers the following commands:
+    - pip install . (which invokes bdist_wheel)
+    - python setup.py install (which invokes install command)
+    - python setup.py bdist_wheel (which invokes bdist_wheel command)
+  """
+
+  def _build_cc_extensions(self):
+    return True
+  # Add "bazel_build" command as the first sub_command of "build". Each
+  # sub_command of "build" (e.g. "build_py", "build_ext", etc.) is executed
+  # sequentially when running a "build" command, if the second item in the tuple
+  # (predicate method) is evaluated to true.
+  sub_commands = [
+      ('bazel_build', _build_cc_extensions),
+  ] + build.build.sub_commands
+
+
 # TFX BSL is not a purelib. However because of the extension module is not
 # built by setuptools, it will be incorrectly treated as a purelib. The
 # following works around that bug.
-class _InstallPlatlib(install):
+class _InstallPlatlibCommand(install):
 
   def finalize_options(self):
     install.finalize_options(self)
     self.install_lib = self.install_platlib
+
+
+class _BazelBuildCommand(setuptools.Command):
+  """Generate proto stub files in python.
+
+  Running this command will populate foo_pb2.py file next to your foo.proto
+  file.
+  """
+
+  def initialize_options(self):
+    pass
+
+  def finalize_options(self):
+    self._bazel_cmd = spawn.find_executable('bazel')
+    if not self._bazel_cmd:
+      raise RuntimeError(
+          'Could not find "bazel" binary. Please visit '
+          'https://docs.bazel.build/versions/master/install.html for '
+          'installation instruction.')
+
+  def run(self):
+    subprocess.check_call(
+        [self._bazel_cmd, 'run', '-c', 'opt', '//tfx_bsl:move_generated_files'],
+        # Bazel should be invoked in a directory containing bazel WORKSPACE
+        # file, which is the root directory.
+        cwd=os.path.dirname(os.path.realpath(__file__)),)
 
 
 class _BinaryDistribution(Distribution):
@@ -48,7 +107,6 @@ __version__ = globals_dict['__version__']
 # Get the long description from the README file.
 with open('README.md') as fp:
   _LONG_DESCRIPTION = fp.read()
-
 
 setup(
     name='tfx-bsl',
@@ -109,4 +167,8 @@ setup(
     url='https://www.tensorflow.org/tfx',
     download_url='https://github.com/tensorflow/tfx-bsl/tags',
     requires=[],
-    cmdclass={'install': _InstallPlatlib})
+    cmdclass={
+        'install': _InstallPlatlibCommand,
+        'build': _BuildCommand,
+        'bazel_build': _BazelBuildCommand,
+    })

@@ -2,3 +2,4 @@
 # arrow.
 # See tfx_bsl/cc/pybind11/arrow_casters.h
 build --copt=-DTFX_BSL_USE_ARROW_C_ABI
+build:windows --copt=-DWIN32_LEAN_AND_MEAN
