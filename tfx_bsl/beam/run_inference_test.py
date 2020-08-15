@@ -112,7 +112,7 @@ class RunInferenceFixture(tf.test.TestCase):
           )
         }
         input_tensor_dict = tf.io.parse_example(serialized_example, features)
-        return self.model(input_tensor_dict)
+        return {'output': self.model(input_tensor_dict)}
 
     model = self._build_keras_model(add)
     wrapped_model = WrapKerasModel(model)
@@ -123,7 +123,7 @@ class RunInferenceFixture(tf.test.TestCase):
 
   def _decode_value(self, pl):
     """Returns output value from prediction log."""
-    out_tensor = pl.predict_log.response.outputs['output_1']
+    out_tensor = pl.predict_log.response.outputs['output']
     arr = tf.make_ndarray(out_tensor)
     x = arr[0][0]
     return x
@@ -716,19 +716,19 @@ class RunInferenceCoreTest(RunInferenceFixture):
     spec1 = self._get_saved_model_spec('/example/model1')
     spec2 = self._get_saved_model_spec('/example/model2')
   
-    QUERIES = []
+    queries = []
     for i in range(100):
-      QUERIES.append((spec1 if i % 2 == 0 else spec2, self._make_example(i)))
+      queries.append((spec1 if i % 2 == 0 else spec2, self._make_example(i)))
   
-    CORRECT = {example.SerializeToString(): spec for spec, example in QUERIES}
+    correct = {example.SerializeToString(): spec for spec, example in queries}
   
     def _check_batch(batch):
       """Assert examples are grouped with the correct inference spec."""
       spec, examples = batch
-      assert all([CORRECT[x.SerializeToString()] == spec for x in examples])
+      assert all([correct[x.SerializeToString()] == spec for x in examples])
   
     with beam.Pipeline() as p:
-      queries = p | 'Build queries' >> beam.Create(QUERIES)
+      queries = p | 'Build queries' >> beam.Create(queries)
       batches = queries | '_BatchQueries' >> run_inference._BatchQueries()
   
       _ = batches | 'Check' >> beam.Map(_check_batch)
@@ -736,13 +736,13 @@ class RunInferenceCoreTest(RunInferenceFixture):
   def test_inference_on_queries(self):
     spec = self._new_model(self._get_output_data_dir('model1'), 100)
     predictions_path = self._get_output_data_dir('predictions')
-    QUERIES = [(spec, self._make_example(i)) for i in range(10)]
+    queries = [(spec, self._make_example(i)) for i in range(10)]
 
     options = pipeline_options.PipelineOptions(streaming=False)
     with beam.Pipeline(options=options) as p:
       _ = (
         p
-        | 'Queries' >> beam.Create(QUERIES) \
+        | 'Queries' >> beam.Create(queries) \
         | '_RunInferenceCore' >> run_inference._RunInferenceCore() \
         | 'WritePredictions' >> beam.io.WriteToTFRecord(
           predictions_path,
@@ -847,7 +847,7 @@ class RunStreamingModelInferenceTest(RunInferenceFixture):
 
     predictions_path = self._get_output_data_dir('predictions')
 
-    QUERIES = [
+    queries = [
       (spec_1, self._make_example(0)),
       (spec_2, self._make_example(1)),
       (spec_3, self._make_example(2)),
@@ -868,7 +868,7 @@ class RunStreamingModelInferenceTest(RunInferenceFixture):
     with beam.Pipeline(options=options) as p:
       _ = (
         p
-        | 'Queries' >> beam.Create(QUERIES) \
+        | 'Queries' >> beam.Create(queries) \
         | 'RunInference' >> run_inference.RunInferenceImpl() \
         | 'WritePredictions' >> beam.io.WriteToTFRecord(
           predictions_path,

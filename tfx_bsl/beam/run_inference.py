@@ -68,7 +68,6 @@ _DEFAULT_INPUT_KEY = 'examples'
 _METRICS_DESCRIPTOR_INFERENCE = 'BulkInferrer'
 _METRICS_DESCRIPTOR_IN_PROCESS = 'InProcess'
 _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION = 'CloudAIPlatformPrediction'
-_METRICS_DESCRIPTOR_DYNAMIC = 'DynamicModels'
 _MILLISECOND_TO_MICROSECOND = 1000
 _MICROSECOND_TO_NANOSECOND = 1000
 _SECOND_TO_MICROSECOND = 1000000
@@ -165,15 +164,18 @@ def _RunInferenceCore(
   these queries are grouped by model and inference runs in batches. If a
   fixed_inference_spec_type is provided, this spec is used for all inference
   requests which enables pre-configuring the model during pipeline
-  construction. If the fixed_inference_spec_type is not provided, models will
-  be loaded dynamically at runtime.
+  construction. If the fixed_inference_spec_type is not provided, each input
+  query must contain a valid InferenceSpecType and models will be loaded
+  dynamically at runtime.
 
   Args:
     queries: A PCollection containing QueryType tuples.
     fixed_inference_spec_type: An optional model inference endpoint. If
       specified, this is "preloaded" during inference and models specified in
       query tuples are ignored. This requires the InferenceSpecType to be known
-      at pipeline creation time.
+      at pipeline creation time. If this fixed_inference_spec_type is not
+      provided, each input query must contain a valid InferenceSpecType and
+      models will be loaded dynamically at runtime.
 
   Returns:
     A PCollection containing prediction logs.
@@ -181,6 +183,10 @@ def _RunInferenceCore(
   Raises:
     ValueError: when operation is not supported.
   """
+  # TODO(BEAM-2717): Currently batching by inference spec is not supported and
+  #   it is assumed that all queries share the same inference spec. Once
+  #   BEAM-2717 is fixed, we can use beam.GroupIntoBatches and remove this
+  #   constraint.
   batched_queries = queries | 'BatchQueries' >> _BatchQueries()
   predictions = None
 
@@ -267,6 +273,9 @@ def _SplitByOperation(batches):
     - OperationType.REGRESSION
     - OperationType.PREDICTION
     - OperationType.MULTIHEAD
+
+  Raises:
+    ValueError: If any inference_spec_type is None.
   """
   class _SplitDoFn(beam.DoFn):
     def __init__(self):
@@ -274,6 +283,9 @@ def _SplitByOperation(batches):
 
     def process(self, batch):
       inference_spec, _ = batch
+
+      if inference_spec is None:
+        raise ValueError("InferenceSpecType cannot be None.")
 
       key = inference_spec.SerializeToString()
       operation_type = self._cache.get(key)
@@ -308,22 +320,17 @@ class _BaseDoFn(beam.DoFn):
   class _MetricsCollector(object):
     """A collector for beam metrics."""
 
-    def __init__(
-      self,
-      fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
-    ):
-      namespace = ''
-      if fixed_inference_spec_type is None:
-        namespace = util.MakeTfxNamespace(
-          [_METRICS_DESCRIPTOR_INFERENCE, _METRICS_DESCRIPTOR_DYNAMIC])
-      else:
-        operation_type = _get_operation_type(fixed_inference_spec_type)
-        proximity_descriptor = (
-            _METRICS_DESCRIPTOR_IN_PROCESS
-            if _using_in_process_inference(fixed_inference_spec_type) else
-            _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
-        namespace = util.MakeTfxNamespace(
-            [_METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
+    def __init__(self, operation_type: Text, proximity_descriptor: Text):
+      """Initializes a metrics collector.
+
+      Args:
+        operation_type: A string describing the type of operation, e.g.
+          "CLASSIFICATION".
+        proximity_descriptor: A string describing the location of inference,
+          e.g. "InProcess".
+      """
+      namespace = util.MakeTfxNamespace([
+        _METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
 
       # Metrics
       self._inference_counter = beam.metrics.Metrics.counter(
@@ -346,21 +353,45 @@ class _BaseDoFn(beam.DoFn):
           namespace, 'load_model_latency_milli_secs')
 
       # Metrics cache
-      self.load_model_latency_milli_secs_cache = None
-      self.model_byte_size_cache = None
+      self._load_model_latency_milli_secs_cache = None
+      self._model_byte_size_cache = None
 
-    def update_metrics_with_cache(self):
-      if self.load_model_latency_milli_secs_cache is not None:
+    def commit_cached_metrics(self):
+      """Updates any cached metrics.
+
+      If there are no cached metrics, this has no effect. Cached metrics are
+      automatically cleared after use.
+      """
+      if self._load_model_latency_milli_secs_cache is not None:
         self._load_model_latency_milli_secs.update(
-            self.load_model_latency_milli_secs_cache)
-        self.load_model_latency_milli_secs_cache = None
-      if self.model_byte_size_cache is not None:
-        self._model_byte_size.update(self.model_byte_size_cache)
-        self.model_byte_size_cache = None
+            self._load_model_latency_milli_secs_cache)
+        self._load_model_latency_milli_secs_cache = None
+      if self._model_byte_size_cache is not None:
+        self._model_byte_size.update(self._model_byte_size_cache)
+        self._model_byte_size_cache = None
 
-    def update(self, elements: List[Union[tf.train.Example,
-                                          tf.train.SequenceExample]],
-               latency_micro_secs: int) -> None:
+    def update_model_load(
+      self, load_model_latency_milli_secs: int, model_byte_size: int):
+      """Updates model loading metrics.
+
+      Note: To commit model loading metrics, you must call
+      commit_cached_metrics() after storing values with this method.
+
+      Args:
+        load_model_latency_milli_secs: Model loading latency in milliseconds.
+        model_byte_size: Approximate model size in bytes.
+      """
+      self._load_model_latency_milli_secs_cache = load_model_latency_milli_secs
+      self._model_byte_size_cache = model_byte_size
+
+    def update_inference(
+      self, elements: List[ExampleType], latency_micro_secs: int) -> None:
+      """Updates inference metrics.
+
+      Args:
+        elements: A list of examples used for inference.
+        latency_micro_secs: Total inference latency in microseconds.
+      """
       self._inference_batch_latency_micro_secs.update(latency_micro_secs)
       self._num_instances.inc(len(elements))
       self._inference_counter.inc(len(elements))
@@ -368,13 +399,11 @@ class _BaseDoFn(beam.DoFn):
       self._inference_request_batch_byte_size.update(
           sum(element.ByteSize() for element in elements))
 
-  def __init__(
-      self,
-      fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
-  ):
+  def __init__(self, operation_type: Text, proximity_descriptor: Text):
     super(_BaseDoFn, self).__init__()
     self._clock = None
-    self._metrics_collector = self._MetricsCollector(fixed_inference_spec_type)
+    self._metrics_collector = self._MetricsCollector(
+      operation_type, proximity_descriptor)
 
   def setup(self):
     self._clock = _ClockFactory.make_clock()
@@ -384,13 +413,10 @@ class _BaseDoFn(beam.DoFn):
     batch_start_time = self._clock.get_current_time_in_microseconds()
     outputs = self.run_inference(inference_spec, elements)
     result = self._post_process(elements, outputs)
-    self._metrics_collector.update(
+    self._metrics_collector.update_inference(
         elements,
         self._clock.get_current_time_in_microseconds() - batch_start_time)
     return result
-
-  def finish_bundle(self):
-    self._metrics_collector.update_metrics_with_cache()
 
   @abc.abstractmethod
   def run_inference(
@@ -453,7 +479,8 @@ class _RemotePredictDoFn(_BaseDoFn):
       pipeline_options: PipelineOptions,
       fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
   ):
-    super(_RemotePredictDoFn, self).__init__(fixed_inference_spec_type)
+    super(_RemotePredictDoFn, self).__init__(
+      OperationType.PREDICTION, _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
     self._pipeline_options = pipeline_options
     self._fixed_inference_spec_type = fixed_inference_spec_type
 
@@ -625,9 +652,11 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
   def __init__(
       self,
       shared_model_handle: shared.Shared,
-      fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+      fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None,
+      operation_type: Text = ''
   ):
-    super(_BaseBatchSavedModelDoFn, self).__init__(fixed_inference_spec_type)
+    super(_BaseBatchSavedModelDoFn, self).__init__(
+      operation_type, _METRICS_DESCRIPTOR_IN_PROCESS)
     self._shared_model_handle = shared_model_handle
     self._fixed_inference_spec_type = fixed_inference_spec_type
 
@@ -645,6 +674,15 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     super(_BaseBatchSavedModelDoFn, self).setup()
     if self._fixed_inference_spec_type:
       self._setup_model(self._fixed_inference_spec_type)
+
+  def finish_bundle(self):
+    # If we are using a fixed model, _setup_model will be called in DoFn.setup
+    # and model loading metrics will be cached. To commit these metrics, we
+    # need to call _metrics_collector.commit_cached_metrics() once during the
+    # DoFn lifetime. DoFn.teardown() is not guaranteed to be called, so the
+    # next best option is to call this in finish_bundle().
+    if self._fixed_inference_spec_type:
+      self._metrics_collector.commit_cached_metrics()
 
   def _setup_model(
       self, inference_spec_type: model_spec_pb2.InferenceSpecType
@@ -689,10 +727,14 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
       tf.compat.v1.saved_model.loader.load(result, self._tags, self._model_path)
       end_time = self._clock.get_current_time_in_microseconds()
       memory_after = _get_current_process_memory_in_bytes()
-      self._metrics_collector.load_model_latency_milli_secs_cache = (
-          (end_time - start_time) / _MILLISECOND_TO_MICROSECOND)
-      self._metrics_collector.model_byte_size_cache = (
-          memory_after - memory_before)
+
+      # Compute model loading metrics.
+      load_model_latency_milli_secs = (
+        (end_time - start_time) / _MILLISECOND_TO_MICROSECOND)
+      model_byte_size = (memory_after - memory_before)
+      self._metrics_collector.update_model_load(
+        load_model_latency_milli_secs, model_byte_size)
+
       return result
 
     if not self._model_path:
@@ -742,6 +784,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
   ) -> Mapping[Text, np.ndarray]:
     if not self._fixed_inference_spec_type:
       self._setup_model(inference_spec_type)
+      self._metrics_collector.commit_cached_metrics()
     self._check_elements(elements)
     outputs = self._run_tf_operations(elements)
     return outputs
@@ -771,6 +814,15 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
 class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on classification model."""
 
+  def __init__(
+    self,
+    shared_model_handle: shared.Shared,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+  ):
+    super(_BatchClassifyDoFn, self).__init__(
+      shared_model_handle, fixed_inference_spec_type,
+      OperationType.CLASSIFICATION)
+
   def _validate_model(self):
     signature_def = self._signatures[0].signature_def
     if signature_def.method_name != tf.saved_model.CLASSIFY_METHOD_NAME:
@@ -798,6 +850,15 @@ class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
 class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on regression model."""
 
+  def __init__(
+    self,
+    shared_model_handle: shared.Shared,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+  ):
+    super(_BatchRegressDoFn, self).__init__(
+      shared_model_handle, fixed_inference_spec_type,
+      OperationType.REGRESSION)
+
   def _validate_model(self):
     signature_def = self._signatures[0].signature_def
     if signature_def.method_name != tf.saved_model.REGRESS_METHOD_NAME:
@@ -822,6 +883,15 @@ class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
 @beam.typehints.with_output_types(prediction_log_pb2.PredictLog)
 class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on predict model."""
+
+  def __init__(
+    self,
+    shared_model_handle: shared.Shared,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+  ):
+    super(_BatchPredictDoFn, self).__init__(
+      shared_model_handle, fixed_inference_spec_type,
+      OperationType.PREDICTION)
 
   def _validate_model(self):
     signature_def = self._signatures[0].signature_def
@@ -877,6 +947,15 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
                                         inference_pb2.MultiInferenceResponse])
 class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on multi-head model."""
+
+  def __init__(
+    self,
+    shared_model_handle: shared.Shared,
+    fixed_inference_spec_type: model_spec_pb2.InferenceSpecType = None
+  ):
+    super(_BatchMultiInferenceDoFn, self).__init__(
+      shared_model_handle, fixed_inference_spec_type,
+      OperationType.MULTIHEAD)
 
   def _check_elements(
       self, elements: List[ExampleType]) -> None:
@@ -1023,7 +1102,7 @@ def _BuildInferenceOperation(
     raw_result = None
 
     if fixed_inference_spec_type is None:
-      tagged = pcoll | 'TagInferenceType' >> _TagUsingInProcessInference()
+      tagged = pcoll | ('TagInferenceType%s' % name) >> _TagUsingInProcessInference()
 
       in_process_result = (
         tagged['in_process']
@@ -1040,7 +1119,8 @@ def _BuildInferenceOperation(
           [in_process_result, remote_result]
           | 'FlattenResult' >> beam.Flatten())
       else:
-        tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform()
+        tagged['remote'] | 'NotImplemented' >> _NotImplementedTransform(
+          'Remote inference is not supported for operation type: %s' % name)
         raw_result = in_process_result
     else:
       if _using_in_process_inference(fixed_inference_spec_type):
@@ -1057,7 +1137,8 @@ def _BuildInferenceOperation(
               pcoll.pipeline.options,
               fixed_inference_spec_type=fixed_inference_spec_type)))
         else:
-          raise NotImplementedError()
+          raise NotImplementedError('Remote inference is not supported for'
+                                    'operation type: %s' % name)
 
     return (
       raw_result
@@ -1302,10 +1383,11 @@ def _TagUsingInProcessInference(
 
 
 @beam.ptransform_fn
-def _NotImplementedTransform(pcoll: beam.pvalue.PCollection):
+def _NotImplementedTransform(
+  pcoll: beam.pvalue.PCollection, message: Text = ''):
   """Raises NotImplementedError for each value in the input PCollection."""
   def _raise(x):
-    raise NotImplementedError
+    raise NotImplementedError(message)
   pcoll | beam.Map(_raise)
 
 
