@@ -584,7 +584,7 @@ class RunOfflineInferenceMixedExamplesTest(RunInferenceFixture):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
-    error_msg = 'Expected element of type'
+    error_msg = 'A PCollection containing both tf.Example'
     try:
       self._run_inference_with_beam(
         example_path,

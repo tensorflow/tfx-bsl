@@ -146,13 +146,20 @@ def RunInferenceOnExamples(  # pylint: disable=invalid-name
         'example' if isinstance(example, tf.train.Example)
         else 'sequence', example)).with_outputs('example', 'sequence'))
 
-    import ipdb; ipdb.set_trace()
+    def check_empty(elements: beam.pvalue.PCollection) -> bool:
+      is_empty_beam = (elements
+        | "CountElement" >> beam.combiners.Count.Globally()
+        | "CheckEmpty" >> beam.Map(lambda n: n == 0))
+      return is_empty_beam[0]
 
-    if tagged.example and tagged.sequence:
+    example_is_empty = tagged.example | "CheckExample" >> beam.CombineGlobally(check_empty)
+    sequence_is_empty = tagged.sequence | "CheckSequence" >> beam.CombineGlobally(check_empty)
+
+    if not example_is_empty and not sequence_is_empty:
       raise ValueError('A PCollection containing both tf.Example and '
                        'tf.SequenceExample is not supported')
-    if not tagged.example:
-       data_type = DataType.SEQUENCEEXAMPLE
+    if example_is_empty:
+      data_type = DataType.SEQUENCEEXAMPLE
     else:
       data_type = DataType.EXAMPLE
 
