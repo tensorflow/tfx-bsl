@@ -62,6 +62,10 @@ def RunInference(  # pylint: disable=invalid-name
      spec will be grouped together and inference will operate on batches of
      examples. To use this api, don't provide an inference_spec_type parameter.
 
+  Note: Options 2 and 3 above both require a Beam runner with stateful DoFn
+    support. You can reference the compatability matrix to determine a suitable
+    runner: (https://beam.apache.org/documentation/runners/capability-matrix).
+
   TODO(b/131873699): Add support for the following features:
   1. Bytes as Input.
   2. PTable Input.

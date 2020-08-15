@@ -114,6 +114,9 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
 ) -> beam.pvalue.PCollection:
   """Implementation of RunInference API.
 
+  Note: inference with a model PCollection and inference on queries require
+    a Beam runner with stateful DoFn support.
+
   Args:
     examples: A PCollection containing examples. If inference_spec_type is
       None, this is interpreted as a PCollection of queries:
@@ -122,14 +125,17 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
       - InferenceSpecType: specifies a fixed model to use for inference.
       - PCollection[InferenceSpecType]: specifies a secondary PCollection of
         models. Each example will use the most recent model for inference.
+        (requires stateful DoFn support)
       - None: indicates that the primary PCollection contains
-        (InferenceSpecType, Example) tuples.
+        (InferenceSpecType, Example) tuples. (requires stateful DoFn support)
 
   Returns:
     A PCollection containing prediction logs.
 
   Raises:
-    ValueError: when operation is not supported.
+    ValueError: When operation is not supported.
+    NotImplementedError: If the selected API is not supported by the current
+      runner.
   """
   predictions = None
   if type(inference_spec_type) is model_spec_pb2.InferenceSpecType:
@@ -138,10 +144,20 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
     predictions = queries | '_RunInferenceCoreOnFixedModel' >> _RunInferenceCore(
       fixed_inference_spec_type=inference_spec_type)
   elif type(inference_spec_type) is beam.pvalue.PCollection:
+    if not _runner_supports_stateful_dofn(examples.pipeline.runner):
+      raise NotImplementedError(
+        'Model streaming inference requires stateful DoFn support which is not'
+        'provided by the current runner: %s' % repr(examples.pipeline.runner))
+
     logging.info('RunInference on dynamic models')
     queries = examples | 'Join examples' >> _TemporalJoin(inference_spec_type)
     predictions = queries | '_RunInferenceCoreOnDynamicModel' >> _RunInferenceCore()
   elif inference_spec_type is None:
+    if not _runner_supports_stateful_dofn(examples.pipeline.runner):
+      raise NotImplementedError(
+        'Inference on queries requires stateful DoFn support which is not'
+        'provided by the current runner: %s' % repr(examples.pipeline.runner))
+
     logging.info('RunInference on queries')
     predictions = examples | '_RunInferenceCoreOnQueries' >> _RunInferenceCore()
   else:
@@ -183,11 +199,15 @@ def _RunInferenceCore(
   Raises:
     ValueError: when operation is not supported.
   """
-  # TODO(BEAM-2717): Currently batching by inference spec is not supported and
-  #   it is assumed that all queries share the same inference spec. Once
-  #   BEAM-2717 is fixed, we can use beam.GroupIntoBatches and remove this
-  #   constraint.
-  batched_queries = queries | 'BatchQueries' >> _BatchQueries()
+  batched_queries = None
+  if _runner_supports_stateful_dofn(queries.pipeline.runner):
+    batched_queries = queries | 'BatchQueries' >> _BatchQueries()
+  else:
+    # If the current runner does not support stateful DoFn's, we fall back to
+    # a simpler batching operation that assumes all queries share the same
+    # inference spec.
+    batched_queries = queries | 'BatchQueriesSimple' >> _BatchQueriesSimple()
+
   predictions = None
 
   if fixed_inference_spec_type is None:
@@ -248,6 +268,32 @@ def _BatchQueries(queries: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
     # TODO(hgarrereyn): GroupIntoBatches with automatic batch sizes
     | 'Batch' >> beam.GroupIntoBatches(1000)
     | 'Convert to QueryBatch' >> beam.Map(_to_query_batch)
+  )
+  return batches
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(QueryType)
+@beam.typehints.with_output_types(_QueryBatchType)
+def _BatchQueriesSimple(
+  queries: beam.pvalue.PCollection) -> beam.pvalue.PCollection:
+  """Groups queries into batches.
+
+  This version of _BatchQueries uses beam.BatchElements and works in runners
+  that do not support stateful DoFn's. However, in this case we need to make
+  the assumption that all queries share the same inference_spec.
+  """
+
+  def _to_query_batch(query_list: List[QueryType]) -> _QueryBatchType:
+    """Converts a list of queries to a logical _QueryBatch."""
+    inference_spec = query_list[0][0]
+    examples = [x[1] for x in query_list]
+    return (inference_spec, examples)
+
+  batches = (
+    queries
+    | 'Batch' >> beam.BatchElements()
+    | 'ToQueryBatch' >> beam.Map(_to_query_batch)
   )
   return batches
 
@@ -1480,6 +1526,13 @@ def _get_tags(
     return list(inference_spec_type.saved_model_spec.tag)
   else:
     return [tf.saved_model.SERVING]
+
+
+def _runner_supports_stateful_dofn(
+  runner: beam.pipeline.PipelineRunner) -> bool:
+  """Returns True if if the provided runner supports stateful DoFn's."""
+  # TODO: Implement.
+  return True
 
 
 def _is_darwin() -> bool:
