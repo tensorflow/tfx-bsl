@@ -9,7 +9,15 @@
   * We will be subject to semantic versioning once tfx_bsl goes beyond 1.0.
 *  TFRecord based TFXIO implementations now support reading from multiple file
    patterns.
-
+*  Implemented the TensorFlowDataset() interface for TFExampleRecord TFXIO.
+*  Starting from this version, `tfx_bsl` has no binary dependency on `pyarrow`
+   (`libarrow.so`). As a result:
+   -  Package `tfx_bsl` will be able to work with a wider range of pyarrow
+      versions. We will relax the version requirements in setup.py in the next
+      release.
+   -  Custom built `tfx_bsl` does not have to maintain ABI compatiblity with
+      a specific `pyarrow` installation. Custom builds don't need to be
+      manylinux-conformant.
 ## Bug Fixes and Other Changes
 
 *   Starting from this version, the windows wheel will be built with VS 2015.

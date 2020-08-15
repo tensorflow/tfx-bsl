@@ -57,6 +57,10 @@ class RunInference(run_inference.RunInferenceImpl):
      spec will be grouped together and inference will operate on batches of
      examples. To use this api, don't provide an inference_spec_type parameter.
 
+  Note: Options 2 and 3 above both require a Beam runner with stateful DoFn
+    support. You can reference the compatability matrix to determine a suitable
+    runner: (https://beam.apache.org/documentation/runners/capability-matrix).
+
   By default, exceptions encountered at runtime will be raised. To disable this
   behavior, you can use `RunInference(...).with_errors()` to catch runtime
   errors and emit them in a separate stream. After enabling this, the return

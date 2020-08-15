@@ -23,8 +23,10 @@ from typing import List, Iterator, Optional, Text, Union
 
 import apache_beam as beam
 import pyarrow as pa
+import tensorflow as tf
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import tf_graph_record_decoder
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_to_arrow
@@ -49,10 +51,29 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
     decoder = tf_graph_record_decoder.load_decoder(saved_decoder_path)
     tensor_to_arrow_converter = tensor_to_arrow.TensorsToRecordBatchConverter(
         decoder.output_type_specs())
+
     self._arrow_schema_no_raw_record_column = (
         tensor_to_arrow_converter.arrow_schema())
     self._tensor_representations = (
         tensor_to_arrow_converter.tensor_representations())
+
+    self._record_index_column_name = None
+    record_index_tensor_name = decoder.record_index_tensor_name
+    if record_index_tensor_name is not None:
+      record_index_tensor_rep = self._tensor_representations[
+          record_index_tensor_name]
+      if record_index_tensor_rep.HasField("ragged_tensor"):
+        assert len(record_index_tensor_rep.ragged_tensor.feature_path.step) == 1
+        self._record_index_column_name = (
+            record_index_tensor_rep.ragged_tensor.feature_path.step[0])
+      elif record_index_tensor_rep.HasField("varlen_sparse_tensor"):
+        self._record_index_column_name = (
+            record_index_tensor_rep.varlen_sparse_tensor.column_name)
+      else:
+        raise ValueError("The record index tensor must be a RaggedTensor or a "
+                         "VarLenSparseTensor, but got: {}"
+                         .format(record_index_tensor_rep))
+
     if raw_record_column_name in self._arrow_schema_no_raw_record_column.names:
       raise ValueError("raw record column name: {} collided with an existing "
                        "column.".format(raw_record_column_name))
@@ -75,7 +96,7 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
               **batch_util.GetBatchElementsKwargs(batch_size))
           | "Decode" >> beam.ParDo(_RecordsToRecordBatch(
               self._saved_decoder_path, self.raw_record_column_name,
-              self._can_produce_large_types)))
+              self._can_produce_large_types, self._record_index_column_name)))
 
     return beam.ptransform_fn(_PTransformFn)()
 
@@ -139,11 +160,81 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
-  def TensorFlowDataset(self):
-    # Implementation note: Project() might have been called, which means
-    # the desired tensors could be a subset of the outputs of the
-    # TF graph record decoder.
-    raise NotImplementedError
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
+    """Creates a TFRecordDataset that yields Tensors.
+
+    The records are parsed by the decoder to create Tensors. This implementation
+    is based on tf.data.experimental.ops.make_tf_record_dataset().
+
+    See base class (tfxio.TFXIO) for more details.
+
+    Args:
+      options: an options object for the tf.data.Dataset. See
+        `dataset_options.TensorFlowDatasetOptions` for more details.
+        options.batch_size is the batch size of the input records, but if the
+        input record and the output batched tensors by the decoder are not
+        batch-aligned (i.e. 1 input record results in 1 "row" in the output
+        tensors), then the output may not be of the given batch size. Use
+        dataset.unbatch().batch(desired_batch_size) to force the output batch
+        size.
+
+    Returns:
+      A dataset of `dict` elements, (or a tuple of `dict` elements and label).
+      Each `dict` maps feature keys to `Tensor`, `SparseTensor`, or
+      `RaggedTensor` objects.
+
+    Raises:
+      ValueError: if label_key in the dataset option is not in the arrow schema.
+    """
+    file_pattern = tf.convert_to_tensor(self._file_pattern)
+    batch_size = options.batch_size
+    drop_final_batch = options.drop_final_batch
+    num_epochs = options.num_epochs
+    shuffle = options.shuffle
+    shuffle_buffer_size = options.shuffle_buffer_size
+    shuffle_seed = options.shuffle_seed
+    label_key = options.label_key
+    compression_type = record_based_tfxio.DetectCompressionType(file_pattern)
+
+    decoder = tf_graph_record_decoder.load_decoder(self._saved_decoder_path)
+
+    def _ParseFn(record):
+      # TODO(andylou): Change this once we plumb the projected columns into the
+      # decoder itself.
+      tensors_dict = decoder.decode_record(record)
+      return {
+          k: v
+          for k, v in tensors_dict.items()
+          if k in self._tensor_representations
+      }
+
+    dataset = tf.data.Dataset.list_files(
+        file_pattern, shuffle=shuffle, seed=shuffle_seed)
+
+    dataset = dataset.interleave(
+        lambda filename: tf.data.TFRecordDataset(filename, compression_type),
+        num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    if shuffle:
+      dataset = dataset.shuffle(shuffle_buffer_size, shuffle_seed)
+    if num_epochs != 1:
+      dataset = dataset.repeat(num_epochs)
+
+    drop_final_batch = drop_final_batch or num_epochs is None
+
+    dataset = dataset.batch(batch_size, drop_remainder=drop_final_batch)
+    dataset = dataset.map(_ParseFn)
+
+    if label_key is not None:
+      if label_key not in self.TensorRepresentations():
+        raise ValueError(
+            "The `label_key` provided ({}) must be one of the following tensors"
+            "names: {}.".format(label_key, self.TensorRepresentations().keys()))
+      dataset = dataset.map(lambda x: (x, x.pop(label_key)))
+
+    return dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
 
 @beam.typehints.with_input_types(List[bytes])
@@ -153,11 +244,13 @@ class _RecordsToRecordBatch(beam.DoFn):
 
   def __init__(self, saved_decoder_path: Text,
                raw_record_column_name: Optional[Text],
-               produce_large_raw_record_column):
+               produce_large_raw_record_column: bool,
+               record_index_column_name: Optional[Text]):
     super(_RecordsToRecordBatch, self).__init__()
     self._saved_decoder_path = saved_decoder_path
     self._raw_record_column_name = raw_record_column_name
     self._produce_large_raw_record_column = produce_large_raw_record_column
+    self._record_index_column_name = record_index_column_name
 
     self._decoder = None
     self._tensors_to_record_batch_converter = None
@@ -177,4 +270,5 @@ class _RecordsToRecordBatch(beam.DoFn):
     else:
       yield record_based_tfxio.AppendRawRecordColumn(
           decoded, self._raw_record_column_name, records,
-          self._produce_large_raw_record_column)
+          self._produce_large_raw_record_column,
+          self._record_index_column_name)

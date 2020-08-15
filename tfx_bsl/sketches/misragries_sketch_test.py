@@ -56,8 +56,9 @@ class MisraGriesSketchTest(parameterized.TestCase):
         "counts": 1.0
     }]
     sketch = _create_basic_sketch(pa.array(values, type=binary_like_type))
-    estimate = sketch.Estimate().to_pylist()
-    self.assertEqual(estimate, expected_counts)
+    estimate = sketch.Estimate()
+    estimate.validate(full=True)
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
   @parameterized.named_parameters(
       ("int8", [1, 1, 2, 3, None], pa.int8()),
@@ -81,8 +82,9 @@ class MisraGriesSketchTest(parameterized.TestCase):
         "counts": 1.0
     }]
     sketch = _create_basic_sketch(pa.array(values, type=integer_type))
-    estimate = sketch.Estimate().to_pylist()
-    self.assertEqual(estimate, expected_counts)
+    estimate = sketch.Estimate()
+    estimate.validate(full=True)
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
   def test_add_weighted_values(self):
     items = pa.array(["a", "a", "b", "c"], type=pa.string())
@@ -99,9 +101,10 @@ class MisraGriesSketchTest(parameterized.TestCase):
         "values": b"c",
         "counts": 1.0
     }]
-    estimate = sketch.Estimate().to_pylist()
+    estimate = sketch.Estimate()
+    estimate.validate(full=True)
 
-    self.assertEqual(estimate, expected_counts)
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
   def test_add_invalid_weights(self):
     items = pa.array(["a", "a", "b", "c"], type=pa.string())
@@ -121,7 +124,8 @@ class MisraGriesSketchTest(parameterized.TestCase):
     sketch2 = _create_basic_sketch(pa.array(["d", "a"]))
 
     sketch1.Merge(sketch2)
-    estimate = sketch1.Estimate().to_pylist()
+    estimate = sketch1.Estimate()
+    estimate.validate(full=True)
     expected_counts = [{
         "values": b"a",
         "counts": 3.0
@@ -136,7 +140,7 @@ class MisraGriesSketchTest(parameterized.TestCase):
         "counts": 1.0
     }]
 
-    self.assertEqual(estimate, expected_counts)
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
   def test_picklable(self):
     sketch = _create_basic_sketch(pa.array(["a", "b", "c", "a"]))
@@ -145,7 +149,8 @@ class MisraGriesSketchTest(parameterized.TestCase):
     unpickled = pickle.loads(pickled)
     self.assertIsInstance(unpickled, MisraGriesSketch)
 
-    estimate = unpickled.Estimate().to_pylist()
+    estimate = unpickled.Estimate()
+    estimate.validate(full=True)
     expected_counts = [{
         "values": b"a",
         "counts": 2.0
@@ -157,7 +162,7 @@ class MisraGriesSketchTest(parameterized.TestCase):
         "counts": 1.0
     }]
 
-    self.assertEqual(estimate, expected_counts)
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
   def test_serialization(self):
     sketch = _create_basic_sketch(pa.array(["a", "b", "c", "a"]))
@@ -168,7 +173,8 @@ class MisraGriesSketchTest(parameterized.TestCase):
     deserialized = MisraGriesSketch.Deserialize(serialized)
     self.assertIsInstance(deserialized, MisraGriesSketch)
 
-    estimate = deserialized.Estimate().to_pylist()
+    estimate = deserialized.Estimate()
+    estimate.validate(full=True)
     expected_counts = [{
         "values": b"a",
         "counts": 2.0
@@ -180,7 +186,7 @@ class MisraGriesSketchTest(parameterized.TestCase):
         "counts": 1.0
     }]
 
-    self.assertEqual(estimate, expected_counts)
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
 if __name__ == "__main__":
   absltest.main()

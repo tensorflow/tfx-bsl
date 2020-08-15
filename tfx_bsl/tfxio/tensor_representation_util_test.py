@@ -719,7 +719,6 @@ _PARSE_EXAMPLE_TEST_CASES = _MakeFixedLenFeatureTestCases(
 ) + _MakeVarLenSparseFeatureTestCases() + _MakeSparseFeatureTestCases()
 
 
-@test_util.run_all_in_graph_and_eager_modes
 class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
 
   @parameterized.named_parameters(
@@ -782,6 +781,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
         tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
             text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())))
 
+  @test_util.run_all_in_graph_and_eager_modes
   @parameterized.named_parameters(*_PARSE_EXAMPLE_TEST_CASES)
   def testCreateTfExampleParserConfig(self, tensor_representation, feature_type,
                                       tf_example, expected_feature,
@@ -796,7 +796,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       self.assertAllEqual(actual_arg, expected_arg)
 
     # Checks that the parser configs can be used with tf.io.parse_example()
-    actual_tensors = tf.io.parse_example(tf_example, {'feat': feature})
+    actual_tensors = tf.io.parse_single_example(tf_example, {'feat': feature})
     actual = actual_tensors['feat']
     if isinstance(actual, tf.SparseTensor) or isinstance(
         actual, tf.compat.v1.SparseTensorValue):

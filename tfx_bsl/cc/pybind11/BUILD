@@ -16,11 +16,20 @@ PYBIND_FEATURES = [
 
 cc_library(
     name = "arrow_casters",
-    hdrs = ["arrow_casters.h"],
+    srcs = [
+        "arrow_casters_c_abi.h",
+        "arrow_casters_py_c_api.h",
+        "c_abi_bridge.cc",
+        "c_abi_bridge.h",
+    ],
+    hdrs = [
+        "arrow_casters.h",
+    ],
     copts = PYBIND_COPTS,
     features = PYBIND_FEATURES,
     deps = [
         "@arrow",
+        "@com_google_absl//absl/strings",
         "@pybind11",
     ],
 )

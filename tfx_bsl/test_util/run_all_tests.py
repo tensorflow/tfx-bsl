@@ -75,6 +75,15 @@ class _Test(object):
     return "%s [shard %d of %d shard(s)]" % (
         self.path, self.shard_id, self.total_shards)
 
+  def __lt__(self, other):
+    return (self.path, self.shard_id) < (other.path, other.shard_id)
+
+  def __eq__(self, other):
+    return (self.path, self.shard_id) == (other.path, other.shard_id)
+
+  def __hash__(self):
+    return hash(str(self))
+
   def Run(self) -> None:
     """Run the test in a subprocess."""
     logging.info("Running %s in a subprocess...", self)
@@ -144,24 +153,29 @@ def _DiscoverTests(root_dirs: List[Text],
 
 def _RunTests(tests: List[_Test], parallelism: int) -> bool:
   """Run tests. Returns True if all tests succeeded."""
-  running_tests = []
-  for t in tests:
-    while len(running_tests) >= parallelism:
-      time.sleep(0.2)  # 200ms
-      running_tests = [rt for rt in running_tests if not rt.Finished()]
-    t.Run()
-    running_tests.append(t)
-
-  while running_tests:
+  running_tests = set()
+  finished_tests = set()
+  tests_to_run = sorted(tests, reverse=True)
+  while tests_to_run or running_tests:
     time.sleep(0.2)  # 200ms
-    running_tests = [t for t in running_tests if not t.Finished()]
+    updated_finished = set(t for t in running_tests if t.Finished())
+    running_tests = running_tests - updated_finished
+    while tests_to_run and len(running_tests) < parallelism:
+      t = tests_to_run.pop()
+      t.Run()
+      running_tests.add(t)
 
-  failed_tests = [t for t in tests if not t.Succeeded()]
+    newly_finished = updated_finished - finished_tests
+    finished_tests.update(updated_finished)
+    for test in newly_finished:
+      logging.info("%s\t%s\t%.1fs", test,
+                   "PASSED" if test.Succeeded() else "FAILED",
+                   test.finish_time - test.begin_time)
+    if newly_finished:
+      logging.flush()
+
+  failed_tests = sorted([t for t in tests if not t.Succeeded()])
   logging.info("Ran %d tests. %d failed.", len(tests), len(failed_tests))
-  for t in tests:
-    logging.info("%s\t%s\t%.1fs", t,
-                 "PASSED" if t.Succeeded() else "FAILED",
-                 t.finish_time - t.begin_time)
   logging.flush()
 
   for ft in failed_tests:
