@@ -50,8 +50,8 @@ from tfx_bsl.tfxio import test_util
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tf_example_record
 from tfx_bsl.tfxio import tf_sequence_example_record
-from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
-    Tuple, Union, Optional
+from typing import Any, Generator, Iterable, List, Mapping, Optional, \
+    Sequence, Text, TypeVar, Tuple, Union
 
 from tfx_bsl.beam.bsl_constants import _RECORDBATCH_COLUMN
 from tfx_bsl.beam.bsl_constants import DataType
@@ -88,6 +88,7 @@ _SignatureDef = Any
 _MetaGraphDef = Any
 _SavedModel = Any
 
+MixedExample = TypeVar('MixedExample', tf.train.Example, tf.train.SequenceExample)
 
 # TODO(b/151468119): Converts this into enum once we stop supporting Python 2.7
 class OperationType(object):
@@ -98,7 +99,7 @@ class OperationType(object):
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(tf.train.Example)
+@beam.typehints.with_input_types(MixedExample)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInferenceOnExamples(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
@@ -129,19 +130,50 @@ def RunInferenceOnExamples(  # pylint: disable=invalid-name
     A PCollection containing prediction logs.
   """
 
-  data_type = DataType.EXAMPLE
   operation_type = _get_operation_type(inference_spec_type)
   proximity_descriptor = (
     _METRICS_DESCRIPTOR_IN_PROCESS
     if _using_in_process_inference(inference_spec_type)
     else _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
-  converter = tf_example_record.TFExampleBeamRecord(
-    physical_format="inmem",
-    telemetry_descriptors=[
-      _METRICS_DESCRIPTOR_INFERENCE,
-      operation_type, proximity_descriptor],
-    schema=schema,
-    raw_record_column_name=_RECORDBATCH_COLUMN)
+
+  # determine input dataType
+  beam_type = examples.element_type
+  if beam_type == tf.train.Example or beam_type == tf.train.SequenceExample:
+    data_type = _get_data_type(beam_type)
+  else:
+    tagged = (examples | "SortInput" >> beam.Map(
+      lambda example: beam.pvalue.TaggedOutput(
+        'example' if isinstance(example, tf.train.Example)
+        else 'sequence', example)).with_outputs('example', 'sequence'))
+
+    import ipdb; ipdb.set_trace()
+
+    if tagged.example and tagged.sequence:
+      raise ValueError('A PCollection containing both tf.Example and '
+                       'tf.SequenceExample is not supported')
+    if not tagged.example:
+       data_type = DataType.SEQUENCEEXAMPLE
+    else:
+      data_type = DataType.EXAMPLE
+
+  if data_type == DataType.EXAMPLE:
+    converter = tf_example_record.TFExampleBeamRecord(
+      physical_format="inmem",
+      telemetry_descriptors=[
+        _METRICS_DESCRIPTOR_INFERENCE,
+        operation_type, proximity_descriptor],
+      schema=schema,
+      raw_record_column_name=_RECORDBATCH_COLUMN)
+  elif data_type == DataType.SEQUENCEEXAMPLE:
+    converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
+      physical_format="inmem",
+      telemetry_descriptors=[
+        _METRICS_DESCRIPTOR_INFERENCE,
+        operation_type, proximity_descriptor],
+      schema=schema,
+      raw_record_column_name=_RECORDBATCH_COLUMN)
+  else:
+    raise ValueError('Unsupported data_type %s' % data_type)
 
   tensor_adapter_config = None
   if schema:
@@ -150,66 +182,11 @@ def RunInferenceOnExamples(  # pylint: disable=invalid-name
       tensor_representations=converter.TensorRepresentations())
 
   return (examples
-          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
-          | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
-                  inference_spec_type, data_type,
-                  tensor_adapter_config=tensor_adapter_config))
-
-
-@beam.ptransform_fn
-@beam.typehints.with_input_types(tf.train.SequenceExample)
-@beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
-def RunInferenceOnSequenceExamples(  # pylint: disable=invalid-name
-    examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType,
-    schema: Optional[schema_pb2.Schema] = None
-) -> beam.pvalue.PCollection:
-  """Run inference with a model.
-
-   There are two types of inference you can perform using this PTransform:
-   1. In-process inference from a SavedModel instance. Used when
-     `saved_model_spec` field is set in `inference_spec_type`.
-   2. Remote inference by using a service endpoint. Used when
-     `ai_platform_prediction_model_spec` field is set in
-     `inference_spec_type`.
-
-  Args:
-    examples: A PCollection containing sequence examples.
-    inference_spec_type: Model inference endpoint.
-    Schema [optional]: required for models that requires
-      multi-tensor inputs.
-
-  Returns:
-    A PCollection containing prediction logs.
-  """
-
-  data_type = DataType.SEQUENCEEXAMPLE
-  operation_type = _get_operation_type(inference_spec_type)
-  proximity_descriptor = (
-    _METRICS_DESCRIPTOR_IN_PROCESS
-    if _using_in_process_inference(inference_spec_type)
-    else _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
-  converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
-    physical_format="inmem",
-    telemetry_descriptors=[
-      _METRICS_DESCRIPTOR_INFERENCE,
-      operation_type, proximity_descriptor],
-    schema=schema,
-    raw_record_column_name=_RECORDBATCH_COLUMN)
-
-  tensor_adapter_config = None
-  if schema:
-    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-      arrow_schema=converter.ArrowSchema(),
-      tensor_representations=converter.TensorRepresentations())
-
-  return (examples
-          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
-          | 'ConvertToRecordBatch' >> converter.BeamSource()
-          | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
-                  inference_spec_type, data_type,
-                  tensor_adapter_config=tensor_adapter_config))
+        | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
+        | 'ConvertToRecordBatch' >> converter.BeamSource()
+        | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
+              inference_spec_type, data_type,
+              tensor_adapter_config=tensor_adapter_config))
 
 
 @beam.ptransform_fn
@@ -405,19 +382,26 @@ class _BaseDoFn(beam.DoFn):
   def setup(self):
     self._clock = _ClockFactory.make_clock()
 
+  def _extract_serialized_from_recordBatch(
+    self, elements: pa.RecordBatch) -> List[Union[str, bytes]]:
+    """Function to extract serialized examples from the recordbatch"""
+    serialized_examples = bsl_util.ExtractSerializedExamplesFromRecordBatch(elements)
+    return serialized_examples
+
   @abc.abstractmethod
-  def _extract_from_recordBatch(self, elements: pa.RecordBatch):
-    """
-    Function to extract the compatible input with model signature
+  def _extract_inference_input_from_recordBatch(
+    self, elements: pa.RecordBatch) -> Union[Mapping[Any, Any], List[Mapping[Any, Any]]]:
+    """Function to extract the compatible input with model signature
+
     return:
-      - serialized examples for metrics
       - model input for processing and post processing
     """
     raise NotImplementedError
 
   def process(self, elements: pa.RecordBatch) -> Iterable[Any]:
     batch_start_time = self._clock.get_current_time_in_microseconds()
-    serialized_examples, model_input = self._extract_from_recordBatch(elements)
+    serialized_examples = self._extract_serialized_from_recordBatch(elements)
+    model_input = self._extract_inference_input_from_recordBatch(elements)
     outputs = self.run_inference(model_input)
     result = self._post_process(model_input, outputs)
     self._metrics_collector.update(
@@ -430,10 +414,9 @@ class _BaseDoFn(beam.DoFn):
 
   @abc.abstractmethod
   def run_inference(
-    self, tensors: Mapping[Any, Any]
+    self, tensors: Mapping[Text, Any]
   ) -> Union[Mapping[Text, np.ndarray], Sequence[Mapping[Text, Any]]]:
-    """
-    Run inference with extracted model input.
+    """Run inference with extracted model input.
 
     Parameters:
       tensors: a dictionary consists of tensor names and tensors
@@ -524,13 +507,12 @@ class _RemotePredictDoFn(_BaseDoFn):
     # user agent once custom header is supported in googleapiclient.
     self._api_client = discovery.build('ml', 'v1')
 
-  def _extract_from_recordBatch(
-    self, elements: pa.RecordBatch) -> Tuple[List[Text], List[Mapping[Any, Any]]]:
-    serialized_examples = bsl_util.ExtractSerializedExampleFromRecordBatch(elements)
+  def _extract_inference_input_from_recordBatch(
+    self, elements: pa.RecordBatch) -> List[Mapping[Any, Any]]:
     prepare_instances_serialized = (
       self.inference_spec_type.ai_platform_prediction_model_spec.use_serialization_config)
     model_input = bsl_util.RecordToJSON(elements, prepare_instances_serialized)
-    return serialized_examples, model_input
+    return model_input
 
   # Retry _REMOTE_INFERENCE_NUM_RETRIES times with exponential backoff.
   @retry.with_exponential_backoff(
@@ -550,7 +532,7 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   @classmethod
   def _prepare_instances(
-      cls, elements: List[Union[str, bytes]]
+      cls, elements: List[Mapping[Any, Any]]
   ) -> Generator[Mapping[Text, Any], None, None]:
     for instance in elements:
       yield instance
@@ -697,12 +679,11 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
             tf.saved_model.TPU in self._tags)
 
-  def _extract_from_recordBatch(
-    self, elements: pa.RecordBatch) -> Tuple[List[Text], Mapping[Any, Any]]:
-    serialized_examples = bsl_util.ExtractSerializedExampleFromRecordBatch(elements)
-
+  def _extract_inference_input_from_recordBatch(
+    self, elements: pa.RecordBatch) -> Mapping[Any, Any]:
     model_input = None
     if (len(self._io_tensor_spec.input_tensor_names) == 1):
+      serialized_examples = bsl_util.ExtractSerializedExamplesFromRecordBatch(elements)
       model_input = {self._io_tensor_spec.input_tensor_names[0]: serialized_examples}
     else:
       if not self._tensor_adapter_config:
@@ -711,24 +692,26 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
       input_tensor_names = self._io_tensor_spec.input_tensor_names
       input_tensor_alias = self._io_tensor_spec.input_tensor_alias
       _tensor_adapter = tensor_adapter.TensorAdapter(self._tensor_adapter_config)
+      # dict_of_tensors is a map from input_tensor_alias to tensor
       dict_of_tensors = _tensor_adapter.ToBatchTensors(
         elements, produce_eager_tensors = False)
       filtered_tensors = bsl_util.filter_tensors_by_input_names(
         dict_of_tensors, input_tensor_alias)
 
       model_input = {}
-      for feature, tensor_name in zip(input_tensor_alias, input_tensor_names):
-        model_input[tensor_name] = filtered_tensors[feature]
-    return serialized_examples, model_input
+      for tensor_alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
+        model_input[tensor_name] = filtered_tensors[tensor_alias]
+    return model_input
 
   def run_inference(
-    self, tensors: Mapping[Any, Any]) -> Mapping[Text, np.ndarray]:
+    self, tensors: Mapping[Text, Any]) -> Mapping[Text, np.ndarray]:
+    # tensors: a dictionary consists of tensor alias and tensors
     self._check_elements()
     outputs = self._run_tf_operations(tensors)
     return outputs
 
   def _run_tf_operations(
-    self, tensors: Mapping[Any, Any]) -> Mapping[Text, np.ndarray]:
+    self, tensors: Mapping[Text, Any]) -> Mapping[Text, np.ndarray]:
     result = self._session.run(
         self._io_tensor_spec.output_alias_tensor_names, feed_dict=tensors)
     if len(result) != len(self._io_tensor_spec.output_alias_tensor_names):
@@ -824,61 +807,87 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
     if len(input_tensor_alias) != len(input_tensor_names):
       raise ValueError('Expected to have one name and one alias per tensor')
 
-    include_request = True
+    result = []
+    # Single tensor input
     if len(input_tensor_names) == 1:
       serialized_examples, = elements.values()
       batch_size = len(serialized_examples)
-      process_elements = serialized_examples
+
+      predict_log_tmpl = prediction_log_pb2.PredictLog()
+      predict_log_tmpl.request.model_spec.signature_name = signature_name
+      predict_log_tmpl.response.model_spec.signature_name = signature_name
+      input_tensor_proto = predict_log_tmpl.request.inputs[input_tensor_alias[0]]
+      input_tensor_proto.dtype = tf.string.as_datatype_enum
+      input_tensor_proto.tensor_shape.dim.add().size = 1
+
+      for output_alias, output in outputs.items():
+        if len(output.shape) < 1 or output.shape[0] != batch_size:
+          raise ValueError(
+              'Expected output tensor %s to have at least one '
+              'dimension, with the first having a size equal to the input batch '
+              'size %s. Instead found %s' %
+              (output_alias, batch_size, output.shape))
+
+      for i in range(batch_size):
+        predict_log = prediction_log_pb2.PredictLog()
+        predict_log.CopyFrom(predict_log_tmpl)
+        predict_log.request.inputs[input_tensor_alias[0]].string_val.append(
+          serialized_examples[i])
+        for output_alias, output in outputs.items():
+          # Mimic tensor::Split
+          tensor_proto = tf.make_tensor_proto(
+              values=output[i],
+              dtype=tf.as_dtype(output[i].dtype).as_datatype_enum,
+              shape=np.expand_dims(output[i], axis=0).shape)
+          predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
+        result.append(predict_log)
     else:
+      predict_log_tmpl = prediction_log_pb2.PredictLog()
+      predict_log_tmpl.request.model_spec.signature_name = signature_name
+      predict_log_tmpl.response.model_spec.signature_name = signature_name
+
+      # we will only include tensor_proto in requests when all input tensors are dense
+      include_request = True
       for tensor_name, tensor in elements.items():
         if not isinstance(tensor, np.ndarray):
           include_request = False
           break
 
       if include_request:
-        batch_size = len(elements[input_tensor_names[0]])
-      else:
-        batch_size = elements[input_tensor_names[0]].shape[0]
-
-    for output_alias, output in outputs.items():
-      if len(output.shape) < 1 or output.shape[0] != batch_size:
-        raise ValueError(
-            'Expected output tensor %s to have at least one '
-            'dimension, with the first having a size equal to the input batch '
-            'size %s. Instead found %s' %
-            (output_alias, batch_size, output.shape))
-  
-    if include_request:
-      predict_log_tmpl = prediction_log_pb2.PredictLog()
-      predict_log_tmpl.request.model_spec.signature_name = signature_name
-      predict_log_tmpl.response.model_spec.signature_name = signature_name
-      for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
-        input_tensor_proto = predict_log_tmpl.request.inputs[alias]
-        input_tensor_proto.dtype = tf.as_dtype(input_tensor_types[alias]).as_datatype_enum
-        if len(input_tensor_alias) == 1:
-          input_tensor_proto.tensor_shape.dim.add().size = 1
-        else:
+        for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
+          input_tensor_proto = predict_log_tmpl.request.inputs[alias]
+          input_tensor_proto.dtype = tf.as_dtype(input_tensor_types[alias]).as_datatype_enum
           input_tensor_proto.tensor_shape.dim.add().size = len(elements[tensor_name][0])
 
-      result = []
-      for i in range(batch_size):
+        batch_size = len(elements[input_tensor_names[0]])
+        for i in range(batch_size):
+          predict_log = prediction_log_pb2.PredictLog()
+          predict_log.CopyFrom(predict_log_tmpl)
+          for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
+              predict_log.request.inputs[alias].float_val.append(
+                elements[tensor_name][i])
+      else:
+        batch_size = elements[input_tensor_names[0]].shape[0]
         predict_log = prediction_log_pb2.PredictLog()
         predict_log.CopyFrom(predict_log_tmpl)
-        if len(input_tensor_alias) == 1:
-          alias = input_tensor_alias[0]
-          predict_log.request.inputs[alias].string_val.append(process_elements[i])
-        else:
-          for alias, tensor_name in zip(input_tensor_alias, input_tensor_names):
-            predict_log.request.inputs[alias].float_val.append(elements[tensor_name][i])
 
-    for output_alias, output in outputs.items():
-      # Mimic tensor::Split
-      tensor_proto = tf.make_tensor_proto(
-          values=output[i],
-          dtype=tf.as_dtype(output[i].dtype).as_datatype_enum,
-          shape=np.expand_dims(output[i], axis=0).shape)
-      predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
-    result.append(predict_log)
+      for output_alias, output in outputs.items():
+        if len(output.shape) < 1 or output.shape[0] != batch_size:
+            raise ValueError(
+              'Expected output tensor %s to have at least one '
+              'dimension, with the first having a size equal to the input batch '
+              'size %s. Instead found %s' %
+              (output_alias, batch_size, output.shape))
+
+      for i in range(batch_size):
+        for output_alias, output in outputs.items():
+          # Mimic tensor::Split
+          tensor_proto = tf.make_tensor_proto(
+              values=output[i],
+              dtype=tf.as_dtype(output[i].dtype).as_datatype_enum,
+              shape=np.expand_dims(output[i], axis=0).shape)
+          predict_log.response.outputs[output_alias].CopyFrom(tensor_proto)
+        result.append(predict_log)
     return result
 
 
@@ -1236,6 +1245,15 @@ def _get_signatures(model_path: Text, signatures: Sequence[Text],
                          signature_name)
   return result
 
+
+def _get_data_type(
+  data_type: Union[tf.train.Example, tf.train.SequenceExample]) -> Text:
+  if (data_type == tf.train.Example):
+    return DataType.EXAMPLE
+  elif (data_type == tf.train.SequenceExample):
+    return DataType.SequenceExample
+  else:
+    raise ValueError('Expected tf.Example or tf.SequenceExample, got %s' % data_type)
 
 def _get_operation_type(
     inference_spec_type: model_spec_pb2.InferenceSpecType) -> Text:

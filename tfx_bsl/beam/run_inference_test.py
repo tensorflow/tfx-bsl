@@ -333,32 +333,32 @@ class RunOfflineInferenceSequenceExamplesTest(RunInferenceFixture):
     self._predict_examples = [
         text_format.Parse(
             """
-              features {
-                feature { key: "input1" value { float_list { value: 0 }}}
-              }
-              """, tf.train.Example()),
+            context {
+              feature { key: "input1" value { float_list { value: 0 }}}
+            }
+            """, tf.train.SequenceExample()),
         text_format.Parse(
             """
-              features {
-                feature { key: "input1" value { float_list { value: 1 }}}
-              }
-              """, tf.train.Example()),
+            context {
+              feature { key: "input1" value { float_list { value: 1 }}}
+            }
+            """, tf.train.SequenceExample()),
     ]
     self._multihead_examples = [
         text_format.Parse(
             """
-            features {
+            context {
               feature {key: "x" value { float_list { value: 0.8 }}}
               feature {key: "y" value { float_list { value: 0.2 }}}
             }
-            """, tf.train.Example()),
+            """, tf.train.SequenceExample()),
         text_format.Parse(
             """
-            features {
+            context {
               feature {key: "x" value { float_list { value: 0.6 }}}
               feature {key: "y" value { float_list { value: 0.1 }}}
             }
-            """, tf.train.Example()),
+            """, tf.train.SequenceExample()),
     ]
 
     self.schema = text_format.Parse(
@@ -412,7 +412,7 @@ class RunOfflineInferenceSequenceExamplesTest(RunInferenceFixture):
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'ParseExamples' >> beam.Map(tf.train.SequenceExample.FromString)
-          | 'RunInference' >> run_inference.RunInferenceOnSequenceExamples(
+          | 'RunInference' >> run_inference.RunInferenceOnExamples(
               inference_spec_type, schema=schema)
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
@@ -508,6 +508,94 @@ class RunOfflineInferenceSequenceExamplesTest(RunInferenceFixture):
     for result in results:
       self.assertLen(result.predict_log.request.inputs, 2)
       self.assertAllInSet(list(result.predict_log.request.inputs), list(['x','y']))
+
+
+class RunOfflineInferenceMixedExamplesTest(RunInferenceFixture):
+
+  def setUp(self):
+    super(RunOfflineInferenceMixedExamplesTest, self).setUp()
+    self._predict_examples = [
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example()),
+        text_format.Parse(
+            """
+              context {
+                feature { key: "input1" value { float_list { value: 1 }}}
+              }
+              """, tf.train.SequenceExample()),
+    ]
+
+  def _run_inference_with_beam(self, example_path, inference_spec_type,
+                               prediction_log_path, include_schema = False):
+    with beam.Pipeline() as pipeline:
+      _ = (
+          pipeline
+          | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
+          | 'ParseExamples' >> beam.Map(tf.train.SequenceExample.FromString)
+          | 'RunInference' >> run_inference.RunInferenceOnExamples(
+              inference_spec_type)
+          | 'WritePredictions' >> beam.io.WriteToTFRecord(
+              prediction_log_path,
+              coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
+
+  def testMixedExamples(self):
+    inputs = tf.keras.Input(shape=(1,), name='input1')
+    output1 = tf.keras.layers.Dense(
+        1, activation=tf.nn.sigmoid, name='output1')(
+            inputs)
+    output2 = tf.keras.layers.Dense(
+        1, activation=tf.nn.sigmoid, name='output2')(
+            inputs)
+    inference_model = tf.keras.models.Model(inputs, [output1, output2])
+
+    class TestKerasModel(tf.keras.Model):
+
+      def __init__(self, inference_model):
+        super(TestKerasModel, self).__init__(name='test_keras_model')
+        self.inference_model = inference_model
+
+      @tf.function(input_signature=[
+          tf.TensorSpec(shape=[None], dtype=tf.string, name='inputs')
+      ])
+      def call(self, serialized_example):
+        features = {
+            'input1':
+                tf.compat.v1.io.FixedLenFeature([1],
+                                                dtype=tf.float32,
+                                                default_value=0)
+        }
+        input_tensor_dict = tf.io.parse_example(serialized_example, features)
+        return inference_model(input_tensor_dict['input1'])
+
+    model = TestKerasModel(inference_model)
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(lr=.001),
+        loss=tf.keras.losses.binary_crossentropy,
+        metrics=['accuracy'])
+
+    model_path = self._get_output_data_dir('model')
+    tf.compat.v1.keras.experimental.export_saved_model(
+        model, model_path, serving_only=True)
+
+    example_path = self._get_output_data_dir('examples')
+    self._prepare_predict_examples(example_path)
+    prediction_log_path = self._get_output_data_dir('predictions')
+    error_msg = 'Expected element of type'
+    try:
+      self._run_inference_with_beam(
+        example_path,
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(
+                model_path=model_path)), prediction_log_path)
+    except ValueError as exc:
+      actual_error_msg = str(exc)
+      self.assertTrue(actual_error_msg.startswith(error_msg))
+    else:
+      self.fail('Test was expected to throw ValueError exception')
 
 
 class RunOfflineInferenceArrowTest(RunInferenceFixture):
@@ -1162,64 +1250,6 @@ class RunRemoteInferenceArrowTest(RunInferenceFixture):
                   inference_spec_type, DataType.EXAMPLE))
 
       self._run_inference_with_beam()
-
-  def test_request_body_with_binary_data(self):
-    record_batch_remote = pa.RecordBatch.from_arrays(
-      [
-        pa.array([["ASa8asdf", "ASa8asdf"]], type=pa.list_(pa.binary())),
-        pa.array([["JLK7ljk3"]], type=pa.list_(pa.utf8())),
-        pa.array([[1, 2]], type=pa.list_(pa.int32())),
-        pa.array([[4.5, 5, 5.5]], type=pa.list_(pa.float32()))
-      ],
-      ['x_bytes', 'x', 'y', 'z']
-    )
-
-    result = list(bsl_util.RecordToJSON(record_batch_remote, False))
-    self.assertEqual([
-        {
-            'x_bytes': [
-              {'b64': 'QVNhOGFzZGY='}, 
-              {'b64': 'QVNhOGFzZGY='}
-            ],
-            'x': 'JLK7ljk3',
-            'y': [1, 2],
-            'z': [4.5, 5, 5.5]
-        },
-    ], result)
-
-  def test_request_serialized_example(self):
-    example = text_format.Parse(
-      """
-      features {
-        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
-        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
-        feature { key: "y" value { int64_list { value: [1, 2] }}}
-      }
-      """, tf.train.Example())
-    inference_spec_type = model_spec_pb2.InferenceSpecType(
-        ai_platform_prediction_model_spec=model_spec_pb2
-        .AIPlatformPredictionModelSpec(
-            project_id='test_project',
-            model_name='test_model',
-            version_name='test_version',
-            use_serialization_config=True))
-    
-    serialized_example_remote = [example.SerializeToString()]
-    record_batch_remote = pa.RecordBatch.from_arrays(
-      [
-        pa.array([["ASa8asdf"]], type=pa.list_(pa.binary())),
-        pa.array([["JLK7ljk3"]], type=pa.list_(pa.utf8())),
-        pa.array([[1, 2]], type=pa.list_(pa.int32())),
-        pa.array([[4.5, 5, 5.5]], type=pa.list_(pa.float32())),
-        serialized_example_remote
-      ],
-      ['x_bytes', 'x', 'y', 'z', _RECORDBATCH_COLUMN]
-    )
-
-    result = list(bsl_util.RecordToJSON(record_batch_remote, True))
-    self.assertEqual(result, [{
-        'b64': base64.b64encode(example.SerializeToString()).decode()
-    }])
 
 
 if __name__ == '__main__':
