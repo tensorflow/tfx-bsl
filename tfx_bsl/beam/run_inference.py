@@ -129,41 +129,17 @@ def RunInferenceOnExamples(  # pylint: disable=invalid-name
   Returns:
     A PCollection containing prediction logs.
   """
-
+  tensor_adapter_config = None
   operation_type = _get_operation_type(inference_spec_type)
   proximity_descriptor = (
     _METRICS_DESCRIPTOR_IN_PROCESS
     if _using_in_process_inference(inference_spec_type)
     else _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
 
-  # determine input dataType
-  beam_type = examples.element_type
-  if beam_type == tf.train.Example or beam_type == tf.train.SequenceExample:
-    data_type = _get_data_type(beam_type)
-  else:
-    tagged = (examples | "SortInput" >> beam.Map(
-      lambda example: beam.pvalue.TaggedOutput(
-        'example' if isinstance(example, tf.train.Example)
-        else 'sequence', example)).with_outputs('example', 'sequence'))
-
-    def check_empty(elements: beam.pvalue.PCollection) -> bool:
-      is_empty_beam = (elements
-        | "CountElement" >> beam.combiners.Count.Globally()
-        | "CheckEmpty" >> beam.Map(lambda n: n == 0))
-      return is_empty_beam[0]
-
-    example_is_empty = tagged.example | "CheckExample" >> beam.CombineGlobally(check_empty)
-    sequence_is_empty = tagged.sequence | "CheckSequence" >> beam.CombineGlobally(check_empty)
-
-    if not example_is_empty and not sequence_is_empty:
-      raise ValueError('A PCollection containing both tf.Example and '
-                       'tf.SequenceExample is not supported')
-    if example_is_empty:
-      data_type = DataType.SEQUENCEEXAMPLE
-    else:
-      data_type = DataType.EXAMPLE
-
-  if data_type == DataType.EXAMPLE:
+  if (operation_type == OperationType.CLASSIFICATION or
+      operation_type == OperationType.REGRESSION or
+      operation_type == OperationType.MULTIHEAD):
+    typed_examples = examples | AssertType(tf.train.Example, operation_type)
     converter = tf_example_record.TFExampleBeamRecord(
       physical_format="inmem",
       telemetry_descriptors=[
@@ -171,29 +147,54 @@ def RunInferenceOnExamples(  # pylint: disable=invalid-name
         operation_type, proximity_descriptor],
       schema=schema,
       raw_record_column_name=_RECORDBATCH_COLUMN)
-  elif data_type == DataType.SEQUENCEEXAMPLE:
-    converter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
+
+    return (examples
+          | 'ParseExamples' >> beam.Map(lambda element: element.SerializeToString())
+          | 'ConvertToRecordBatch' >> converter.BeamSource()
+          | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
+                inference_spec_type, DataType.EXAMPLE,
+                tensor_adapter_config=tensor_adapter_config))
+  else:
+    # TODO: check if there are two types of input data in PREDICT Operation
+    ExampleConverter = tf_example_record.TFExampleBeamRecord(
       physical_format="inmem",
       telemetry_descriptors=[
         _METRICS_DESCRIPTOR_INFERENCE,
         operation_type, proximity_descriptor],
       schema=schema,
       raw_record_column_name=_RECORDBATCH_COLUMN)
-  else:
-    raise ValueError('Unsupported data_type %s' % data_type)
+    SequenceConverter = tf_sequence_example_record.TFSequenceExampleBeamRecord(
+      physical_format="inmem",
+      telemetry_descriptors=[
+        _METRICS_DESCRIPTOR_INFERENCE,
+        operation_type, proximity_descriptor],
+      schema=schema,
+      raw_record_column_name=_RECORDBATCH_COLUMN)
 
-  tensor_adapter_config = None
-  if schema:
-    tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
-      arrow_schema=converter.ArrowSchema(),
-      tensor_representations=converter.TensorRepresentations())
+    tagged = (examples | "SortInput" >> beam.Map(
+      lambda example: beam.pvalue.TaggedOutput(
+        'example' if isinstance(example, tf.train.Example)
+        else 'sequence', example)).with_outputs('example', 'sequence'))
 
-  return (examples
-        | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
-        | 'ConvertToRecordBatch' >> converter.BeamSource()
-        | 'RunInferenceImpl' >> _RunInferenceOnRecordBatch(
-              inference_spec_type, data_type,
-              tensor_adapter_config=tensor_adapter_config))
+    if schema:
+      tensor_adapter_config = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=ExampleConverter.ArrowSchema(),
+        tensor_representations=ExampleConverter.TensorRepresentations())
+
+    return ([
+        (tagged.example
+          | 'ParseExamples' >> beam.Map(lambda example: example.SerializeToString())
+          | 'ConvertExampleToRecordBatch' >> ExampleConverter.BeamSource()
+          | 'RunInferenceImplExample' >> _RunInferenceOnRecordBatch(
+                  inference_spec_type, DataType.EXAMPLE,
+                  tensor_adapter_config=tensor_adapter_config)),
+        (tagged.sequence
+          | 'ParseSequenceExamples' >> beam.Map(lambda example: example.SerializeToString())
+          | 'ConvertSequenceToRecordBatch' >> SequenceConverter.BeamSource()
+          | 'RunInferenceImplSequence' >> _RunInferenceOnRecordBatch(
+                  inference_spec_type, DataType.SEQUENCEEXAMPLE,
+                  tensor_adapter_config=tensor_adapter_config))
+      ] | 'FlattenResult' >> beam.Flatten())
 
 
 @beam.ptransform_fn
@@ -1253,15 +1254,6 @@ def _get_signatures(model_path: Text, signatures: Sequence[Text],
   return result
 
 
-def _get_data_type(
-  data_type: Union[tf.train.Example, tf.train.SequenceExample]) -> Text:
-  if (data_type == tf.train.Example):
-    return DataType.EXAMPLE
-  elif (data_type == tf.train.SequenceExample):
-    return DataType.SequenceExample
-  else:
-    raise ValueError('Expected tf.Example or tf.SequenceExample, got %s' % data_type)
-
 def _get_operation_type(
     inference_spec_type: model_spec_pb2.InferenceSpecType) -> Text:
   if _using_in_process_inference(inference_spec_type):
@@ -1340,6 +1332,30 @@ def _is_windows() -> bool:
 
 def _is_cygwin() -> bool:
   return platform.system().startswith('CYGWIN_NT')
+
+
+class AssertType(beam.PTransform):
+    """Check and cast a PCollection's elements to a given type."""
+    def __init__(self, data_type: Any, operation_type: Text, label=None):
+        super().__init__(label)
+        self.data_type = data_type
+        self.operation_type = operation_type
+        self.first_data = False
+
+    def expand(self, pcoll: beam.pvalue.PCollection):
+        @beam.typehints.with_output_types(Iterable[self.data_type])
+        def _assert_fn(element: Any):
+            if not isinstance(element, self.data_type):
+                raise ValueError(
+                  'Operation type %s expected element of type %s, got: %s' %
+                  (self.operation_type, self.data_type, type(element)))
+            yield element
+
+        # Skip run-time type checking if the type already matches.
+        if pcoll.element_type == self.data_type:
+            return pcoll
+        else:
+            return pcoll | beam.ParDo(_assert_fn)
 
 
 class _Clock(object):
