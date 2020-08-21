@@ -57,6 +57,7 @@
 ## Deprecations
 
 *   Dropped Python 2.x support.
+*   Note: We plan to remove Python 3.5 support after this release.
 
 # Version 0.22.1
 
