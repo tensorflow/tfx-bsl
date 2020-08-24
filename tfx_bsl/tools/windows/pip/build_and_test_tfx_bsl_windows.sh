@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2019 Google LLC
+# Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,39 +24,46 @@
 #   - Msys2
 #   - Anaconda3
 # * Bazel windows executable copied as "bazel.exe" and included in PATH.
+# * Should set TFX_BSL_OUTPUT_DIR and TFMD_OUTPUT_DIR to the source code root
+#   of https://github.com/tensorflow/tfx-bsl and
+#   https://github.com/tensorflow/metadata.
 
-set -x
+set -eux
+function tfx::die() {
+  echo "$*" >&2
+  exit 1
+}
 
-# This script is under <repo_root>/tfx_bsl/tools/windows/pip/
-# Change into repository root.
-script_dir=$(dirname $0)
-cd ${script_dir%%tfx_bsl/tools/windows/pip}.
+source "${TFX_BSL_OUTPUT_DIR}/tfx_bsl/tools/windows/pip/build_tfx_bsl_windows.sh" \
+  || tfx::die "Failed to source build_tfx_bsl_windows.sh"
 
-# Setting up the environment variables Bazel and ./configure needs
-source "tfx_bsl/tools/windows/bazel/common_env.sh" \
-  || { echo "Failed to source common_env.sh" >&2; exit 1; }
-
-source "tfx_bsl/tools/windows/pip/build_tfx_bsl_windows.sh" \
-  || { echo "Failed to source build_tfx_bsl_windows.sh" >&2; exit 1; }
-
-(tfx_bsl::build_from_head_windows) && wheel=$(ls dist/*.whl) \
-  || { echo "Failed to build tfx_bsl."; exit 1; }
+common::prepare_python_env \
+  || tfx::die "Failed to run common::prepare_python_env"
+tfmd::build_from_head_windows \
+  || tfx::die "Failed to build TFMD from source."
+tfx_bsl::build_from_head_windows \
+  || tfx::die "Failed to build TFX-BSL from source."
 
 # Uninstall Cython (if installed) as Beam has issues with Cython installed.
 # TODO(b/130120997): Avoid installing Beam without Cython.
-pip install ${wheel} && \
-pip install ${TENSORFLOW} && \
-pip uninstall -y Cython && \
+pip install "${TFX_BSL_WHEEL}" "${TFMD_WHEEL}" "${TENSORFLOW}" \
+  && pip uninstall -y Cython \
+  && pip list \
+  || tfx::die "Unable to install requirements."
+
+cd "${TFX_BSL_OUTPUT_DIR}" \
+  || tfx::die "Unable to move to ${TFX_BSL_OUTPUT_DIR}."
 
 # TODO(b/159836186): high parallelism caused problem w/ TF 2.2.
 # remove --parallelism=1 after the root case is addressed.
 "${PYTHON_BIN_PATH}" -m tfx_bsl.test_util.run_all_tests \
   --start_dirs="tfx_bsl" \
   --parallelism=1 \
-  || { echo "Failed to run unit tests."; exit 1; }
+  || tfx::die "Failed to run unit tests."
 TEST_RESULT=$?
 
 # copy wheel to ${KOKORO_ARTIFACTS_DIR}
-cp ${wheel} ${KOKORO_ARTIFACTS_DIR}
+cp "${TFMD_WHEEL}" "${KOKORO_ARTIFACTS_DIR}"
+cp "${TFX_BSL_WHEEL}" "${KOKORO_ARTIFACTS_DIR}"
 
 exit $TEST_RESULT

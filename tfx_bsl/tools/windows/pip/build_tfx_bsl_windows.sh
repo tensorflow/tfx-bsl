@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2019 Google LLC
+# Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,25 +25,36 @@
 #   - Anaconda3
 # * Bazel windows executable copied as "bazel.exe" and included in PATH.
 
-function tfx_bsl::build_from_head_windows {
-  # This script is under <repo_root>/tfx_bsl/tools/windows/pip/
-  # Change into repository root.
-  script_dir=$(dirname $0)
-  cd ${script_dir%%tfx_bsl/tools/windows/pip}.
+function common::prepare_python_env() {
+  set -eux
 
-  # Setting up the environment variables Bazel and ./configure needs
-  source "tfx_bsl/tools/windows/bazel/common_env.sh" \
-    || { echo "Failed to source common_env.sh" >&2; exit 1; }
+  # Setting up the environment variables Bazel and ./configure needs.
+  source "${TFX_BSL_OUTPUT_DIR}/tfx_bsl/tools/windows/bazel/common_env.sh"
 
+  "${PYTHON_BIN_PATH}" -m pip install --upgrade pip
+  pip install --upgrade setuptools wheel
+  pip install "numpy>=1.16,<2"
+  pip list
+}
+
+function tfx_bsl::build_from_head_windows() {
+  cd "${TFX_BSL_OUTPUT_DIR}"
   # Enable short object file path to avoid long path issue on Windows.
   echo "startup --output_user_root=${TMPDIR}" >> .bazelrc
+  "${PYTHON_BIN_PATH}" setup.py bdist_wheel 1>&2
+  TFX_BSL_WHEEL="$(find "${TFX_BSL_OUTPUT_DIR}/dist" -name "*.whl")"
+  if [[ -z "${TFX_BSL_WHEEL}" ]]; then
+    return 1
+  fi
+}
 
-  # Upgrade pip, setuptools and wheel packages.
-  "${PYTHON_BIN_PATH}" -m pip install --upgrade pip && \
-  pip install setuptools --upgrade && \
-  pip install wheel --upgrade && \
-  pip install "numpy>=1.16,<2"
-  pip freeze --all || { echo "Failed to prepare pip."; exit 1; }
-  "${PYTHON_BIN_PATH}" setup.py bdist_wheel
-  echo "dist/*.whl"
+function tfmd::build_from_head_windows() {
+  cd "${TFMD_OUTPUT_DIR}"
+  # Enable short object file path to avoid long path issue on Windows.
+  echo "startup --output_user_root=${TMPDIR}" >> .bazelrc
+  "${PYTHON_BIN_PATH}" setup.py bdist_wheel 1>&2
+  TFMD_WHEEL="$(find "${TFMD_OUTPUT_DIR}/dist" -name "*.whl")"
+  if [[ -z "${TFMD_WHEEL}" ]]; then
+    return 1
+  fi
 }
