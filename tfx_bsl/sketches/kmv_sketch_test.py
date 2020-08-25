@@ -19,7 +19,7 @@ from __future__ import print_function
 
 import pyarrow as pa
 import six.moves.cPickle as pickle  # Pybind only supports cPickle for Python2.7
-from tfx_bsl.sketches import KmvSketch
+from tfx_bsl import sketches
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -28,7 +28,7 @@ _NUM_BUCKETS = 128
 
 
 def _create_basic_sketch(values, num_buckets=_NUM_BUCKETS):
-  sketch = KmvSketch(num_buckets)
+  sketch = sketches.KmvSketch(num_buckets)
   sketch.AddValues(values)
   return sketch
 
@@ -57,7 +57,7 @@ class KmvSketchTest(parameterized.TestCase):
 
   def test_add_unsupported_type(self):
     values = pa.array([True, False], pa.bool_())
-    sketch = KmvSketch(_NUM_BUCKETS)
+    sketch = sketches.KmvSketch(_NUM_BUCKETS)
     with self.assertRaisesRegex(RuntimeError, "Unimplemented: bool"):
       sketch.AddValues(values)
 
@@ -82,7 +82,7 @@ class KmvSketchTest(parameterized.TestCase):
     pickled = pickle.dumps(sketch, 2)
     self.assertIsInstance(pickled, bytes)
     unpickled = pickle.loads(pickled)
-    self.assertIsInstance(unpickled, KmvSketch)
+    self.assertIsInstance(unpickled, sketches.KmvSketch)
 
     num_unique = unpickled.Estimate()
     self.assertEqual(3, num_unique)
@@ -93,8 +93,8 @@ class KmvSketchTest(parameterized.TestCase):
     serialized = sketch.Serialize()
     self.assertIsInstance(serialized, bytes)
 
-    deserialized = KmvSketch.Deserialize(serialized)
-    self.assertIsInstance(deserialized, KmvSketch)
+    deserialized = sketches.KmvSketch.Deserialize(serialized)
+    self.assertIsInstance(deserialized, sketches.KmvSketch)
 
     num_unique = deserialized.Estimate()
     self.assertEqual(3, num_unique)

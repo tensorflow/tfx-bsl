@@ -62,8 +62,8 @@ class ColumnType(enum.IntEnum):
 ColumnInfo = collections.namedtuple(
     "ColumnInfo",
     [
-        "name",  # type: ColumnName  # pytype: disable=ignored-type-comment
-        "type",  # type: ColumnType  # pytype: disable=ignored-type-comment
+        "name",  # ColumnName
+        "type",  # ColumnType
     ])
 
 _SCHEMA_TYPE_TO_COLUMN_TYPE = {

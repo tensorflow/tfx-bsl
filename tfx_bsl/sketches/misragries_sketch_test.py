@@ -19,7 +19,7 @@ from __future__ import print_function
 
 import pyarrow as pa
 import six.moves.cPickle as pickle  # Pybind only supports cPickle for Python2.7
-from tfx_bsl.sketches import MisraGriesSketch
+from tfx_bsl import sketches
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -28,7 +28,7 @@ _NUM_BUCKETS = 128
 
 
 def _create_basic_sketch(items, weights=None, num_buckets=_NUM_BUCKETS):
-  sketch = MisraGriesSketch(num_buckets)
+  sketch = sketches.MisraGriesSketch(num_buckets)
   if weights:
     sketch.AddValues(items, weights)
   else:
@@ -115,7 +115,7 @@ class MisraGriesSketchTest(parameterized.TestCase):
 
   def test_add_unsupported_type(self):
     values = pa.array([True, False], pa.bool_())
-    sketch = MisraGriesSketch(_NUM_BUCKETS)
+    sketch = sketches.MisraGriesSketch(_NUM_BUCKETS)
     with self.assertRaisesRegex(RuntimeError, "Unimplemented: bool"):
       sketch.AddValues(values)
 
@@ -147,7 +147,7 @@ class MisraGriesSketchTest(parameterized.TestCase):
     pickled = pickle.dumps(sketch, 2)
     self.assertIsInstance(pickled, bytes)
     unpickled = pickle.loads(pickled)
-    self.assertIsInstance(unpickled, MisraGriesSketch)
+    self.assertIsInstance(unpickled, sketches.MisraGriesSketch)
 
     estimate = unpickled.Estimate()
     estimate.validate(full=True)
@@ -170,8 +170,8 @@ class MisraGriesSketchTest(parameterized.TestCase):
     serialized = sketch.Serialize()
     self.assertIsInstance(serialized, bytes)
 
-    deserialized = MisraGriesSketch.Deserialize(serialized)
-    self.assertIsInstance(deserialized, MisraGriesSketch)
+    deserialized = sketches.MisraGriesSketch.Deserialize(serialized)
+    self.assertIsInstance(deserialized, sketches.MisraGriesSketch)
 
     estimate = deserialized.Estimate()
     estimate.validate(full=True)
