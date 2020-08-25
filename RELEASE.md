@@ -3,17 +3,24 @@
 # Current version (not yet released; still in development)
 
 ## Major Features and Improvements
-*  You can now build `tfx_bsl` wheel with `python setup.py bdist_wheel`. Note:
-  * If you want to build a manylinux2010 wheel you'll still need
-    to use Docker.
-  * Bazel is still required.
-*  You can now build manylinux2010 `tfx_bsl` wheel for Python 3.8.
+
+*   You can now build `tfx_bsl` wheel with `python setup.py bdist_wheel`. Note:
+    *   If you want to build a manylinux2010 wheel you'll still need to use
+        Docker.
+    *   Bazel is still required.
+*   You can now build manylinux2010 `tfx_bsl` wheel for Python 3.8.
 
 ## Bug Fixes and Other Changes
+
+*   Depends on `absl-py>=0.9,<0.11`.
+*   Depends on `pandas>=1.0,<2`.
+*   Depends on `protobuf>=3.9.2,<4`.
 
 ## Breaking changes
 
 ## Deprecations
+
+*   Deprecated py3.5 support
 
 # Version 0.23.0
 
