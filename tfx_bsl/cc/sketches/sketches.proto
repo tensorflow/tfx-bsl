@@ -31,7 +31,7 @@ message MisraGries {
   // Max number of values in the sketch.
   int32 num_buckets = 1;
   // Names of items.
-  repeated string items = 2;
+  repeated bytes items = 2;
   // Weights or counts of items.
   repeated double weights = 3 [packed=true];
   // The quantity decremented from the stored weights.
