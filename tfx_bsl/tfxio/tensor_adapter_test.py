@@ -17,6 +17,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import pickle
+
 import numpy as np
 import pyarrow as pa
 import six
@@ -1197,6 +1199,33 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                   "column1": tf.TensorSpec(dtype=tf.int64, shape=[None, 1]),
                   "column2": tf.TensorSpec(dtype=tf.int32, shape=[None, 1])
               }))
+
+  def testPickleTensorAdapterConfig(self):
+    config = tensor_adapter.TensorAdapterConfig(
+        arrow_schema=pa.schema([pa.field("column1", pa.list_(pa.int32()))]),
+        tensor_representations={
+            "column1":
+                text_format.Parse(
+                    """
+                dense_tensor {
+                  column_name: "column1"
+                  shape {
+                    dim {
+                      size: 1
+                    }
+                  }
+                }""", schema_pb2.TensorRepresentation())
+        },
+        original_type_specs={
+            "column1": tf.TensorSpec(dtype=tf.int32, shape=[None, 1]),
+            "column2": tf.TensorSpec(dtype=tf.int32, shape=[None, 1])
+        })
+    unpickled_config = pickle.loads(pickle.dumps(config))
+    self.assertEqual(config.arrow_schema, unpickled_config.arrow_schema)
+    self.assertEqual(config.tensor_representations,
+                     unpickled_config.tensor_representations)
+    self.assertEqual(config.original_type_specs,
+                     unpickled_config.original_type_specs)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
-import collections
 import typing
 from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union
 
@@ -35,24 +34,34 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 TensorRepresentations = Dict[Text, schema_pb2.TensorRepresentation]
 
 
-class TensorAdapterConfig(collections.namedtuple(
-    "TensorAdapterConfig",
-    [
-        "arrow_schema",
-        "tensor_representations",
-        "original_type_specs",
-    ])):
+class TensorAdapterConfig(object):
   """Config to a TensorAdapter.
 
   Contains all the information needed to create a TensorAdapter.
   """
 
-  def __new__(cls,
-              arrow_schema: pa.Schema,
-              tensor_representations: TensorRepresentations,
-              original_type_specs: Optional[Dict[Text, tf.TypeSpec]] = None):
-    return super(TensorAdapterConfig, cls).__new__(
-        cls, arrow_schema, tensor_representations, original_type_specs)
+  def __init__(self,
+               arrow_schema: pa.Schema,
+               tensor_representations: TensorRepresentations,
+               original_type_specs: Optional[Dict[Text, tf.TypeSpec]] = None):
+    self.arrow_schema = arrow_schema
+    self.tensor_representations = tensor_representations
+    self.original_type_specs = original_type_specs
+
+  # See b/167128119 for the reason behind custom pickle/unpickle
+  # implementations.
+  def __getstate__(self):
+    return (self.arrow_schema, {
+        k: v.SerializeToString() for k, v in self.tensor_representations.items()
+    }, self.original_type_specs)
+
+  def __setstate__(self, t):
+    tensor_representations = {}
+    for k, v in t[1].items():
+      r = schema_pb2.TensorRepresentation()
+      r.ParseFromString(v)
+      tensor_representations[k] = r
+    self.__init__(t[0], tensor_representations, t[2])
 
 
 class TensorAdapter(object):

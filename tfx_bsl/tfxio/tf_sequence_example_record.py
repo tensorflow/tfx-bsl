@@ -252,17 +252,20 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
                raw_record_column_name: Optional[Text],
                produce_large_types: bool):
     """Initializer."""
-    self._schema = schema
+    self._serialized_schema = None
+    if schema is not None:
+      # Serialize to avoid storing TFMD protos. See b/167128119 for the reason.
+      self._serialized_schema = schema.SerializeToString()
     self._raw_record_column_name = raw_record_column_name
     self._decoder = None
     self._produce_large_types = produce_large_types
 
   def setup(self):
-    if self._schema:
+    if self._serialized_schema:
       self._decoder = (
           sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
               _SEQUENCE_COLUMN_NAME,
-              self._schema.SerializeToString(),
+              self._serialized_schema,
               use_large_types=self._produce_large_types))
     else:
       self._decoder = (
