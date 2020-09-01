@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # Lint as: python3
-"""Publich API of batch inference."""
+"""Public API of batch inference."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -21,19 +21,22 @@ from __future__ import print_function
 
 import apache_beam as beam
 import tensorflow as tf
+import pyarrow as pa
+from typing import Text, Optional, TypeVar
 from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
-from typing import Union
 from tensorflow_serving.apis import prediction_log_pb2
+from tensorflow_metadata.proto.v0 import schema_pb2
 
+MixedExample = TypeVar('MixedExample', tf.train.Example, tf.train.SequenceExample)
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(MixedExample)
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def RunInference(  # pylint: disable=invalid-name
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    schema: Optional[schema_pb2.Schema] = None
 ) -> beam.pvalue.PCollection:
   """Run inference with a model.
 
@@ -44,19 +47,21 @@ def RunInference(  # pylint: disable=invalid-name
      `ai_platform_prediction_model_spec` field is set in
      `inference_spec_type`.
 
-  TODO(b/131873699): Add support for the following features:
-  1. Bytes as Input.
-  2. PTable Input.
-  3. Models as SideInput.
+   TODO(b/131873699): Add support for the following features:
+   1. Bytes as Input.
+   2. PTable Input.
+   3. Models as SideInput.
 
   Args:
     examples: A PCollection containing examples.
     inference_spec_type: Model inference endpoint.
+    schema [optional]: required for predict models that requires
+      multi-tensor inputs.
 
   Returns:
     A PCollection containing prediction logs.
   """
 
-  return (
-      examples |
-      'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
+  return (examples
+          | 'RunInferenceOnExamples' >> run_inference.RunInferenceOnExamples(
+                  inference_spec_type, schema=schema))
