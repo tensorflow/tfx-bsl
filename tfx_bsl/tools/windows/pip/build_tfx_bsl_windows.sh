@@ -31,10 +31,17 @@ function common::prepare_python_env() {
   # Setting up the environment variables Bazel and ./configure needs.
   source "${TFX_BSL_OUTPUT_DIR}/tfx_bsl/tools/windows/bazel/common_env.sh"
 
-  "${PYTHON_BIN_PATH}" -m pip install --upgrade pip
-  pip install --upgrade setuptools wheel
-  pip install "numpy>=1.16,<2"
+  "${PYTHON_BIN_PATH}" -m pip install --upgrade pip setuptools wheel "numpy>=1.16,<2"
   pip list
+  # There's a tensorflow bazel rule that executes a small piece of code
+  # (https://github.com/tensorflow/tensorflow/blob/b36436b087bd8e8701ef51718179037cccdfc26e/third_party/py/python_configure.bzl#L150)
+  # to determine the path to python headers and that code doesn't work with
+  # setuptools>=50.0 and Python 3.6.1 (which is our testing set up). Setting
+  # this environment variable would revert setuptools to the old, good behavior.
+  # See https://github.com/pypa/setuptools/issues/2352
+  # Note that setuptools 50.0.1 claim to have "fixed" the issue but it
+  # did not work for Python 3.6.1 (newer 3.6 may work).
+  export SETUPTOOLS_USE_DISTUTILS=stdlib
 }
 
 function tfx_bsl::build_from_head_windows() {
