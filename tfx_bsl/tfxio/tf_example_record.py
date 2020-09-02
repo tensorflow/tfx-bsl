@@ -149,7 +149,7 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
 
   def __init__(self,
                physical_format: Text,
-               telemetry_descriptors: List[Text],
+               telemetry_descriptors: Optional[List[Text]] = None,
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None):
     """Initializer.
