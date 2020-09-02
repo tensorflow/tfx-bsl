@@ -21,6 +21,7 @@ from distutils.command import build
 # pylint:enable=g-bad-import-order
 import os
 import subprocess
+import sys
 
 from setuptools import find_packages
 from setuptools import setup
@@ -85,7 +86,8 @@ class _BazelBuildCommand(setuptools.Command):
         [self._bazel_cmd, 'run', '-c', 'opt', '//tfx_bsl:move_generated_files'],
         # Bazel should be invoked in a directory containing bazel WORKSPACE
         # file, which is the root directory.
-        cwd=os.path.dirname(os.path.realpath(__file__)),)
+        cwd=os.path.dirname(os.path.realpath(__file__)),
+        env=os.environ.copy().update({'PYTHON_BIN_PATH': sys.executable}))
 
 
 class _BinaryDistribution(Distribution):
