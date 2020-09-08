@@ -1,6 +1,9 @@
 # Utilities shared by tfx_bsl C++ code.
 
-package(default_visibility = ["//tfx_bsl/cc:__subpackages__"])
+package(default_visibility = [
+    "//tfx_bsl/cc:__subpackages__",
+    "//tfx_bsl/google/cc:__subpackages__",
+])
 
 licenses(["notice"])
 
