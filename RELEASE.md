@@ -1,6 +1,8 @@
+<!-- mdlint off(HEADERS_TOO_MANY_H1) -->
+
 # `tfx_bsl` release notes
 
-# Current version (not yet released; still in development)
+# Version 0.24.0
 
 ## Major Features and Improvements
 
@@ -9,19 +11,23 @@
         Docker.
     *   Bazel is still required.
 *   You can now build manylinux2010 `tfx_bsl` wheel for Python 3.8.
+*   From this version we will be releasing python 3.8 wheels.
 
 ## Bug Fixes and Other Changes
 
+*   Stopped depending on `six`.
 *   Depends on `absl-py>=0.9,<0.11`.
 *   Depends on `pandas>=1.0,<2`.
 *   Depends on `protobuf>=3.9.2,<4`.
-*   Stopped depending on `six`.
+*   Depends on `tensorflow-metadata>=0.24,<0.25`.
 
 ## Breaking changes
 
+*   N/A
+
 ## Deprecations
 
-*   Deprecated py3.5 support
+*   Deprecated py3.5 support.
 
 # Version 0.23.0
 

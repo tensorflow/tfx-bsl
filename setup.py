@@ -150,7 +150,7 @@ setup(
         'protobuf>=3.9.2,<4',
         'pyarrow>=0.17,<0.18',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,<3',
-        'tensorflow-metadata>=0.23,<0.24',
+        'tensorflow-metadata>=0.24,<0.25',
         'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,<3',
     ],
     python_requires='>=3.6,<4',
