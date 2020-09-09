@@ -26,7 +26,7 @@ class InMemoryTFExampleRecord(tf_example_record.TFExampleBeamRecord):
 
   def __init__(self, schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None):
-    super(InMemoryTFExampleRecord, self).__init__(
+    super().__init__(
         physical_format="inmem",
         telemetry_descriptors=["test", "component"],
         schema=schema,

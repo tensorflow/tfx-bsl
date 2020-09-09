@@ -32,7 +32,6 @@ from typing import Dict, List, Optional, Text
 from absl import app
 from absl import flags
 from absl import logging
-import six
 
 
 flags.DEFINE_list(
@@ -118,18 +117,12 @@ class _Test(object):
         (self.stdout, "STDOUT"), (self.stderr, "STDERR")):
       f.flush()
       f.seek(0)
-      if six.PY2:
-        sys.stdout.write("BEGIN %s of test %s\n" % (stream_name, self))
-        sys.stdout.write(f.read())
-        sys.stdout.write("END %s of test %s\n" % (stream_name, self))
-        sys.stdout.flush()
-      else:
-        # Since we collected binary data, we have to write binary data.
-        encoded = (stream_name.encode(), str(self).encode())
-        sys.stdout.buffer.write(b"BEGIN %s of test %s\n" % encoded)
-        sys.stdout.buffer.write(f.read())
-        sys.stdout.buffer.write(b"END %s of test %s\n" % encoded)
-        sys.stdout.buffer.flush()
+      # Since we collected binary data, we have to write binary data.
+      encoded = (stream_name.encode(), str(self).encode())
+      sys.stdout.buffer.write(b"BEGIN %s of test %s\n" % encoded)
+      sys.stdout.buffer.write(f.read())
+      sys.stdout.buffer.write(b"END %s of test %s\n" % encoded)
+      sys.stdout.buffer.flush()
 
 
 def _DiscoverTests(root_dirs: List[Text],

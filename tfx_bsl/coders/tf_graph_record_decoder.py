@@ -16,7 +16,6 @@
 import abc
 from typing import Dict, List, Optional, Text, Union
 
-import six
 import tensorflow as tf
 
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
@@ -25,8 +24,7 @@ from tensorflow.python.framework import composite_tensor  # pylint: disable=g-di
 TensorAlike = Union[tf.Tensor, composite_tensor.CompositeTensor]
 
 
-@six.add_metaclass(abc.ABCMeta)
-class TFGraphRecordDecoder(tf.Module):
+class TFGraphRecordDecoder(tf.Module, metaclass=abc.ABCMeta):
   """Base class for decoders that turns a list of bytes to (composite) tensors.
 
   Sub-classes must implemented `_decode_record_internal()` (see its docstring
@@ -45,7 +43,7 @@ class TFGraphRecordDecoder(tf.Module):
       name: Must be a valid TF scope name. May be used to create TF namescopes.
         see https://www.tensorflow.org/api_docs/python/tf/Graph#name_scope.
     """
-    super(TFGraphRecordDecoder, self).__init__(name=name)
+    super().__init__(name=name)
 
   @tf.function(input_signature=[tf.TensorSpec(shape=(None,), dtype=tf.string)])
   def decode_record(self, records: List[bytes]) -> Dict[Text, TensorAlike]:
@@ -131,7 +129,7 @@ class LoadedDecoder(TFGraphRecordDecoder):
   """
 
   def __init__(self, loaded_module):
-    super(LoadedDecoder, self).__init__(name="LoadedDecoder")
+    super().__init__(name="LoadedDecoder")
     self._loaded_module = loaded_module
     if tf.executing_eagerly():
       record_index_tensor_name = (

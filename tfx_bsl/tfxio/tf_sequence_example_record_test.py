@@ -197,7 +197,7 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
 
   @classmethod
   def setUpClass(cls):
-    super(TfSequenceExampleRecordTest, cls).setUpClass()
+    super().setUpClass()
     cls._example_file = os.path.join(
         FLAGS.test_tmpdir, "tfsequenceexamplerecordtest", "input.recordio.gz")
     tf.io.gfile.makedirs(os.path.dirname(cls._example_file))

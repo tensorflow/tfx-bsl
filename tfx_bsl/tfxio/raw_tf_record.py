@@ -43,7 +43,7 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
                telemetry_descriptors: List[Text],
                physical_format: Text):
     assert raw_record_column_name is not None
-    super(_RawRecordTFXIO, self).__init__(
+    super().__init__(
         raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         logical_format="bytes",
@@ -130,7 +130,7 @@ class RawBeamRecordTFXIO(_RawRecordTFXIO):
         be identifiers of the component itself and not individual instances of
         source use.
     """
-    super(RawBeamRecordTFXIO, self).__init__(
+    super().__init__(
         telemetry_descriptors=telemetry_descriptors,
         physical_format=physical_format,
         raw_record_column_name=raw_record_column_name)
@@ -159,7 +159,7 @@ class RawTfRecordTFXIO(_RawRecordTFXIO):
         be identifiers of the component itself and not individual instances of
         source use.
     """
-    super(RawTfRecordTFXIO, self).__init__(
+    super().__init__(
         telemetry_descriptors=telemetry_descriptors,
         physical_format="tfrecords_gzip",
         raw_record_column_name=raw_record_column_name)

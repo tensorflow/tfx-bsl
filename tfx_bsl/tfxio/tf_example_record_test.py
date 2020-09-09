@@ -191,7 +191,7 @@ class TfExampleRecordTest(tf.test.TestCase):
 
   @classmethod
   def setUpClass(cls):
-    super(TfExampleRecordTest, cls).setUpClass()
+    super().setUpClass()
     cls._example_file = os.path.join(
         FLAGS.test_tmpdir, "tfexamplerecordtest", "input.recordio.gz")
     tf.io.gfile.makedirs(os.path.dirname(cls._example_file))

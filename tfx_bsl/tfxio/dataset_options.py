@@ -58,7 +58,6 @@ class TensorFlowDatasetOptions(
         the tuple is the label tensor and the dict (the first term) will not
         contain the label feature.
     """
-    return super(TensorFlowDatasetOptions,
-                 cls).__new__(cls, batch_size, drop_final_batch, num_epochs,
-                              shuffle, shuffle_buffer_size, shuffle_seed,
-                              label_key)
+    return super().__new__(cls, batch_size, drop_final_batch, num_epochs,
+                           shuffle, shuffle_buffer_size, shuffle_seed,
+                           label_key)

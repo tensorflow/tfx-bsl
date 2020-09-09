@@ -28,15 +28,13 @@ from typing import List, Optional, Text
 
 import apache_beam as beam
 import pyarrow as pa
-import six
 import tensorflow as tf
 from tfx_bsl.arrow import pyarrow_capability
 from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import tensor_adapter
 
 
-@six.add_metaclass(abc.ABCMeta)
-class TFXIO(object):
+class TFXIO(object, metaclass=abc.ABCMeta):
   """Abstract basic class of all TFXIO API implementations."""
 
   @abc.abstractmethod

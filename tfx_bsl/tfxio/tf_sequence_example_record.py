@@ -19,7 +19,6 @@ from typing import List, Optional, Text, Union
 from absl import logging
 import apache_beam as beam
 import pyarrow as pa
-import six
 from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import sequence_example_coder
@@ -34,7 +33,6 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 _SEQUENCE_COLUMN_NAME = "##SEQUENCE##"
 
 
-@six.add_metaclass(abc.ABCMeta)
 class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   """Base class for TFXIO classes for record based tf.SequenceExamples."""
 
@@ -43,7 +41,7 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
                raw_record_column_name: Optional[Text],
                telemetry_descriptors: List[Text],
                physical_format: Text):
-    super(_TFSequenceExampleRecordBase, self).__init__(
+    super().__init__(
         telemetry_descriptors=telemetry_descriptors,
         raw_record_column_name=raw_record_column_name,
         logical_format="tf_sequence_example",
@@ -165,7 +163,7 @@ class TFSequenceExampleBeamRecord(_TFSequenceExampleRecordBase):
         will contain a column of the given name that contains serialized
         records.
     """
-    super(TFSequenceExampleBeamRecord, self).__init__(
+    super().__init__(
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         physical_format=physical_format)
@@ -213,7 +211,7 @@ class TFSequenceExampleRecord(_TFSequenceExampleRecordBase):
         will contain a column of the given name that contains serialized
         records.
     """
-    super(TFSequenceExampleRecord, self).__init__(
+    super().__init__(
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         physical_format="tfrecords_gzip")

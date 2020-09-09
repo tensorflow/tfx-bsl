@@ -44,7 +44,7 @@ class RawTfRecordTest(absltest.TestCase):
 
   @classmethod
   def setUpClass(cls):
-    super(RawTfRecordTest, cls).setUpClass()
+    super().setUpClass()
     cls._raw_record_file = os.path.join(
         FLAGS.test_tmpdir, "rawtfrecordtest", "input.recordio.gz")
     tf.io.gfile.makedirs(os.path.dirname(cls._raw_record_file))

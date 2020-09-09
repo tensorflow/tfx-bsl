@@ -19,7 +19,6 @@ from typing import List, Optional, Text
 
 import apache_beam as beam
 import pyarrow as pa
-import six
 from tfx_bsl.coders import csv_decoder
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
@@ -29,7 +28,6 @@ from tfx_bsl.tfxio import tfxio
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-@six.add_metaclass(abc.ABCMeta)
 class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
   """Base class for TFXIO implementations for CSV."""
 
@@ -43,7 +41,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None,
                telemetry_descriptors: Optional[List[Text]] = None):
-    super(_CsvTFXIOBase, self).__init__(
+    super().__init__(
         telemetry_descriptors=telemetry_descriptors,
         raw_record_column_name=raw_record_column_name,
         logical_format="csv",
@@ -219,7 +217,7 @@ class CsvTFXIO(_CsvTFXIOBase):
         skipped from each file. Must be 0 or higher. Large number of
         skipped lines might impact performance.
     """
-    super(CsvTFXIO, self).__init__(
+    super().__init__(
         column_names=column_names,
         delimiter=delimiter,
         skip_blank_lines=skip_blank_lines,

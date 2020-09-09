@@ -37,7 +37,7 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
                physical_format: Text,
                raw_record_column_name: Optional[Text]):
 
-    super(_RecordToTensorTFXIO, self).__init__(
+    super().__init__(
         telemetry_descriptors,
         logical_format="tensor",
         physical_format=physical_format,
@@ -142,7 +142,7 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
         will contain a column of the given name that contains serialized
         records.
     """
-    super(TFRecordToTensorTFXIO, self).__init__(
+    super().__init__(
         saved_decoder_path,
         telemetry_descriptors,
         physical_format="tfrecords_gzip",
@@ -241,7 +241,7 @@ class _RecordsToRecordBatch(beam.DoFn):
                raw_record_column_name: Optional[Text],
                produce_large_raw_record_column: bool,
                record_index_column_name: Optional[Text]):
-    super(_RecordsToRecordBatch, self).__init__()
+    super().__init__()
     self._saved_decoder_path = saved_decoder_path
     self._raw_record_column_name = raw_record_column_name
     self._produce_large_raw_record_column = produce_large_raw_record_column

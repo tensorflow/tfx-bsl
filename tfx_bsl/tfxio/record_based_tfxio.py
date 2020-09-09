@@ -22,13 +22,11 @@ from typing import Any, List, Optional, Text, Union
 import apache_beam as beam
 import numpy as np
 import pyarrow as pa
-import six
 import tensorflow as tf
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
 
 
-@six.add_metaclass(abc.ABCMeta)
 class RecordBasedTFXIO(tfxio.TFXIO):
   """Base class for all TFXIO implementations for record-based on-disk formats.
 
@@ -62,7 +60,7 @@ class RecordBasedTFXIO(tfxio.TFXIO):
                logical_format: Text,
                physical_format: Text,
                raw_record_column_name: Optional[Text] = None):
-    super(RecordBasedTFXIO, self).__init__()
+    super().__init__()
     if not self.SupportAttachingRawRecords():
       assert raw_record_column_name is None, (
           "{} did not support attaching raw records, but requested.".format(

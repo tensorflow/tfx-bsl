@@ -17,7 +17,6 @@ import pickle
 
 import numpy as np
 import pyarrow as pa
-import six
 import tensorflow as tf
 from tfx_bsl.tfxio import tensor_adapter
 
@@ -1091,7 +1090,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                      [b"kk", b"kk"]]), tensors["bytes_default_filled_dense"])
 
     if tf.executing_eagerly():
-      for name, spec in six.iteritems(type_specs):
+      for name, spec in type_specs.items():
         self.assertTrue(
             spec.is_compatible_with(tensors[name]),
             "{} is not compatible with spec {}".format(tensors[name], spec))

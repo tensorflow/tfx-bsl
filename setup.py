@@ -149,7 +149,6 @@ setup(
         'pandas>=1.0,<2',
         'protobuf>=3.9.2,<4',
         'pyarrow>=0.17,<0.18',
-        'six>=1.12,<2',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,<3',
         'tensorflow-metadata>=0.23,<0.24',
         'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,<3',

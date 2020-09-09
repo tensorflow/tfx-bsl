@@ -16,7 +16,6 @@
 import sys
 
 import numpy as np
-import six
 import tensorflow as tf
 
 from tfx_bsl.arrow import path
@@ -731,7 +730,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       schema.generate_legacy_feature_spec = generate_legacy_feature_spec
     expected_protos = {
         k: text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())
-        for k, pbtxt in six.iteritems(expected)
+        for k, pbtxt in expected.items()
     }
     self.assertEqual(
         expected_protos,

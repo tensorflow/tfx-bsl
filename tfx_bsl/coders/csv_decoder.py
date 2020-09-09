@@ -22,7 +22,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Tup
 import apache_beam as beam
 import numpy as np
 import pyarrow as pa
-import six
 import tensorflow as tf
 from tfx_bsl.coders import batch_util
 
@@ -263,7 +262,7 @@ class ColumnTypeInferrer(beam.CombineFn):
       # Merge the types inferred in each partition using the type hierarchy.
       # Specifically, whenever we observe a type higher in the type hierarchy
       # we update the type.
-      for feature_name, feature_type in six.iteritems(shard_types):
+      for feature_name, feature_type in shard_types.items():
         if feature_name not in result or feature_type > result[feature_name]:
           result[feature_name] = feature_type
     return result
@@ -448,12 +447,7 @@ class _CSVRecordReader(object):
     self._delimiter = delimiter
     self._line_iterator = _MutableRepeat()
     self._reader = csv.reader(self._line_iterator, delimiter=delimiter)
-    # Python 2 csv reader accepts bytes while Python 3 csv reader accepts
-    # unicode.
-    if six.PY2:
-      self._to_reader_input = tf.compat.as_bytes
-    else:
-      self._to_reader_input = tf.compat.as_text
+    self._to_reader_input = tf.compat.as_text
 
   def ReadLine(self, csv_line: CSVLine) -> List[CSVCell]:
     """Reads out bytes for PY2 and Unicode for PY3."""

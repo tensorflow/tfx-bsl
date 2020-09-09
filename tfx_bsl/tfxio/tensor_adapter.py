@@ -19,7 +19,6 @@ from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
-import six
 import tensorflow as tf
 from tfx_bsl.arrow import array_util
 from tfx_bsl.arrow import path
@@ -161,8 +160,7 @@ class TensorAdapter(object):
     return result
 
 
-@six.add_metaclass(abc.ABCMeta)
-class _TypeHandler(object):
+class _TypeHandler(abc.ABC):
   """Base class of all type handlers.
 
   A TypeHandler converts one or more columns in a RecordBatch to a TF Tensor
@@ -228,7 +226,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super(_BaseDenseTensorHandler, self).__init__(arrow_schema,
+    super().__init__(arrow_schema,
                                                   tensor_representation)
     dense_rep = tensor_representation.dense_tensor
     column_name = dense_rep.column_name
@@ -306,7 +304,7 @@ class _DefaultFillingDenseTensorHandler(_BaseDenseTensorHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super(_DefaultFillingDenseTensorHandler, self).__init__(
+    super().__init__(
         arrow_schema, tensor_representation)
     _, value_type = _GetNestDepthAndValueType(
         arrow_schema,
@@ -337,7 +335,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super(_VarLenSparseTensorHandler, self).__init__(
+    super().__init__(
         arrow_schema, tensor_representation)
     column_name = tensor_representation.varlen_sparse_tensor.column_name
     self._column_index = arrow_schema.get_field_index(column_name)
@@ -390,7 +388,7 @@ class _SparseTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super(_SparseTensorHandler, self).__init__(
+    super().__init__(
         arrow_schema, tensor_representation)
     sparse_representation = tensor_representation.sparse_tensor
     self._index_column_indices = tuple(
@@ -480,7 +478,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super(_RaggedTensorHandler, self).__init__(arrow_schema,
+    super().__init__(arrow_schema,
                                                tensor_representation)
     ragged_representation = tensor_representation.ragged_tensor
     self._path = path.ColumnPath.from_proto(ragged_representation.feature_path)
@@ -604,7 +602,7 @@ def _BuildTypeHandlers(
     arrow_schema: pa.Schema) -> List[Tuple[Text, _TypeHandler]]:
   """Builds type handlers according to TensorRepresentations."""
   result = []
-  for tensor_name, rep in six.iteritems(tensor_representations):
+  for tensor_name, rep in tensor_representations.items():
     potential_handlers = _TYPE_HANDLER_MAP.get(rep.WhichOneof("kind"))
     if not potential_handlers:
       raise ValueError("Unable to handle tensor {} with rep {}".format(

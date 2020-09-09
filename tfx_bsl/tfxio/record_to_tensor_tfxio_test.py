@@ -37,7 +37,7 @@ FLAGS = flags.FLAGS
 class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
   def __init__(self):
-    super(_DecoderForTesting, self).__init__("DecoderForTesting")
+    super().__init__("DecoderForTesting")
 
   def _decode_record_internal(self, record):
     indices = tf.transpose(
@@ -114,7 +114,7 @@ def _write_decoder(decoder=_DecoderForTesting()):
 class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):
-    super(RecordToTensorTfxioTest, self).setUp()
+    super().setUp()
     self._input_path = _write_input()
 
   def _assert_sparse_tensor_equal(self, lhs, rhs):

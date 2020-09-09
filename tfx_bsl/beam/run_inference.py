@@ -34,7 +34,6 @@ import googleapiclient
 from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
-import six
 import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.public.proto import model_spec_pb2
@@ -207,8 +206,7 @@ def _MultiInference(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-n
     raise NotImplementedError
 
 
-@six.add_metaclass(abc.ABCMeta)
-class _BaseDoFn(beam.DoFn):
+class _BaseDoFn(beam.DoFn, metaclass=abc.ABCMeta):
   """Base DoFn that performs bulk inference."""
 
   class _MetricsCollector(object):
@@ -267,7 +265,7 @@ class _BaseDoFn(beam.DoFn):
           sum(element.ByteSize() for element in elements))
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
-    super(_BaseDoFn, self).__init__()
+    super().__init__()
     self._clock = None
     self._metrics_collector = self._MetricsCollector(inference_spec_type)
 
@@ -346,7 +344,7 @@ class _RemotePredictDoFn(_BaseDoFn):
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
                pipeline_options: PipelineOptions):
-    super(_RemotePredictDoFn, self).__init__(inference_spec_type)
+    super().__init__(inference_spec_type)
     self._ai_platform_prediction_model_spec = (
         inference_spec_type.ai_platform_prediction_model_spec)
     self._api_client = None
@@ -373,7 +371,7 @@ class _RemotePredictDoFn(_BaseDoFn):
                                              version_name)
 
   def setup(self):
-    super(_RemotePredictDoFn, self).setup()
+    super().setup()
     # TODO(b/151468119): Add tfx_bsl_version and tfx_bsl_py_version to
     # user agent once custom header is supported in googleapiclient.
     self._api_client = discovery.build('ml', 'v1')
@@ -505,7 +503,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
       inference_spec_type: model_spec_pb2.InferenceSpecType,
       shared_model_handle: shared.Shared,
   ):
-    super(_BaseBatchSavedModelDoFn, self).__init__(inference_spec_type)
+    super().__init__(inference_spec_type)
     self._inference_spec_type = inference_spec_type
     self._shared_model_handle = shared_model_handle
     self._model_path = inference_spec_type.saved_model_spec.model_path
@@ -524,7 +522,7 @@ class _BaseBatchSavedModelDoFn(_BaseDoFn):
     to b/139207285.
     """
 
-    super(_BaseBatchSavedModelDoFn, self).setup()
+    super().setup()
     self._tags = _get_tags(self._inference_spec_type)
     self._io_tensor_spec = self._pre_process()
 
@@ -636,7 +634,7 @@ class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
           'BulkInferrerClassifyDoFn requires signature method '
           'name %s, got: %s' % tf.saved_model.CLASSIFY_METHOD_NAME,
           signature_def.method_name)
-    super(_BatchClassifyDoFn, self).setup()
+    super().setup()
 
   def _check_elements(
       self, elements: List[Union[tf.train.Example,
@@ -661,7 +659,7 @@ class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on regression model."""
 
   def setup(self):
-    super(_BatchRegressDoFn, self).setup()
+    super().setup()
 
   def _check_elements(
       self, elements: List[Union[tf.train.Example,
@@ -690,7 +688,7 @@ class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
           'BulkInferrerPredictDoFn requires signature method '
           'name %s, got: %s' % tf.saved_model.PREDICT_METHOD_NAME,
           signature_def.method_name)
-    super(_BatchPredictDoFn, self).setup()
+    super().setup()
 
   def _check_elements(
       self, elements: List[Union[tf.train.Example,

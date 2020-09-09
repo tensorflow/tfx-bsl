@@ -19,7 +19,6 @@ from typing import List, Optional, Text, Union
 from absl import logging
 import apache_beam as beam
 import pyarrow as pa
-import six
 import tensorflow as tf
 from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
@@ -33,7 +32,6 @@ from tfx_bsl.tfxio import tfxio
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-@six.add_metaclass(abc.ABCMeta)
 class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   """Base class for TFXIO implementations for record based tf.Examples."""
 
@@ -47,7 +45,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     # arguments, when TFT's compatibility TFXIO starts setting them.
     if physical_format is None:
       physical_format = "unknown"
-    super(_TFExampleRecordBase, self).__init__(
+    super().__init__(
         telemetry_descriptors=telemetry_descriptors,
         raw_record_column_name=raw_record_column_name,
         logical_format="tf_example",
@@ -163,7 +161,7 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
         will contain a column of the given name that contains serialized
         records.
     """
-    super(TFExampleBeamRecord, self).__init__(
+    super().__init__(
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         physical_format=physical_format)
@@ -209,7 +207,7 @@ class TFExampleRecord(_TFExampleRecordBase):
         be identifiers of the component itself and not individual instances of
         source use.
     """
-    super(TFExampleRecord, self).__init__(
+    super().__init__(
         schema=schema, raw_record_column_name=raw_record_column_name,
         telemetry_descriptors=telemetry_descriptors,
         physical_format="tfrecords_gzip")

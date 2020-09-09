@@ -25,7 +25,7 @@ class _FakeTFXIO(tfxio.TFXIO):
   """A fake TFXIO for testing the projection origin tracking."""
 
   def __init__(self, columns):
-    super(_FakeTFXIO, self).__init__()
+    super().__init__()
     self._columns = columns
 
   def ArrowSchema(self):

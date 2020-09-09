@@ -15,27 +15,19 @@
 
 from typing import Iterable, Text, Tuple, Union
 
-import six
-
 from tensorflow_metadata.proto.v0 import path_pb2
 
 
-# Text on py3, bytes on py2.
-Step = Union[bytes, Text]
-
-
-@six.python_2_unicode_compatible
 class ColumnPath(object):
   """ColumnPath addresses a column potentially nested under a StructArray."""
 
   __slot__ = ["_steps"]
 
-  def __init__(self, steps: Union[Iterable[Step], Step]):
+  def __init__(self, steps: Union[Iterable[Text], Text]):
     """If a single Step is specified, constructs a Path of that step."""
-    if isinstance(steps, (bytes, six.text_type)):
+    if isinstance(steps, Text):
       steps = (steps,)
-    self._steps = tuple(
-        s if isinstance(s, six.text_type) else s.decode("utf-8") for s in steps)
+    self._steps = tuple(steps)
 
   def to_proto(self) -> path_pb2.Path:
     """Creates a tensorflow_metadata path proto this ColumnPath."""
@@ -53,7 +45,7 @@ class ColumnPath(object):
     """
     return ColumnPath(path_proto.step)
 
-  def steps(self) -> Tuple[Step, ...]:
+  def steps(self) -> Tuple[Text, ...]:
     """Returns the tuple of steps that represents this ColumnPath."""
     return self._steps
 
@@ -70,7 +62,7 @@ class ColumnPath(object):
       raise ValueError("Root does not have parent.")
     return ColumnPath(self._steps[:-1])
 
-  def child(self, child_step: Step) -> "ColumnPath":
+  def child(self, child_step: Text) -> "ColumnPath":
     """Creates a new ColumnPath with a new child.
 
     example: ColumnPath(["this", "is", "my", "path"]).child("new_step") will
@@ -82,9 +74,7 @@ class ColumnPath(object):
     Returns:
       A ColumnPath with the new child_step
     """
-    if isinstance(child_step, six.text_type):
-      return ColumnPath(self._steps + (child_step,))
-    return ColumnPath(self._steps + (child_step.decode("utf-8"),))
+    return ColumnPath(self._steps + (child_step,))
 
   def prefix(self, ending_index: int) -> "ColumnPath":
     """Creates a new ColumnPath, taking the prefix until the ending_index.
@@ -114,7 +104,7 @@ class ColumnPath(object):
     """
     return ColumnPath(self._steps[starting_index:])
 
-  def initial_step(self) -> Step:
+  def initial_step(self) -> Text:
     """Returns the first step of this path.
 
     Raises:

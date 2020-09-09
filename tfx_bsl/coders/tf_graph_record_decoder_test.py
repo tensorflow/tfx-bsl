@@ -26,7 +26,7 @@ FLAGS = flags.FLAGS
 class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
   def __init__(self):
-    super(_DecoderForTesting, self).__init__("DecoderForTesting")
+    super().__init__("DecoderForTesting")
 
   def _decode_record_internal(self, record):
     indices = tf.transpose(tf.stack([
@@ -63,7 +63,7 @@ class _DecoderForTestWithInvalidRecordIndexTensorName(_DecoderForTesting):
 class TfGraphRecordDecoderTest(tf.test.TestCase):
 
   def setUp(self):
-    super(TfGraphRecordDecoderTest, self).setUp()
+    super().setUp()
     self._tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
 
   def test_save_load_decode(self):

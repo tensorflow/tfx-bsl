@@ -19,7 +19,6 @@ from typing import Dict, List, Text, Tuple, Union
 from absl import logging
 import numpy as np
 import pyarrow as pa
-import six
 import tensorflow as tf
 
 # CompositeTensor is not public yet.
@@ -99,8 +98,7 @@ class TensorsToRecordBatchConverter(object):
     return pa.record_batch(arrays, schema=self._arrow_schema)
 
 
-@six.add_metaclass(abc.ABCMeta)
-class _TypeHandler(object):
+class _TypeHandler(abc.ABC):
   """Interface of a type handler that converts a tensor to arrow arrays.
 
   Note that a handler may convert a Tensor to multiple pa.Arrays. See
@@ -158,7 +156,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
   __slots__ = ["_values_arrow_type"]
 
   def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
-    super(_VarLenSparseTensorHandler, self).__init__(tensor_name, type_spec)
+    super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
 
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
@@ -193,7 +191,7 @@ class _RaggedTensorHandler(_TypeHandler):
   __slots__ = ["_values_arrow_type", "_row_partition_dtype"]
 
   def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
-    super(_RaggedTensorHandler, self).__init__(tensor_name, type_spec)
+    super().__init__(tensor_name, type_spec)
 
     # TODO(b/159717195): clean up protected-access
     # pylint: disable=protected-access

@@ -17,7 +17,6 @@ import itertools
 
 import numpy as np
 import pyarrow as pa
-import six
 
 from tfx_bsl.arrow import array_util
 
@@ -235,13 +234,6 @@ _MAKE_LIST_ARRAY_TEST_CASES = [
         values=pa.array([], type=pa.int64()),
         expected=pa.array([None, None, None, None, None],
                           type=pa.list_(pa.int64()))),
-    dict(
-        testcase_name="long_num_parent",
-        num_parents=(long(1) if six.PY2 else 1),
-        parent_indices=pa.array([0], type=pa.int64()),
-        values=pa.array([1]),
-        expected=pa.array([[1]])
-    ),
     dict(
         testcase_name="leading nones",
         num_parents=3,

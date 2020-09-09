@@ -14,6 +14,7 @@
 """Tests for tfx_bsl.run_inference."""
 
 import base64
+from http import client as http_client
 import json
 import os
 try:
@@ -27,7 +28,6 @@ from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
 from googleapiclient import discovery
 from googleapiclient import http
-from six.moves import http_client
 import tensorflow as tf
 from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
@@ -40,7 +40,7 @@ from tensorflow_serving.apis import prediction_log_pb2
 class RunInferenceFixture(tf.test.TestCase):
 
   def setUp(self):
-    super(RunInferenceFixture, self).setUp()
+    super().setUp()
     self._predict_examples = [
         text_format.Parse(
             """
@@ -70,7 +70,7 @@ class RunInferenceFixture(tf.test.TestCase):
 class RunOfflineInferenceTest(RunInferenceFixture):
 
   def setUp(self):
-    super(RunOfflineInferenceTest, self).setUp()
+    super().setUp()
     self._predict_examples = [
         text_format.Parse(
             """
@@ -361,7 +361,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     class TestKerasModel(tf.keras.Model):
 
       def __init__(self, inference_model):
-        super(TestKerasModel, self).__init__(name='test_keras_model')
+        super().__init__(name='test_keras_model')
         self.inference_model = inference_model
 
       @tf.function(input_signature=[
@@ -449,7 +449,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
 class RunRemoteInferenceTest(RunInferenceFixture):
 
   def setUp(self):
-    super(RunRemoteInferenceTest, self).setUp()
+    super().setUp()
     self.example_path = self._get_output_data_dir('example')
     self._prepare_predict_examples(self.example_path)
     # This is from https://ml.googleapis.com/$discovery/rest?version=v1.

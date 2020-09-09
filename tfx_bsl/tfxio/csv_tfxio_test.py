@@ -180,7 +180,7 @@ class CsvRecordTest(parameterized.TestCase):
 
   @classmethod
   def setUpClass(cls):
-    super(CsvRecordTest, cls).setUpClass()
+    super().setUpClass()
     cls._example_file = os.path.join(FLAGS.test_tmpdir, "csvtexttest",
                                      "input.csv")
     tf.io.gfile.makedirs(os.path.dirname(cls._example_file))

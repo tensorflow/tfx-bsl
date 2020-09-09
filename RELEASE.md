@@ -15,6 +15,7 @@
 *   Depends on `absl-py>=0.9,<0.11`.
 *   Depends on `pandas>=1.0,<2`.
 *   Depends on `protobuf>=3.9.2,<4`.
+*   Stopped depending on `six`.
 
 ## Breaking changes
 
