@@ -13,12 +13,9 @@
 # limitations under the License.
 """Tests for tfx_bsl.sketches.MisraGriesSketch."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+import pickle
 
 import pyarrow as pa
-import six.moves.cPickle as pickle  # Pybind only supports cPickle for Python2.7
 from tfx_bsl import sketches
 
 from absl.testing import absltest

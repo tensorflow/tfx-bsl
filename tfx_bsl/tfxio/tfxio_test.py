@@ -13,10 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.tfxio."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import pyarrow as pa
 from tfx_bsl.tfxio import tfxio
 
@@ -38,8 +34,8 @@ class _FakeTFXIO(tfxio.TFXIO):
     ])
 
   def TensorRepresentations(self):
-    return {
-        c: text_format.Parse(  # pylint: disable=g-complex-comprehension
+    return {  # pylint: disable=g-complex-comprehension
+        c: text_format.Parse(
             """
               dense_tensor {
                 column_name: "%s"

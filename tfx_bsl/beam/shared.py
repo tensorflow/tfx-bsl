@@ -44,10 +44,6 @@ Example usage:
               | 'Unhash' >> beam.ParDo(
                    RainbowTableLookupFn(shared_handle), table)
 """
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
 
 import threading
 import uuid

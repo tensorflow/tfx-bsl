@@ -13,11 +13,6 @@
 # limitations under the License.
 """Contains TFXIO helpers for testing purposes."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 from typing import  Optional, Text
 
 from tfx_bsl.tfxio import tf_example_record

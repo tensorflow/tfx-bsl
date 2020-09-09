@@ -13,11 +13,6 @@
 # limitations under the License.
 """TensorAdapter."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import abc
 import typing
 from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union

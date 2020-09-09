@@ -46,7 +46,7 @@ def tfx_bsl_py_proto_library(
     py_proto_library(
         name = name,
         srcs = srcs,
-        srcs_version = "PY2AND3",
+        srcs_version = "PY3",
         deps = ["@protobuf_archive//:protobuf_python"] + deps,
         default_runtime = "@protobuf_archive//:protobuf_python",
         protoc = "@protobuf_archive//:protoc",

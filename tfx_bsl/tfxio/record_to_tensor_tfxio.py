@@ -13,11 +13,6 @@
 # limitations under the License.
 """RecordToTensorTFXIO."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import copy
 from typing import List, Iterator, Optional, Text, Union
 

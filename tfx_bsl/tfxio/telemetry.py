@@ -13,11 +13,6 @@
 # limitations under the License.
 """Contains PTransforms that collects telemetry from produced by TFXIO."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import enum
 from typing import Iterable, Callable, List, Optional, Text
 

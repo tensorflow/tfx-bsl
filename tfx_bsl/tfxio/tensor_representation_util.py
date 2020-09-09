@@ -13,11 +13,6 @@
 # limitations under the License.
 """TensorRepresentation utilities."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 from typing import List, Dict, Mapping, Optional, Text, Tuple, Union
 
 from absl import logging

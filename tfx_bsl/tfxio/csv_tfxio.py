@@ -13,11 +13,6 @@
 # limitations under the License.
 """TFXIO implementation for csv."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import abc
 import copy
 from typing import List, Optional, Text

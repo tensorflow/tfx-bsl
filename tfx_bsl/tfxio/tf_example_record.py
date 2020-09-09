@@ -13,11 +13,6 @@
 # limitations under the License.
 """TFXIO implementation for tf.Example records."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import abc
 from typing import List, Optional, Text, Union
 

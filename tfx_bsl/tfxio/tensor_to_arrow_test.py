@@ -13,10 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.tensor_to_arrow."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 import pyarrow as pa
 import tensorflow as tf

@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Contains predicates about pyarrow's capabilities."""
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
 
 import pyarrow as pa
 from tfx_bsl.arrow import array_util

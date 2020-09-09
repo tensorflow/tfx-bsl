@@ -13,11 +13,6 @@
 # limitations under the License.
 """Telemetry utils."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 from typing import List, Text
 
 

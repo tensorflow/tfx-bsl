@@ -12,15 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """TFXIO telemetry test utilities."""
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
 
+from typing import List, Text
 import unittest
 
 import apache_beam as beam
-from typing import List, Text
 
 
 def ValidateMetrics(

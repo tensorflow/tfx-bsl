@@ -20,10 +20,6 @@ python -m tfx_bsl.test_util.run_all_tests \
 Exits with code 0 if all discovered tests are successful, code -1 if any
 discovered tests fail and -2 if no tests were discovered.
 """
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
 
 import multiprocessing
 import os

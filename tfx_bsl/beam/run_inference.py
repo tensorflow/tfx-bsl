@@ -13,11 +13,6 @@
 # limitations under the License.
 """Run batch inference on saved model."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import abc
 import base64
 import collections

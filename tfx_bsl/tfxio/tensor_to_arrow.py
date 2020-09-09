@@ -13,11 +13,6 @@
 # limitations under the License.
 """Utils to convert TF Tensors to Arrow arrays."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import abc
 from typing import Dict, List, Text, Tuple, Union
 

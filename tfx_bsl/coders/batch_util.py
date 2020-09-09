@@ -13,11 +13,6 @@
 # limitations under the License.
 """Utilities for batching."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 from typing import Optional
 
 # Beam might grow the batch size too large for Arrow BinaryArray / ListArray

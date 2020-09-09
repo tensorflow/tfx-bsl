@@ -13,10 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.coders.tf_graph_record_decoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import tempfile
 
 from absl import flags

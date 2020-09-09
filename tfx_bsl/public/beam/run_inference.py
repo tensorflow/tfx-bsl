@@ -14,11 +14,6 @@
 # Lint as: python3
 """Publich API of batch inference."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import apache_beam as beam
 import tensorflow as tf
 from tfx_bsl.beam import run_inference

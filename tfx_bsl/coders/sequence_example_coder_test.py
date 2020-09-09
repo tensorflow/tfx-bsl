@@ -13,10 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.coders.sequence_example_coder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.coders import sequence_example_coder

@@ -13,10 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.telemetry."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import collections
 
 import apache_beam as beam

@@ -13,10 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.telemetry.util."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from tfx_bsl.telemetry import util
 from absl.testing import absltest
 

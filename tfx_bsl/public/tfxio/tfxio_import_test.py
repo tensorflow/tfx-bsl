@@ -13,10 +13,6 @@
 # limitations under the License.
 """Test to make sure public TFXIO symbols can be imported."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import absltest
 
 

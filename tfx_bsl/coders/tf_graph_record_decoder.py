@@ -13,11 +13,6 @@
 # limitations under the License.
 """TFGraphRecordDecoder and utilities to save and load them."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 import abc
 from typing import Dict, List, Optional, Text, Union
 

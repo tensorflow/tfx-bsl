@@ -13,11 +13,6 @@
 # limitations under the License.
 """Defines ColumnPath class."""
 
-from __future__ import absolute_import
-from __future__ import division
-# Standard __future__ imports
-from __future__ import print_function
-
 from typing import Iterable, Text, Tuple, Union
 
 import six
