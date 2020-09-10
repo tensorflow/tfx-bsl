@@ -21,7 +21,6 @@ from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Se
 import apache_beam as beam
 import numpy as np
 import pyarrow as pa
-import tensorflow as tf
 from tfx_bsl.coders import batch_util
 
 from tensorflow_metadata.proto.v0 import schema_pb2
@@ -30,9 +29,8 @@ from tensorflow_metadata.proto.v0 import statistics_pb2
 PARSE_CSV_LINE_YIELDS_RAW_RECORDS = True
 
 CSVCell = bytes
-# Text if Python3, bytes otherwise.
-CSVLine = Union[Text, bytes]
-ColumnName = Union[Text, bytes]
+CSVLine = Text
+ColumnName = Text
 
 
 class ColumnType(enum.IntEnum):
@@ -73,9 +71,8 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
                      delimiter: Text = ",",
                      skip_blank_lines: bool = True,
                      schema: Optional[schema_pb2.Schema] = None,
-                     multivalent_columns: Optional[List[Union[Text,
-                                                              bytes]]] = None,
-                     secondary_delimiter: Optional[Union[Text, bytes]] = None,
+                     multivalent_columns: Optional[List[Text]] = None,
+                     secondary_delimiter: Optional[Text] = None,
                      raw_record_column_name: Optional[Text] = None,
                      produce_large_types: bool = False):
   """Decodes CSV records into Arrow RecordBatches.
@@ -160,7 +157,7 @@ class ParseCSVLine(beam.DoFn):
   The CSVLine is the raw csv row. The raw csv row will always be output.
   """
 
-  def __init__(self, delimiter: Union[Text, bytes]):
+  def __init__(self, delimiter: Text):
     self._delimiter = delimiter
     self._reader = None
 
@@ -185,7 +182,7 @@ class ColumnTypeInferrer(beam.CombineFn):
       column_names: List[ColumnName],
       skip_blank_lines: bool,
       multivalent_columns: Optional[Set[ColumnName]] = None,
-      secondary_delimiter: Optional[Union[Text, bytes]] = None) -> None:
+      secondary_delimiter: Optional[Text] = None) -> None:
     """Initializes a feature type inferrer combiner."""
     self._column_names = column_names
     self._skip_blank_lines = skip_blank_lines
@@ -228,7 +225,8 @@ class ColumnTypeInferrer(beam.CombineFn):
       # Get the already inferred type of the feature.
       previous_type = accumulator.get(column_name, None)
       if column_name in self._multivalent_columns:
-        values = self._multivalent_reader.ReadLine(cell)
+        # the reader only accepts str but v is bytes.
+        values = self._multivalent_reader.ReadLine(cell.decode())
         current_type = max([_InferValueType(value) for value in values
                            ]) if values else ColumnType.UNKNOWN
       else:
@@ -284,7 +282,7 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
   def __init__(self,
                skip_blank_lines: bool,
                multivalent_columns: Optional[Set[ColumnName]] = None,
-               secondary_delimiter: Optional[Union[Text, bytes]] = None,
+               secondary_delimiter: Optional[Text] = None,
                raw_record_column_name: Optional[Text] = None,
                produce_large_types: bool = False):
     self._skip_blank_lines = skip_blank_lines
@@ -308,8 +306,8 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
 
   def _get_column_handler(
       self, column_info: ColumnInfo
-  ) -> Optional[Callable[[CSVCell], Optional[Iterable[Union[int, float, bytes,
-                                                            Text]]]]]:
+  ) -> Optional[Callable[[CSVCell], Optional[Iterable[Union[int, float,
+                                                            bytes]]]]]:
     if column_info.type == ColumnType.IGNORE:
       return None
     value_converter = _VALUE_CONVERTER_MAP.get(column_info.type)
@@ -322,7 +320,8 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
         return lambda v: None
       return lambda v: [  # pylint: disable=g-long-lambda
           value_converter(sub_v)
-          for sub_v in self._multivalent_reader.ReadLine(v)
+          # the reader only accepts str but v is bytes.
+          for sub_v in self._multivalent_reader.ReadLine(v.decode())
       ]
     else:
       return lambda v: (value_converter(v),)
@@ -438,18 +437,17 @@ def GetArrowSchema(column_names: List[Text],
 
 
 class _CSVRecordReader(object):
-  """A picklable wrapper for csv.reader that can decode one record at a time."""
+  """A picklable wrapper for csv.reader that can parse one record at a time."""
 
-  def __init__(self, delimiter: Union[Text, bytes]):
+  def __init__(self, delimiter: Text):
     self._delimiter = delimiter
     self._line_iterator = _MutableRepeat()
     self._reader = csv.reader(self._line_iterator, delimiter=delimiter)
-    self._to_reader_input = tf.compat.as_text
 
   def ReadLine(self, csv_line: CSVLine) -> List[CSVCell]:
     """Reads out bytes for PY2 and Unicode for PY3."""
-    self._line_iterator.SetItem(self._to_reader_input(csv_line))
-    return [tf.compat.as_bytes(cell) for cell in next(self._reader)]
+    self._line_iterator.SetItem(csv_line)
+    return [cell.encode() for cell in next(self._reader)]
 
   def __getstate__(self):
     return (self._delimiter,)
@@ -504,7 +502,7 @@ def _InferValueType(value: CSVCell) -> ColumnType:
 
 def _GetColumnInfosFromSchema(
     schema: schema_pb2.Schema,
-    column_names: List[Union[bytes, Text]]) -> List[ColumnInfo]:
+    column_names: List[Text]) -> List[ColumnInfo]:
   """Get column name and type from the input schema."""
   feature_type_map = {}
   for feature in schema.feature:

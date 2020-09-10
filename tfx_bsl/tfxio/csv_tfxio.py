@@ -82,6 +82,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
       # Decode raw csv lines to record batches.
       record_batches = (
           raw_records_pcoll
+          | "BytesToStr" >> beam.Map(lambda b: b.decode())
           | "CSVToRecordBatch" >> csv_decoder.CSVToRecordBatch(
               column_names=self._column_names,
               delimiter=self._delimiter,
