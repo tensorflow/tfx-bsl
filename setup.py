@@ -100,6 +100,19 @@ class _BinaryDistribution(Distribution):
     return True
 
 
+def select_constraint(default, nightly=None, git_master=None):
+  """Select dependency constraint based on TFX_DEPENDENCY_SELECTOR env var."""
+  selector = os.environ.get('TFX_DEPENDENCY_SELECTOR')
+  if selector == 'UNCONSTRAINED':
+    return ''
+  elif selector == 'NIGHTLY' and nightly is not None:
+    return nightly
+  elif selector == 'GIT_MASTER' and git_master is not None:
+    return git_master
+  else:
+    return default
+
+
 # Get version from version module.
 with open('tfx_bsl/version.py') as fp:
   globals_dict = {}
@@ -150,7 +163,10 @@ setup(
         'protobuf>=3.9.2,<4',
         'pyarrow>=0.17,<0.18',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,<3',
-        'tensorflow-metadata>=0.24,<0.25',
+        'tensorflow-metadata' + select_constraint(
+            default='>=0.24,<0.25',
+            nightly='>=0.25.0.dev',
+            git_master='@git+https://github.com/tensorflow/metadata@master'),
         'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,<3',
     ],
     python_requires='>=3.6,<4',
