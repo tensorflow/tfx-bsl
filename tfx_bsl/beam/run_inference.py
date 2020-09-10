@@ -15,15 +15,11 @@
 
 import abc
 import base64
-import collections
 import os
 import platform
 import sys
 import time
-try:
-  import resource
-except ImportError:
-  resource = None
+from typing import Any, Dict, Generator, Iterable, List, Mapping, NamedTuple, Sequence, Text, Tuple, Union
 
 from absl import logging
 import apache_beam as beam
@@ -38,16 +34,19 @@ import tensorflow as tf
 from tfx_bsl.beam import shared
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
-from typing import Any, Generator, Iterable, List, Mapping, Sequence, Text, \
-    Tuple, Union
 
 # TODO(b/140306674): stop using the internal TF API.
-from tensorflow.python.saved_model import loader_impl
+from tensorflow.python.saved_model import loader_impl  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import inference_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_serving.apis import regression_pb2
 
+# pylint: disable=g-import-not-at-top
+try:
+  import resource
+except ImportError:
+  resource = None
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
 # pylint: disable=g-import-not-at-top
@@ -57,6 +56,7 @@ try:
   from tensorflow.contrib.boosted_trees.python.ops import quantile_ops as _  # pylint: disable=unused-import
 except ImportError:
   pass
+# pylint: enable=g-import-not-at-top
 
 _DEFAULT_INPUT_KEY = 'examples'
 _METRICS_DESCRIPTOR_INFERENCE = 'BulkInferrer'
@@ -113,6 +113,7 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
 
   batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
   operation_type = _get_operation_type(inference_spec_type)
+  # pylint: disable=no-value-for-parameter
   if operation_type == OperationType.CLASSIFICATION:
     return batched_examples | 'Classify' >> _Classify(inference_spec_type)
   elif operation_type == OperationType.REGRESSION:
@@ -126,11 +127,13 @@ def RunInferenceImpl(  # pylint: disable=invalid-name
     raise ValueError('Unsupported operation_type %s' % operation_type)
 
 
-_IOTensorSpec = collections.namedtuple(
-    '_IOTensorSpec',
-    ['input_tensor_alias', 'input_tensor_name', 'output_alias_tensor_names'])
+_IOTensorSpec = NamedTuple('_IOTensorSpec',
+                           [('input_tensor_alias', Text),
+                            ('input_tensor_name', Text),
+                            ('output_alias_tensor_names', Dict[Text, Text])])
 
-_Signature = collections.namedtuple('_Signature', ['name', 'signature_def'])
+_Signature = NamedTuple('_Signature', [('name', Text),
+                                       ('signature_def', _SignatureDef)])
 
 
 @beam.ptransform_fn
@@ -980,7 +983,7 @@ def _signature_pre_process(signature: _SignatureDef) -> _IOTensorSpec:
 
 
 def _signature_pre_process_classify(
-    signature: _SignatureDef) -> Tuple[Text, Mapping[Text, Text]]:
+    signature: _SignatureDef) -> Tuple[Text, Dict[Text, Text]]:
   """Returns input tensor name and output alias tensor names from signature.
 
   Args:
@@ -1014,7 +1017,7 @@ def _signature_pre_process_classify(
 
 
 def _signature_pre_process_predict(
-    signature: _SignatureDef) -> Tuple[Text, Mapping[Text, Text]]:
+    signature: _SignatureDef) -> Tuple[Text, Dict[Text, Text]]:
   """Returns input tensor name and output alias tensor names from signature.
 
   Args:
@@ -1032,7 +1035,7 @@ def _signature_pre_process_predict(
 
 
 def _signature_pre_process_regress(
-    signature: _SignatureDef) -> Tuple[Text, Mapping[Text, Text]]:
+    signature: _SignatureDef) -> Tuple[Text, Dict[Text, Text]]:
   """Returns input tensor name and output alias tensor names from signature.
 
   Args:

@@ -13,14 +13,18 @@
 # limitations under the License.
 """tfxio.TensorflowDataset options."""
 
-import collections
-from typing import Optional, Text
+from typing import Optional, NamedTuple, Text
 
 
 class TensorFlowDatasetOptions(
-    collections.namedtuple('TensorFlowDatasetOptions', [
-        'batch_size', 'drop_final_batch', 'num_epochs', 'shuffle',
-        'shuffle_buffer_size', 'shuffle_seed', 'label_key'
+    NamedTuple('TensorFlowDatasetOptions', [
+        ('batch_size', int),
+        ('drop_final_batch', bool),
+        ('num_epochs', Optional[int]),
+        ('shuffle', bool),
+        ('shuffle_buffer_size', int),
+        ('shuffle_seed', Optional[int]),
+        ('label_key', Optional[Text]),
     ])):
   """Options for TFXIO's TensorFlowDataset.
 

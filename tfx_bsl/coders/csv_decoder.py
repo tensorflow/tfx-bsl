@@ -14,10 +14,9 @@
 """Decode CSV records into in-memory representation for tf data validation."""
 # TODO(b/131315065): optimize the CSV decoder.
 
-import collections
 import csv
 import enum
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Text, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Text, Tuple, Union
 
 import apache_beam as beam
 import numpy as np
@@ -53,12 +52,10 @@ class ColumnType(enum.IntEnum):
   assert FLOAT < STRING
 
 
-ColumnInfo = collections.namedtuple(
-    "ColumnInfo",
-    [
-        "name",  # ColumnName
-        "type",  # ColumnType
-    ])
+ColumnInfo = NamedTuple("ColumnInfo", [
+    ("name", ColumnName),
+    ("type", ColumnType),
+])
 
 _SCHEMA_TYPE_TO_COLUMN_TYPE = {
     schema_pb2.INT: ColumnType.INT,
