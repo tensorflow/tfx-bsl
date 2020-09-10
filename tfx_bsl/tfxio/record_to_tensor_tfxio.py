@@ -109,6 +109,20 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
     return self_copy
 
 
+class BeamRecordToTensorTFXIO(_RecordToTensorTFXIO):
+  """TFXIO implementation that decodes records in pcoll[bytes] with TF Graph."""
+
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
+    return (beam.ptransform_fn(lambda x: x)()
+            .with_input_types(bytes)
+            .with_output_types(bytes))
+
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
+    raise NotImplementedError
+
+
 class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
   """Uses a TfGraphRecordDecoder to decode records on TFRecord files.
 

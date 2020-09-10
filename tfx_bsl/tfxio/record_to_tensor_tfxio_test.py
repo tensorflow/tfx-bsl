@@ -141,16 +141,29 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
       dict(testcase_name="noattach_raw_records_but_with_record_index",
            attach_raw_records=False,
            create_decoder=lambda: _DecoderForTestingWithSparseRecordIndex()),
+      dict(testcase_name="beam_record_tfxio",
+           attach_raw_records=False,
+           create_decoder=lambda: _DecoderForTesting(),
+           beam_record_tfxio=True),
   ])
   # pylint: enable=unnecessary-lambda
   def test_beam_source_and_tensor_adapter(
-      self, attach_raw_records, create_decoder):
+      self, attach_raw_records, create_decoder, beam_record_tfxio=False):
     decoder = create_decoder()
     raw_record_column_name = "_raw_records" if attach_raw_records else None
     decoder_path = _write_decoder(decoder)
-    tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
-        self._input_path, decoder_path, _TELEMETRY_DESCRIPTORS,
-        raw_record_column_name=raw_record_column_name)
+    if beam_record_tfxio:
+      tfxio = record_to_tensor_tfxio.BeamRecordToTensorTFXIO(
+          saved_decoder_path=decoder_path,
+          telemetry_descriptors=_TELEMETRY_DESCRIPTORS,
+          physical_format="tfrecords_gzip",
+          raw_record_column_name=raw_record_column_name)
+    else:
+      tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
+          self._input_path,
+          decoder_path,
+          _TELEMETRY_DESCRIPTORS,
+          raw_record_column_name=raw_record_column_name)
     expected_tensor_representations = {
         "st1":
             text_format.Parse("""varlen_sparse_tensor { column_name: "st1" }""",
@@ -213,7 +226,8 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
         self.assertAllEqual(st.dense_shape, [2, 1])
 
     p = beam.Pipeline()
-    rb_pcoll = p | tfxio.BeamSource(batch_size=len(_RECORDS))
+    pipeline_input = (p | beam.Create(_RECORDS)) if beam_record_tfxio else p
+    rb_pcoll = pipeline_input | tfxio.BeamSource(batch_size=len(_RECORDS))
     beam_testing_util.assert_that(rb_pcoll, _assert_fn)
     pipeline_result = p.run()
     pipeline_result.wait_until_finish()
@@ -295,6 +309,7 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
         batch_size=1, shuffle=False, num_epochs=1, label_key=label_key)
     with self.assertRaisesRegex(ValueError, "The `label_key` provided.*"):
       tfxio.TensorFlowDataset(options=options)
+
 
 if __name__ == "__main__":
   # Do not run these tests under TF1.x -- not supported.
