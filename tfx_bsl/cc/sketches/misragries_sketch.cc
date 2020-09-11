@@ -29,7 +29,7 @@ namespace {
 
 // Accounts for rounding error due to float arithmetic.
 bool LessThanOrEqualToZero(double value) {
-  // TODO(monicadsong): Investigate if weighted/unweighted cases should use
+  // TODO(b/168224198): Investigate if weighted/unweighted cases should use
   // different values of kEpsilon.
   static constexpr double kEpsilon = 1e-8;
   return (value < kEpsilon);
@@ -181,9 +181,8 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
           item_counts_.insert(std::pair<std::string, double>(item, weight));
       // Item is already in map.
       if (!insertion_pair.second) {
-        // TODO(monicadsong): Investigate and test the accumulated numerical
-        // error due to floating point summation. See Kahan summation algorithm
-        // for a possible solution.
+        // TODO(b/168224198): Investigate and test the accumulated numerical
+        // error due to floating point summation.
         insertion_pair.first->second += weight;
       // New item just added, so there might be an overflow.
       } else if (item_counts_.size() > num_buckets_) {
