@@ -261,19 +261,23 @@ class _RecordsToRecordBatch(beam.DoFn):
     self._produce_large_raw_record_column = produce_large_raw_record_column
     self._record_index_column_name = record_index_column_name
 
-    self._decoder = None
     self._tensors_to_record_batch_converter = None
+    self._decode_fn = None
 
   def setup(self):
-    self._decoder = tf_graph_record_decoder.load_decoder(
+    decoder = tf_graph_record_decoder.load_decoder(
         self._saved_decoder_path)
     self._tensors_to_record_batch_converter = (
         tensor_to_arrow.TensorsToRecordBatchConverter(
-            self._decoder.output_type_specs()))
+            decoder.output_type_specs()))
+    # Store the concrete function to avoid tracing upon calling.
+    self._decode_fn = decoder.decode_record.get_concrete_function()
 
   def process(self, records: List[bytes]) -> Iterator[pa.RecordBatch]:
+    # The concrete function only accepts Tensors, so tf.convert_to_tensor
+    # is needed.
     decoded = self._tensors_to_record_batch_converter.convert(
-        self._decoder.decode_record(records))
+        self._decode_fn(tf.convert_to_tensor(records, dtype=tf.string)))
     if self._raw_record_column_name is None:
       yield decoded
     else:

@@ -165,13 +165,13 @@ _CONVERT_TEST_CASES = [
         type_specs={
             "sp1":
                 tf.RaggedTensorSpec(
-                    tf.TensorShape([2, None]),
+                    tf.TensorShape([3, None]),
                     tf.int64,
                     ragged_rank=1,
                     row_splits_dtype=tf.int64),
             "sp2":
                 tf.RaggedTensorSpec(
-                    tf.TensorShape([2, None]),
+                    tf.TensorShape([3, None]),
                     tf.string,
                     ragged_rank=1,
                     row_splits_dtype=tf.int64),
@@ -200,15 +200,18 @@ _CONVERT_TEST_CASES = [
             "sp1":
                 tf.RaggedTensor.from_row_splits(
                     values=np.asarray([1, 5, 9], dtype=np.int64),
-                    row_splits=np.asarray([0, 2, 3], dtype=np.int64)),
+                    row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64)),
             "sp2":
                 tf.RaggedTensor.from_row_splits(
                     values=np.asarray([b"x", b"y", b"z"], dtype=np.str),
-                    row_splits=np.asarray([0, 2, 3], dtype=np.int64))
+                    row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64))
         },
         expected_record_batch={
-            "sp1": pa.array([[1, 5], [9]], type=pa.list_(pa.int32())),
-            "sp2": pa.array([[b"x", b"y"], [b"z"]], type=pa.list_(pa.binary())),
+            "sp1":
+                pa.array([[1, 5], [], [9]], type=pa.list_(pa.int32())),
+            "sp2":
+                pa.array([[b"x", b"y"], [], [b"z"]], type=pa.list_(
+                    pa.binary())),
         })
 ] + _make_2d_varlen_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases()

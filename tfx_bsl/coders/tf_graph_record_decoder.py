@@ -14,7 +14,7 @@
 """TFGraphRecordDecoder and utilities to save and load them."""
 
 import abc
-from typing import Dict, List, Optional, Text, Union
+from typing import Any, Dict, Optional, Text, Union
 
 import tensorflow as tf
 
@@ -45,10 +45,13 @@ class TFGraphRecordDecoder(tf.Module, metaclass=abc.ABCMeta):
     """
     super().__init__(name=name)
 
-  @tf.function(input_signature=[tf.TensorSpec(shape=(None,), dtype=tf.string)])
-  def decode_record(self, records: List[bytes]) -> Dict[Text, TensorAlike]:
+  # About the "Any" type hint in the signature: this is a tf.function, so its
+  # input could be of various types (lists, numpy arrays, TF tensors, etc.)
+  @tf.function(input_signature=[tf.TensorSpec(shape=(None,), dtype=tf.string)],
+               autograph=False)
+  def decode_record(self, records: Any) -> Dict[Text, TensorAlike]:
     """Decodes a list of bytes to a Dict of (composite) tensors."""
-    return self._decode_record_internal(tf.convert_to_tensor(records))
+    return self._decode_record_internal(records)
 
   def output_type_specs(self) -> Dict[Text, tf.TypeSpec]:
     """Returns the tf.TypeSpecs of the decoded tensors.
@@ -70,6 +73,8 @@ class TFGraphRecordDecoder(tf.Module, metaclass=abc.ABCMeta):
 
     Implementations must use TF ops to derive the result (composite) tensors, as
     this function will be traced and become a tf.function (thus a TF Graph).
+    Note that autograph is not enabled in such tracing, which means any python
+    control flow / loops will not be converted to TF cond / loops automatically.
 
     The returned tensors must be batch-aligned (i.e. they should be at least
     of rank 1, and their outer-most dimensions must be of the same size). They
@@ -145,8 +150,8 @@ class LoadedDecoder(TFGraphRecordDecoder):
     self._record_index_tensor_name = (
         record_index_tensor_name if record_index_tensor_name else None)
 
-  def _decode_record_internal(self,
-                              record: List[bytes]) -> Dict[Text, TensorAlike]:
+  def _decode_record_internal(
+      self, record: tf.Tensor) -> Dict[Text, TensorAlike]:
     return self._loaded_module.decode_record(record)
 
   @property

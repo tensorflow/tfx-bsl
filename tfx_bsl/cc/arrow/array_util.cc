@@ -301,6 +301,7 @@ Status MakeListArrayFromParentIndicesAndValues(
     const size_t num_parents,
     const std::shared_ptr<arrow::Array>& parent_indices,
     const std::shared_ptr<Array>& values,
+    const bool empty_list_as_null,
     std::shared_ptr<Array>* out) {
   if (parent_indices->type()->id() != arrow::Type::INT64) {
     return errors::InvalidArgument("Parent indices array must be int64.");
@@ -320,8 +321,10 @@ Status MakeListArrayFromParentIndicesAndValues(
   }
 
   arrow::TypedBufferBuilder<bool> null_bitmap_builder;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(null_bitmap_builder.Reserve(num_parents)));
+  if (empty_list_as_null) {
+    TFX_BSL_RETURN_IF_ERROR(
+        FromArrowStatus(null_bitmap_builder.Reserve(num_parents)));
+  }
   arrow::TypedBufferBuilder<int32_t> offsets_builder;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(offsets_builder.Reserve(num_parents + 1)));
@@ -330,21 +333,23 @@ Status MakeListArrayFromParentIndicesAndValues(
   for (int i = 0, current_pi = 0; i < num_parents; ++i) {
     if (current_pi >= parent_indices_int64.length() ||
         parent_indices_int64.Value(current_pi) != i) {
-      null_bitmap_builder.UnsafeAppend(false);
+      if (empty_list_as_null) null_bitmap_builder.UnsafeAppend(false);
     } else {
       while (current_pi < parent_indices_int64.length() &&
              parent_indices_int64.Value(current_pi) == i) {
         ++current_pi;
       }
-      null_bitmap_builder.UnsafeAppend(true);
+      if (empty_list_as_null) null_bitmap_builder.UnsafeAppend(true);
     }
     offsets_builder.UnsafeAppend(current_pi);
   }
 
   const int64_t null_count = null_bitmap_builder.false_count();
   std::shared_ptr<arrow::Buffer> null_bitmap_buffer;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(null_bitmap_builder.Finish(&null_bitmap_buffer)));
+  if (empty_list_as_null) {
+    TFX_BSL_RETURN_IF_ERROR(
+        FromArrowStatus(null_bitmap_builder.Finish(&null_bitmap_buffer)));
+  }
   std::shared_ptr<arrow::Buffer> offsets_buffer;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(offsets_builder.Finish(&offsets_buffer)));

@@ -228,26 +228,50 @@ _MAKE_LIST_ARRAY_INVALID_INPUT_TEST_CASES = [
 
 _MAKE_LIST_ARRAY_TEST_CASES = [
     dict(
+        testcase_name="parents_are_all_null",
+        num_parents=5,
+        parent_indices=pa.array([], type=pa.int64()),
+        values=pa.array([], type=pa.int64()),
+        empty_list_as_null=True,
+        expected=pa.array([None, None, None, None, None],
+                          type=pa.list_(pa.int64()))),
+    dict(
+        testcase_name="leading_nulls",
+        num_parents=3,
+        parent_indices=pa.array([2], type=pa.int64()),
+        values=pa.array([1]),
+        empty_list_as_null=True,
+        expected=pa.array([None, None, [1]]),
+    ),
+    dict(
+        testcase_name="same_parent_and_some_nulls",
+        num_parents=4,
+        parent_indices=pa.array([0, 0, 0, 3, 3], type=pa.int64()),
+        values=pa.array(["a", "b", "c", "d", "e"]),
+        empty_list_as_null=True,
+        expected=pa.array([["a", "b", "c"], None, None, ["d", "e"]])),
+    dict(
         testcase_name="parents_are_all_empty",
         num_parents=5,
         parent_indices=pa.array([], type=pa.int64()),
         values=pa.array([], type=pa.int64()),
-        expected=pa.array([None, None, None, None, None],
-                          type=pa.list_(pa.int64()))),
+        empty_list_as_null=False,
+        expected=pa.array([[], [], [], [], []], type=pa.list_(pa.int64()))),
     dict(
-        testcase_name="leading nones",
+        testcase_name="leading_empties",
         num_parents=3,
         parent_indices=pa.array([2], type=pa.int64()),
         values=pa.array([1]),
-        expected=pa.array([None, None, [1]]),
+        empty_list_as_null=False,
+        expected=pa.array([[], [], [1]]),
     ),
     dict(
-        testcase_name="same_parent_and_holes",
+        testcase_name="same_parent_and_some_empties",
         num_parents=4,
         parent_indices=pa.array([0, 0, 0, 3, 3], type=pa.int64()),
         values=pa.array(["a", "b", "c", "d", "e"]),
-        expected=pa.array([["a", "b", "c"], None, None, ["d", "e"]])
-    )
+        empty_list_as_null=False,
+        expected=pa.array([["a", "b", "c"], [], [], ["d", "e"]])),
 ]
 
 
@@ -261,9 +285,13 @@ class MakeListArrayFromParentIndicesAndValuesTest(parameterized.TestCase):
           num_parents, parent_indices, values)
 
   @parameterized.named_parameters(*_MAKE_LIST_ARRAY_TEST_CASES)
-  def testMakeListArray(self, num_parents, parent_indices, values, expected):
+  def testMakeListArray(self, num_parents, parent_indices, values,
+                        empty_list_as_null, expected):
     actual = array_util.MakeListArrayFromParentIndicesAndValues(
-        num_parents, parent_indices, values)
+        num_parents, parent_indices, values, empty_list_as_null)
+    actual.validate()
+    if not empty_list_as_null:
+      self.assertEqual(actual.null_count, 0)
     self.assertTrue(
         actual.equals(expected),
         "actual: {}, expected: {}".format(actual, expected))

@@ -20,6 +20,7 @@ from absl import logging
 import numpy as np
 import pyarrow as pa
 import tensorflow as tf
+from tfx_bsl.arrow import array_util
 
 # CompositeTensor is not public yet.
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
@@ -160,10 +161,28 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
 
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
-    r = tf.RaggedTensor.from_sparse(tensor)
-    return [pa.ListArray.from_arrays(
-        pa.array(np.asarray(r.row_splits), type=pa.int32()),
-        pa.array(np.asarray(r.values), type=self._values_arrow_type))]
+    # Algorithm:
+    # Assume:
+    #   - the COO indices are sorted (partially checked below)
+    #   - the SparseTensor is 2-D (checked in can_handle())
+    #   - the SparseTensor is ragged (partially checked below)
+    # Then the first dim of those COO indices contains "parent indices":
+    # parent_index[i] == j means i-th value belong to j-th sub list.
+    # Then we have a C++ util to convert parent indices + values to a ListArray.
+    dense_shape = np.asarray(tensor.dense_shape)
+    indices = np.asarray(tensor.indices)
+    assert dense_shape[1] == np.max(indices, 0)[1] + 1, (
+        "SparseTensor is not 2-D ragged")
+    parent_indices = indices[:, 0]
+    assert np.min(np.diff(parent_indices), initial=0) >= 0, (
+        "The sparse indices must be sorted")
+    return [
+        array_util.MakeListArrayFromParentIndicesAndValues(
+            dense_shape[0],
+            pa.array(parent_indices, type=pa.int64()),
+            pa.array(np.asarray(tensor.values), type=self._values_arrow_type),
+            empty_list_as_null=False)
+    ]
 
   def arrow_fields(self) -> List[pa.Field]:
     return [

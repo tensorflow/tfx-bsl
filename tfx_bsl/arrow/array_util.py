@@ -27,7 +27,7 @@ try:
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import GetBinaryArrayTotalByteSize
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import IndexIn
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import ValueCounts
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import MakeListArrayFromParentIndicesAndValues
+  from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import MakeListArrayFromParentIndicesAndValues as _MakeListArrayFromParentIndicesAndValues
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import CooFromListArray
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import FillNullLists
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import GetByteSize
@@ -71,3 +71,14 @@ def ToSingletonListArray(array: pa.Array):
   values_non_null = array.take(pa.array(np.flatnonzero(presence_mask)))
   return pa.ListArray.from_arrays(
       pa.array(offsets_np, mask=list_array_null_mask), values_non_null)
+
+
+def MakeListArrayFromParentIndicesAndValues(num_parents: int,
+                                            parent_indices: pa.Array,
+                                            values: pa.Array,
+                                            empty_list_as_null: bool = True):
+  return _MakeListArrayFromParentIndicesAndValues(num_parents, parent_indices,
+                                                  values, empty_list_as_null)
+
+
+MakeListArrayFromParentIndicesAndValues.__doc__ = _MakeListArrayFromParentIndicesAndValues.__doc__
