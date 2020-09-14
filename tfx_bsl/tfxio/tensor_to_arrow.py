@@ -171,7 +171,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     # Then we have a C++ util to convert parent indices + values to a ListArray.
     dense_shape = np.asarray(tensor.dense_shape)
     indices = np.asarray(tensor.indices)
-    assert dense_shape[1] == np.max(indices, 0)[1] + 1, (
+    assert indices.size == 0 or dense_shape[1] == np.max(indices, 0)[1] + 1, (
         "SparseTensor is not 2-D ragged")
     parent_indices = indices[:, 0]
     assert np.min(np.diff(parent_indices), initial=0) >= 0, (

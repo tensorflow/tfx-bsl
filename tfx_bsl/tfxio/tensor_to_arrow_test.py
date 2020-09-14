@@ -212,7 +212,29 @@ _CONVERT_TEST_CASES = [
             "sp2":
                 pa.array([[b"x", b"y"], [], [b"z"]], type=pa.list_(
                     pa.binary())),
-        })
+        }),
+    dict(
+        testcase_name="sparse_tensor_no_value",
+        type_specs={
+            "sp1": tf.SparseTensorSpec([None, None], tf.int32),
+        },
+        expected_schema={
+            "sp1": pa.list_(pa.int32()),
+        },
+        expected_tensor_representations={
+            "sp1": """varlen_sparse_tensor { column_name: "sp1" }""",
+        },
+        tensor_input={
+            "sp1":
+                tf.SparseTensor(
+                    values=tf.constant([], dtype=tf.int32),
+                    indices=tf.constant([], shape=(0, 2), dtype=tf.int64),
+                    dense_shape=[2, 0]),
+        },
+        expected_record_batch={
+            "sp1":
+                pa.array([[], []], type=pa.list_(pa.int32())),
+        }),
 ] + _make_2d_varlen_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases()
 
