@@ -77,8 +77,25 @@ def MakeListArrayFromParentIndicesAndValues(num_parents: int,
                                             parent_indices: pa.Array,
                                             values: pa.Array,
                                             empty_list_as_null: bool = True):
+  """Makes an Arrow ListArray from parent indices and values.
+
+  For example, if `num_parents = 6`, `parent_indices = [0, 1, 1, 3, 3]` and
+  `values` is (an arrow Array of) `[0, 1, 2, 3, 4]`, then the result will
+  be a `pa.ListArray` of integers:
+  `[[0], [1, 2], <empty_list>, [3, 4], <empty_list>]`
+  where `<empty_list>` is `null` if `empty_list_as_null` is True, or `[]` if
+  False.
+
+  Args:
+    num_parents: integer, number of sub-list. Must be greater than or equal to
+      `max(parent_indices) + 1`.
+    parent_indices: an int64 pa.Array. Must be sorted in increasing order.
+    values: a pa.Array. Its length must equal to the length of `parent_indices`.
+    empty_list_as_null: if True, empty sub-lists will become null elements
+      in the result ListArray. Otherwise they become empty sub-lists.
+
+  Returns:
+    A ListArray.
+  """
   return _MakeListArrayFromParentIndicesAndValues(num_parents, parent_indices,
                                                   values, empty_list_as_null)
-
-
-MakeListArrayFromParentIndicesAndValues.__doc__ = _MakeListArrayFromParentIndicesAndValues.__doc__
