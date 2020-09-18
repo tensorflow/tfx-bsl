@@ -125,41 +125,20 @@ _SCHEMA_TEST_CASES = [
     """, schema_pb2.Schema()))
 ]
 
+_EXPECTED_ARROW_SCHEMA = pa.schema([
+    pa.field("int_feature", pa.large_list(pa.int64())),
+    pa.field("float_feature", pa.large_list(pa.float32())),
+    pa.field("string_feature", pa.large_list(pa.large_binary()))
+])
 
-def _GetExpectedArrowSchema(tfxio, raw_record_column_name=None):
-  if tfxio._can_produce_large_types:
-    int_type = pa.large_list(pa.int64())
-    float_type = pa.large_list(pa.float32())
-    bytes_type = pa.large_list(pa.large_binary())
-  else:
-    int_type = pa.list_(pa.int64())
-    float_type = pa.list_(pa.float32())
-    bytes_type = pa.list_(pa.binary())
-  fields = [
-      pa.field("int_feature", int_type),
-      pa.field("float_feature", float_type),
-      pa.field("string_feature", bytes_type)
-  ]
-  if raw_record_column_name is not None:
-    fields.append(pa.field(raw_record_column_name, bytes_type))
-  return pa.schema(fields)
-
-
-def _GetExpectedColumnValues(tfxio):
-  if tfxio._can_produce_large_types:
-    int_type = pa.large_list(pa.int64())
-    float_type = pa.large_list(pa.float32())
-    bytes_type = pa.large_list(pa.large_binary())
-  else:
-    int_type = pa.list_(pa.int64())
-    float_type = pa.list_(pa.float32())
-    bytes_type = pa.list_(pa.binary())
-
-  return {
-      "int_feature": pa.array([[1], [2]], type=int_type),
-      "float_feature": pa.array([[2.0], [3.0]], type=float_type),
-      "string_feature": pa.array([[b"abc"], [b"xyz"]], type=bytes_type),
-  }
+_EXPECTED_COLUMN_VALUES = {
+    "int_feature":
+        pa.array([[1], [2]], type=pa.large_list(pa.int64())),
+    "float_feature":
+        pa.array([[2.0], [3.0]], type=pa.large_list(pa.float32())),
+    "string_feature":
+        pa.array([[b"abc"], [b"xyz"]], type=pa.large_list(pa.large_binary())),
+}
 
 
 def _WriteInputs(filename, include_header_line=False):
@@ -221,26 +200,27 @@ class CsvRecordTest(parameterized.TestCase):
     return pipeline
 
   def _ValidateRecordBatch(self,
-                           tfxio,
                            record_batch,
                            raw_record_column_name=None):
     self.assertIsInstance(record_batch, pa.RecordBatch)
     self.assertEqual(record_batch.num_rows, 2)
-    expected_column_values = _GetExpectedColumnValues(tfxio)
-    expected_arrow_schema = _GetExpectedArrowSchema(tfxio,
-                                                    raw_record_column_name)
+    expected_schema = _EXPECTED_ARROW_SCHEMA
+    if raw_record_column_name is not None:
+      expected_schema = pa.schema(
+          list(expected_schema) +
+          [pa.field(raw_record_column_name, pa.large_list(pa.large_binary()))])
     self.assertTrue(
-        record_batch.schema.equals(expected_arrow_schema),
-        "Expected: {} ; got {}".format(expected_arrow_schema,
+        record_batch.schema.equals(expected_schema),
+        "Expected: {} ; got {}".format(expected_schema,
                                        record_batch.schema))
     for i, field in enumerate(record_batch.schema):
       if field.name == raw_record_column_name:
         continue
       self.assertTrue(
-          record_batch.column(i).equals(expected_column_values[field.name]),
+          record_batch.column(i).equals(_EXPECTED_COLUMN_VALUES[field.name]),
           "Column {} did not match ({} vs {}).".format(
               field.name, record_batch.column(i),
-              expected_column_values[field.name]))
+              _EXPECTED_COLUMN_VALUES[field.name]))
 
     if raw_record_column_name is not None:
       self.assertEqual(record_batch.schema.names[-1], raw_record_column_name)
@@ -271,7 +251,7 @@ class CsvRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch)
+      self._ValidateRecordBatch(record_batch)
       self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
       tensor_adapter = tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
@@ -326,12 +306,12 @@ class CsvRecordTest(parameterized.TestCase):
 
     # The projected_tfxio still has original schema
     self.assertTrue(projected_tfxio.ArrowSchema().equals(
-        _GetExpectedArrowSchema(tfxio)))
+        _EXPECTED_ARROW_SCHEMA))
 
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch)
+      self._ValidateRecordBatch(record_batch)
       expected_schema = projected_tfxio.ArrowSchema()
       self.assertTrue(
           record_batch.schema.equals(expected_schema),
@@ -365,7 +345,7 @@ class CsvRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch, raw_record_column_name)
+      self._ValidateRecordBatch(record_batch, raw_record_column_name)
 
     with beam.Pipeline() as p:
       record_batch_pcoll = (
@@ -384,7 +364,7 @@ class CsvRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch)
+      self._ValidateRecordBatch(record_batch)
 
     with beam.Pipeline() as p:
       record_batch_pcoll = (
@@ -401,7 +381,7 @@ class CsvRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch)
+      self._ValidateRecordBatch(record_batch)
 
     with beam.Pipeline() as p:
       record_batch_pcoll = (
@@ -417,7 +397,7 @@ class CsvRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch)
+      self._ValidateRecordBatch(record_batch)
 
     with beam.Pipeline() as p:
       record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_ROWS))

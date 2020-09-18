@@ -16,7 +16,6 @@
 import abc
 from typing import List, Optional, Text, Union
 
-from absl import logging
 import apache_beam as beam
 import pyarrow as pa
 from tfx_bsl.arrow import path
@@ -47,8 +46,6 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         logical_format="tf_sequence_example",
         physical_format=physical_format)
     self._schema = schema
-    if self._can_produce_large_types:
-      logging.info("We decided to produce LargeList and LargeBinary types.")
 
   def SupportAttachingRawRecords(self) -> bool:
     return True
@@ -69,16 +66,14 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
                   **batch_util.GetBatchElementsKwargs(batch_size))
               | "Decode" >> beam.ParDo(
                   _DecodeBatchExamplesDoFn(self._schema,
-                                           self.raw_record_column_name,
-                                           self._can_produce_large_types)))
+                                           self.raw_record_column_name)))
 
     return beam.ptransform_fn(_PTransformFn)()
 
   def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
     return sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
         _SEQUENCE_COLUMN_NAME,
-        self._schema.SerializeToString(),
-        use_large_types=self._can_produce_large_types).ArrowSchema()
+        self._schema.SerializeToString()).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     result = (
@@ -242,8 +237,7 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
   """Batches serialized protos bytes and decode them into an Arrow table."""
 
   def __init__(self, schema: Optional[schema_pb2.Schema],
-               raw_record_column_name: Optional[Text],
-               produce_large_types: bool):
+               raw_record_column_name: Optional[Text]):
     """Initializer."""
     self._serialized_schema = None
     if schema is not None:
@@ -251,20 +245,17 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
       self._serialized_schema = schema.SerializeToString()
     self._raw_record_column_name = raw_record_column_name
     self._decoder = None
-    self._produce_large_types = produce_large_types
 
   def setup(self):
     if self._serialized_schema:
       self._decoder = (
           sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
               _SEQUENCE_COLUMN_NAME,
-              self._serialized_schema,
-              use_large_types=self._produce_large_types))
+              self._serialized_schema))
     else:
       self._decoder = (
           sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-              _SEQUENCE_COLUMN_NAME,
-              use_large_types=self._produce_large_types))
+              _SEQUENCE_COLUMN_NAME))
 
   def process(self, examples: List[bytes]):
     decoded = self._decoder.DecodeBatch(examples)
@@ -272,5 +263,4 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
       yield decoded
     else:
       yield record_based_tfxio.AppendRawRecordColumn(
-          decoded, self._raw_record_column_name, examples,
-          self._produce_large_types)
+          decoded, self._raw_record_column_name, examples)

@@ -114,14 +114,9 @@ class ListBuilderWrapper : public ListBuilderInterface {
 };
 
 std::unique_ptr<ListBuilderInterface> MakeListBuilderWrapper(
-    const bool large_list,
     const std::shared_ptr<arrow::ArrayBuilder>& values_builder,
     arrow::MemoryPool* memory_pool) {
-  if (large_list) {
-    return absl::make_unique<ListBuilderWrapper<arrow::LargeListBuilder>>(
-        values_builder, memory_pool);
-  }
-  return absl::make_unique<ListBuilderWrapper<arrow::ListBuilder>>(
+  return absl::make_unique<ListBuilderWrapper<arrow::LargeListBuilder>>(
       values_builder, memory_pool);
 }
 
@@ -154,51 +149,30 @@ class BinaryBuilderWrapper : public BinaryBuilderInterface {
   std::shared_ptr<BinaryBuilderT> binary_builder_;
 };
 
-std::unique_ptr<BinaryBuilderInterface> MakeBinaryBuilderWrapper(
-    const bool large_binary, arrow::MemoryPool* memory_pool) {
-  if (large_binary) {
-    return absl::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
-        memory_pool);
-  }
-  return absl::make_unique<BinaryBuilderWrapper<arrow::BinaryBuilder>>(
-      memory_pool);
-}
-
-Status TfmdFeatureToArrowField(const bool use_large_types,
-                               const bool is_sequence_feature,
+Status TfmdFeatureToArrowField(const bool is_sequence_feature,
                                const tensorflow::metadata::v0::Feature& feature,
                                std::shared_ptr<arrow::Field>* out) {
-  // Used for disambiguating overloaded functions.
-  using ListFactoryType = std::shared_ptr<arrow::DataType> (*)(
-      const std::shared_ptr<arrow::DataType>&);
-
-  ListFactoryType list_factory = &arrow::list;
-  if (use_large_types) {
-    list_factory = &arrow::large_list;
-  }
-
   switch (feature.type()) {
     case tensorflow::metadata::v0::FLOAT: {
-      auto type = list_factory(arrow::float32());
+      auto type = arrow::large_list(arrow::float32());
       if (is_sequence_feature) {
-        type = list_factory(type);
+        type = arrow::large_list(type);
       }
       *out = arrow::field(feature.name(), type);
       break;
     }
     case tensorflow::metadata::v0::INT: {
-      auto type = list_factory(arrow::int64());
+      auto type = arrow::large_list(arrow::int64());
       if (is_sequence_feature) {
-        type = list_factory(type);
+        type = arrow::large_list(type);
       }
       *out = arrow::field(feature.name(), type);
       break;
     }
     case tensorflow::metadata::v0::BYTES: {
-      auto type = use_large_types ? list_factory(arrow::large_binary())
-                                  : list_factory(arrow::binary());
+      auto type = arrow::large_list(arrow::large_binary());
       if (is_sequence_feature) {
-        type = list_factory(type);
+        type = arrow::large_list(type);
       }
       *out = arrow::field(feature.name(), type);
       break;
@@ -213,9 +187,8 @@ Status TfmdFeatureToArrowField(const bool use_large_types,
 
 class FeatureDecoder {
  public:
-  FeatureDecoder(const bool large_list,
-                 const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
-      : list_builder_(MakeListBuilderWrapper(large_list, values_builder,
+  FeatureDecoder(const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
+      : list_builder_(MakeListBuilderWrapper(values_builder,
                                              arrow::default_memory_pool())),
         feature_was_added_(false) {}
   virtual ~FeatureDecoder() {}
@@ -263,9 +236,9 @@ class FeatureDecoder {
 
 class FloatDecoder : public FeatureDecoder {
  public:
-  static FloatDecoder* Make(const bool large_list) {
+  static FloatDecoder* Make() {
     return new FloatDecoder(
-        large_list, std::make_shared<arrow::FloatBuilder>(
+        std::make_shared<arrow::FloatBuilder>(
                         arrow::float32(), arrow::default_memory_pool()));
   }
 
@@ -283,9 +256,8 @@ class FloatDecoder : public FeatureDecoder {
   }
 
  private:
-  FloatDecoder(const bool large_list,
-               const std::shared_ptr<arrow::FloatBuilder>& values_builder)
-      : FeatureDecoder(large_list, values_builder),
+  FloatDecoder(const std::shared_ptr<arrow::FloatBuilder>& values_builder)
+      : FeatureDecoder(values_builder),
         values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::FloatBuilder> values_builder_;
@@ -293,9 +265,8 @@ class FloatDecoder : public FeatureDecoder {
 
 class IntDecoder : public FeatureDecoder {
  public:
-  static IntDecoder* Make(const bool large_list) {
-    return new IntDecoder(large_list,
-                          std::make_shared<arrow::Int64Builder>(
+  static IntDecoder* Make() {
+    return new IntDecoder(std::make_shared<arrow::Int64Builder>(
                               arrow::int64(), arrow::default_memory_pool()));
   }
 
@@ -313,9 +284,8 @@ class IntDecoder : public FeatureDecoder {
   }
 
  private:
-  IntDecoder(const bool large_list,
-             const std::shared_ptr<arrow::Int64Builder>& values_builder)
-      : FeatureDecoder(large_list, values_builder),
+  IntDecoder(const std::shared_ptr<arrow::Int64Builder>& values_builder)
+      : FeatureDecoder(values_builder),
         values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::Int64Builder> values_builder_;
@@ -323,10 +293,10 @@ class IntDecoder : public FeatureDecoder {
 
 class BytesDecoder : public FeatureDecoder {
  public:
-  static BytesDecoder* Make(const bool large_list, const bool large_binary) {
+  static BytesDecoder* Make() {
     return new BytesDecoder(
-        large_list, large_binary,
-        MakeBinaryBuilderWrapper(large_binary, arrow::default_memory_pool()));
+        absl::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
+            arrow::default_memory_pool()));
   }
 
  protected:
@@ -343,9 +313,8 @@ class BytesDecoder : public FeatureDecoder {
   }
 
  private:
-  BytesDecoder(const bool large_list, const bool large_binary,
-               std::unique_ptr<BinaryBuilderInterface> values_builder)
-      : FeatureDecoder(large_list, values_builder->wrapped()),
+  BytesDecoder(std::unique_ptr<BinaryBuilderInterface> values_builder)
+      : FeatureDecoder(values_builder->wrapped()),
         values_builder_(std::move(values_builder)) {}
 
   std::unique_ptr<BinaryBuilderInterface> values_builder_;
@@ -353,12 +322,11 @@ class BytesDecoder : public FeatureDecoder {
 
 class FeatureListDecoder {
  public:
-  FeatureListDecoder(const bool large_list,
-                     const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
+  FeatureListDecoder(const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
       : inner_list_builder_(MakeListBuilderWrapper(
-            large_list, values_builder, arrow::default_memory_pool())),
+            values_builder, arrow::default_memory_pool())),
         outer_list_builder_(
-            MakeListBuilderWrapper(large_list, inner_list_builder_->wrapped(),
+            MakeListBuilderWrapper(inner_list_builder_->wrapped(),
                                    arrow::default_memory_pool())),
         feature_list_was_added_(false) {}
   virtual ~FeatureListDecoder() {}
@@ -412,9 +380,9 @@ class FeatureListDecoder {
 
 class FloatListDecoder : public FeatureListDecoder {
  public:
-  static FloatListDecoder* Make(const bool large_list) {
+  static FloatListDecoder* Make() {
     return new FloatListDecoder(
-        large_list, std::make_shared<arrow::FloatBuilder>(
+        std::make_shared<arrow::FloatBuilder>(
                         arrow::float32(), arrow::default_memory_pool()));
   }
 
@@ -440,9 +408,8 @@ class FloatListDecoder : public FeatureListDecoder {
   }
 
  private:
-  FloatListDecoder(const bool large_list,
-                   const std::shared_ptr<arrow::FloatBuilder>& values_builder)
-      : FeatureListDecoder(large_list, values_builder),
+  FloatListDecoder(const std::shared_ptr<arrow::FloatBuilder>& values_builder)
+      : FeatureListDecoder(values_builder),
         values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::FloatBuilder> values_builder_;
@@ -450,9 +417,9 @@ class FloatListDecoder : public FeatureListDecoder {
 
 class IntListDecoder : public FeatureListDecoder {
  public:
-  static IntListDecoder* Make(const bool large_list) {
+  static IntListDecoder* Make() {
     return new IntListDecoder(
-        large_list, std::make_shared<arrow::Int64Builder>(
+        std::make_shared<arrow::Int64Builder>(
                         arrow::int64(), arrow::default_memory_pool()));
   }
 
@@ -478,9 +445,8 @@ class IntListDecoder : public FeatureListDecoder {
   }
 
  private:
-  IntListDecoder(const bool large_list,
-                 const std::shared_ptr<arrow::Int64Builder>& values_builder)
-      : FeatureListDecoder(large_list, values_builder),
+  IntListDecoder(const std::shared_ptr<arrow::Int64Builder>& values_builder)
+      : FeatureListDecoder(values_builder),
         values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::Int64Builder> values_builder_;
@@ -488,12 +454,10 @@ class IntListDecoder : public FeatureListDecoder {
 
 class BytesListDecoder : public FeatureListDecoder {
  public:
-  static BytesListDecoder* Make(const bool use_large_list,
-                                const bool use_large_binary) {
+  static BytesListDecoder* Make() {
     return new BytesListDecoder(
-        use_large_list, use_large_binary,
-        MakeBinaryBuilderWrapper(use_large_binary,
-                                 arrow::default_memory_pool()));
+        absl::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
+            arrow::default_memory_pool()));
   }
 
  protected:
@@ -517,9 +481,8 @@ class BytesListDecoder : public FeatureListDecoder {
   }
 
  private:
-  BytesListDecoder(const bool large_list, const bool large_binary,
-                   std::unique_ptr<BinaryBuilderInterface> values_builder)
-      : FeatureListDecoder(large_list, values_builder->wrapped()),
+  BytesListDecoder(std::unique_ptr<BinaryBuilderInterface> values_builder)
+      : FeatureListDecoder(values_builder->wrapped()),
         values_builder_(std::move(values_builder)) {}
 
   std::unique_ptr<BinaryBuilderInterface> values_builder_;
@@ -534,8 +497,8 @@ class BytesListDecoder : public FeatureListDecoder {
 // where null indicates that the inner list is of an unknown type.
 class UnknownTypeFeatureListDecoder {
  public:
-  static UnknownTypeFeatureListDecoder* Make(const bool use_large_types) {
-    return new UnknownTypeFeatureListDecoder(use_large_types);
+  static UnknownTypeFeatureListDecoder* Make() {
+    return new UnknownTypeFeatureListDecoder();
   }
   Status DecodeFeatureList(const tensorflow::FeatureList& feature_list) {
     for (const auto& feature : feature_list.feature()) {
@@ -556,14 +519,13 @@ class UnknownTypeFeatureListDecoder {
                                    FeatureListDecoder** typed_list_decoder) {
     switch (type) {
       case tensorflow::Feature::kInt64List:
-        *typed_list_decoder = IntListDecoder::Make(use_large_types_);
+        *typed_list_decoder = IntListDecoder::Make();
         break;
       case tensorflow::Feature::kFloatList:
-        *typed_list_decoder = FloatListDecoder::Make(use_large_types_);
+        *typed_list_decoder = FloatListDecoder::Make();
         break;
       case tensorflow::Feature::kBytesList:
-        *typed_list_decoder =
-            BytesListDecoder::Make(use_large_types_, use_large_types_);
+        *typed_list_decoder = BytesListDecoder::Make();
         break;
       case tensorflow::Feature::KIND_NOT_SET:
         return errors::Internal(
@@ -600,7 +562,7 @@ class UnknownTypeFeatureListDecoder {
     std::shared_ptr<arrow::NullBuilder> values_builder =
         std::make_shared<arrow::NullBuilder>(arrow::default_memory_pool());
     std::unique_ptr<ListBuilderInterface> list_builder = MakeListBuilderWrapper(
-        use_large_types_, values_builder, arrow::default_memory_pool());
+        values_builder, arrow::default_memory_pool());
     for (int i = 0; i < null_counts_.size(); ++i) {
       if (null_counts_[i] == -1) {
         TFX_BSL_RETURN_IF_ERROR(list_builder->AppendNull());
@@ -614,9 +576,7 @@ class UnknownTypeFeatureListDecoder {
   }
 
  private:
-  UnknownTypeFeatureListDecoder(const bool use_large_types)
-      : use_large_types_(use_large_types) {}
-  const bool use_large_types_;
+  UnknownTypeFeatureListDecoder() {}
   std::vector<int64_t> null_counts_;
   bool feature_list_was_added_;
 };  // namespace tfx_bsl
@@ -630,7 +590,7 @@ namespace {
 Status DecodeTopLevelFeatures(
     const google::protobuf::Map<std::string, tensorflow::Feature>& features,
     absl::flat_hash_set<std::string>& all_features_seen,
-    const bool use_large_types, const int num_examples_already_processed,
+    const int num_examples_already_processed,
     absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>&
         feature_decoders) {
   for (const auto& p : features) {
@@ -644,14 +604,14 @@ Status DecodeTopLevelFeatures(
       all_features_seen.insert(feature_name);
       switch (feature.kind_case()) {
         case tensorflow::Feature::kInt64List:
-          feature_decoder = IntDecoder::Make(use_large_types);
+          feature_decoder = IntDecoder::Make();
           break;
         case tensorflow::Feature::kFloatList:
-          feature_decoder = FloatDecoder::Make(use_large_types);
+          feature_decoder = FloatDecoder::Make();
           break;
         case tensorflow::Feature::kBytesList:
           feature_decoder =
-              BytesDecoder::Make(use_large_types, use_large_types);
+              BytesDecoder::Make();
           break;
         case tensorflow::Feature::KIND_NOT_SET:
           // Leave feature_decoder as nullptr.
@@ -718,17 +678,17 @@ Status FinishTopLevelFeatures(
 }  // namespace
 
 static Status MakeFeatureDecoder(
-    const bool large_list, const tensorflow::metadata::v0::Feature& feature,
+    const tensorflow::metadata::v0::Feature& feature,
     std::unique_ptr<FeatureDecoder>* out) {
   switch (feature.type()) {
     case tensorflow::metadata::v0::FLOAT:
-      out->reset(FloatDecoder::Make(large_list));
+      out->reset(FloatDecoder::Make());
       break;
     case tensorflow::metadata::v0::INT:
-      out->reset(IntDecoder::Make(large_list));
+      out->reset(IntDecoder::Make());
       break;
     case tensorflow::metadata::v0::BYTES:
-      out->reset(BytesDecoder::Make(large_list, large_list));
+      out->reset(BytesDecoder::Make());
       break;
     default:
       return errors::InvalidArgument("Bad field type");
@@ -739,11 +699,10 @@ static Status MakeFeatureDecoder(
 // static
 Status ExamplesToRecordBatchDecoder::Make(
     absl::optional<absl::string_view> serialized_schema,
-    const bool use_large_types,
     std::unique_ptr<ExamplesToRecordBatchDecoder>* result) {
   if (!serialized_schema) {
     *result = absl::WrapUnique(
-        new ExamplesToRecordBatchDecoder(use_large_types, nullptr, nullptr));
+        new ExamplesToRecordBatchDecoder(nullptr, nullptr));
     return Status::OK();
   }
   auto feature_decoders = absl::make_unique<
@@ -764,26 +723,25 @@ Status ExamplesToRecordBatchDecoder::Make(
       continue;
     }
     TFX_BSL_RETURN_IF_ERROR(MakeFeatureDecoder(
-        use_large_types, feature, &(*feature_decoders)[feature.name()]));
+        feature, &(*feature_decoders)[feature.name()]));
     arrow_schema_fields.emplace_back();
     TFX_BSL_RETURN_IF_ERROR(
-        TfmdFeatureToArrowField(use_large_types, /*is_sequence_feature=*/false,
+        TfmdFeatureToArrowField(/*is_sequence_feature=*/false,
                                 feature, &arrow_schema_fields.back()));
   }
   *result = absl::WrapUnique(new ExamplesToRecordBatchDecoder(
-      use_large_types, arrow::schema(std::move(arrow_schema_fields)),
+      arrow::schema(std::move(arrow_schema_fields)),
       std::move(feature_decoders)));
   return Status::OK();
 }
 
 ExamplesToRecordBatchDecoder::ExamplesToRecordBatchDecoder(
-    const bool use_large_types, std::shared_ptr<arrow::Schema> arrow_schema,
+    std::shared_ptr<arrow::Schema> arrow_schema,
     std::unique_ptr<
         const absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
         feature_decoders)
     : arrow_schema_(std::move(arrow_schema)),
-      feature_decoders_(std::move(feature_decoders)),
-      use_large_types_(use_large_types) {}
+      feature_decoders_(std::move(feature_decoders)) {}
 
 ExamplesToRecordBatchDecoder::~ExamplesToRecordBatchDecoder() {}
 
@@ -855,7 +813,7 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
     TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
     TFX_BSL_RETURN_IF_ERROR(
         DecodeTopLevelFeatures(example->features().feature(), all_features,
-                               use_large_types_, i, feature_decoders));
+                               i, feature_decoders));
   }
   std::vector<std::shared_ptr<arrow::Array>> arrays;
   std::vector<std::shared_ptr<arrow::Field>> fields;
@@ -869,18 +827,17 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
 }
 
 static Status MakeFeatureListDecoder(
-    const bool use_large_types,
     const tensorflow::metadata::v0::Feature& feature,
     std::unique_ptr<FeatureListDecoder>* out) {
   switch (feature.type()) {
     case tensorflow::metadata::v0::FLOAT:
-      out->reset(FloatListDecoder::Make(use_large_types));
+      out->reset(FloatListDecoder::Make());
       break;
     case tensorflow::metadata::v0::INT:
-      out->reset(IntListDecoder::Make(use_large_types));
+      out->reset(IntListDecoder::Make());
       break;
     case tensorflow::metadata::v0::BYTES:
-      out->reset(BytesListDecoder::Make(use_large_types, use_large_types));
+      out->reset(BytesListDecoder::Make());
       break;
     default:
       return errors::InvalidArgument("Bad field type");
@@ -890,11 +847,11 @@ static Status MakeFeatureListDecoder(
 
 Status SequenceExamplesToRecordBatchDecoder::Make(
     const absl::optional<absl::string_view>& serialized_schema,
-    const std::string& sequence_feature_column_name, const bool use_large_types,
+    const std::string& sequence_feature_column_name,
     std::unique_ptr<SequenceExamplesToRecordBatchDecoder>* result) {
   if (!serialized_schema) {
     *result = absl::WrapUnique(new SequenceExamplesToRecordBatchDecoder(
-        sequence_feature_column_name, use_large_types, nullptr, nullptr,
+        sequence_feature_column_name, nullptr, nullptr,
         nullptr, nullptr));
     return Status::OK();
   }
@@ -936,11 +893,11 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
           continue;
         }
         TFX_BSL_RETURN_IF_ERROR(MakeFeatureListDecoder(
-            use_large_types, child_feature,
+            child_feature,
             &(*sequence_feature_decoders)[child_feature.name()]));
         sequence_feature_schema_fields->emplace_back();
         TFX_BSL_RETURN_IF_ERROR(TfmdFeatureToArrowField(
-            use_large_types, /*is_sequence_feature=*/true, child_feature,
+            /*is_sequence_feature=*/true, child_feature,
             &sequence_feature_schema_fields->back()));
       }
       continue;
@@ -958,11 +915,11 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
     // If the feature is not the top-level sequence feature, it is a context
     // feature.
     TFX_BSL_RETURN_IF_ERROR(
-        MakeFeatureDecoder(use_large_types, feature,
+        MakeFeatureDecoder( feature,
                            &(*context_feature_decoders)[feature.name()]));
     arrow_schema_fields.emplace_back();
     TFX_BSL_RETURN_IF_ERROR(
-        TfmdFeatureToArrowField(use_large_types, /*is_sequence_feature=*/false,
+        TfmdFeatureToArrowField(/*is_sequence_feature=*/false,
                                 feature, &arrow_schema_fields.back()));
   }
   std::shared_ptr<arrow::StructType> sequence_features_struct_type = nullptr;
@@ -976,7 +933,7 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
   }
 
   *result = absl::WrapUnique(new SequenceExamplesToRecordBatchDecoder(
-      sequence_feature_column_name, use_large_types,
+      sequence_feature_column_name,
       arrow::schema(std::move(arrow_schema_fields)),
       std::move(sequence_features_struct_type),
       std::move(context_feature_decoders),
@@ -985,7 +942,7 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
 }
 
 SequenceExamplesToRecordBatchDecoder::SequenceExamplesToRecordBatchDecoder(
-    const std::string& sequence_feature_column_name, const bool use_large_types,
+    const std::string& sequence_feature_column_name,
     std::shared_ptr<arrow::Schema> arrow_schema,
     std::shared_ptr<arrow::StructType> sequence_features_struct_type,
     std::unique_ptr<
@@ -995,7 +952,6 @@ SequenceExamplesToRecordBatchDecoder::SequenceExamplesToRecordBatchDecoder(
         std::string, std::unique_ptr<FeatureListDecoder>>>
         sequence_feature_decoders)
     : sequence_feature_column_name_(sequence_feature_column_name),
-      use_large_types_(use_large_types),
       arrow_schema_(std::move(arrow_schema)),
       sequence_features_struct_type_(std::move(sequence_features_struct_type)),
       context_feature_decoders_(std::move(context_feature_decoders)),
@@ -1124,7 +1080,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
         serialized_sequence_examples[i], sequence_example));
     TFX_BSL_RETURN_IF_ERROR(DecodeTopLevelFeatures(
         sequence_example->context().feature(), all_context_features,
-        use_large_types_, i, context_feature_decoders));
+        i, context_feature_decoders));
     if (sequence_example->has_feature_lists()) {
       feature_lists_observed = true;
     }
@@ -1172,7 +1128,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
         // one.
         if (sequence_feature_list.feature_size() == 0) {
           unknown_type_sequence_feature_decoder =
-              UnknownTypeFeatureListDecoder::Make(use_large_types_);
+              UnknownTypeFeatureListDecoder::Make();
         } else {
           // Determine if the type can be identified from any of the features
           // in the feature list. Use the first type found. If there is a type
@@ -1187,19 +1143,19 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
           }
           switch (feature_kind_case) {
             case tensorflow::Feature::kInt64List:
-              sequence_feature_decoder = IntListDecoder::Make(use_large_types_);
+              sequence_feature_decoder = IntListDecoder::Make();
               break;
             case tensorflow::Feature::kFloatList:
               sequence_feature_decoder =
-                  FloatListDecoder::Make(use_large_types_);
+                  FloatListDecoder::Make();
               break;
             case tensorflow::Feature::kBytesList:
               sequence_feature_decoder =
-                  BytesListDecoder::Make(use_large_types_, use_large_types_);
+                  BytesListDecoder::Make();
               break;
             case tensorflow::Feature::KIND_NOT_SET:
               unknown_type_sequence_feature_decoder =
-                  UnknownTypeFeatureListDecoder::Make(use_large_types_);
+                  UnknownTypeFeatureListDecoder::Make();
               break;
           }
         }  // end clause processing a feature list with > 0 features.

@@ -36,10 +36,6 @@ def _WriteRawRecords(filename):
       w.write(r)
 
 
-def _ProducesLargeTypes(tfxio):
-  return tfxio._can_produce_large_types
-
-
 class RawTfRecordTest(absltest.TestCase):
 
   @classmethod
@@ -56,9 +52,7 @@ class RawTfRecordTest(absltest.TestCase):
     tfxio = raw_tf_record.RawTfRecordTFXIO(
         self._raw_record_file, column_name,
         telemetry_descriptors=telemetry_descriptors)
-    expected_type = (
-        pa.large_list(pa.large_binary())
-        if _ProducesLargeTypes(tfxio) else pa.list_(pa.binary()))
+    expected_type = pa.large_list(pa.large_binary())
 
     got_schema = tfxio.ArrowSchema()
     self.assertTrue(got_schema.equals(

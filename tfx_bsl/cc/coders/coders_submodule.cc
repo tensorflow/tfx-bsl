@@ -32,27 +32,25 @@ void DefineCodersSubmodule(py::module main_module) {
   m.doc() = "Coders.";
 
   py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
-      .def(py::init([](absl::string_view serialized_schema,
-                       const bool use_large_types) {
+      .def(py::init([](absl::string_view serialized_schema) {
              std::unique_ptr<ExamplesToRecordBatchDecoder> result;
              Status s = ExamplesToRecordBatchDecoder::Make(
-                 serialized_schema, use_large_types, &result);
+                 serialized_schema,  &result);
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
              }
              return result;
            }),
-           py::arg("serialized_schema"), py::arg("use_large_types") = false)
-      .def(py::init([](const bool use_large_types) {
+           py::arg("serialized_schema"))
+      .def(py::init([] {
              std::unique_ptr<ExamplesToRecordBatchDecoder> result;
              Status s = ExamplesToRecordBatchDecoder::Make(
-                 absl::nullopt, use_large_types, &result);
+                 absl::nullopt, &result);
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
              }
              return result;
-           }),
-           py::arg("use_large_types") = false)
+           }))
       .def(
           "DecodeBatch",
           [](ExamplesToRecordBatchDecoder* decoder,
@@ -80,18 +78,17 @@ void DefineCodersSubmodule(py::module main_module) {
   py::class_<SequenceExamplesToRecordBatchDecoder>(
       m, "SequenceExamplesToRecordBatchDecoder")
       .def(py::init([](const std::string& sequence_feature_column_name,
-                       const absl::string_view serialized_schema,
-                       const bool use_large_types) {
+                       const absl::string_view serialized_schema) {
              std::unique_ptr<SequenceExamplesToRecordBatchDecoder> result;
              Status s;
              if (serialized_schema.empty()) {
                s = SequenceExamplesToRecordBatchDecoder::Make(
-                   absl::nullopt, sequence_feature_column_name, use_large_types,
+                   absl::nullopt, sequence_feature_column_name,
                    &result);
              } else {
                s = SequenceExamplesToRecordBatchDecoder::Make(
                    serialized_schema, sequence_feature_column_name,
-                   use_large_types, &result);
+                   &result);
              }
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
@@ -99,8 +96,7 @@ void DefineCodersSubmodule(py::module main_module) {
              return result;
            }),
            py::arg("sequence_feature_column_name"),
-           py::arg("serialized_schema") = "",
-           py::arg("use_large_types") = false)
+           py::arg("serialized_schema") = "")
       .def(
           "DecodeBatch",
           [](SequenceExamplesToRecordBatchDecoder* decoder,

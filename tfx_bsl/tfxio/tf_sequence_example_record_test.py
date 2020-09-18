@@ -164,27 +164,19 @@ _SERIALIZED_EXAMPLES = [
 ]
 
 
-def _GetExpectedColumnValues(tfxio):
-  if tfxio._can_produce_large_types:
-    list_factory = pa.large_list
-    bytes_type = pa.large_binary()
-  else:
-    list_factory = pa.list_
-    bytes_type = pa.binary()
-
-  return {
-      path.ColumnPath(["int_feature"]):
-          pa.array([[1], [2], [3]], type=list_factory(pa.int64())),
-      path.ColumnPath(["float_feature"]):
-          pa.array([[1, 2, 3, 4], [2, 3, 4, 5], None],
-                   type=list_factory(pa.float32())),
-      path.ColumnPath([_SEQUENCE_COLUMN_NAME, "int_feature"]):
-          pa.array([[[1, 2], [3]], None, [[4]]],
-                   list_factory(list_factory(pa.int64()))),
-      path.ColumnPath([_SEQUENCE_COLUMN_NAME, "string_feature"]):
-          pa.array([None, [[b"foo", b"bar"], []], [[b"baz"]]],
-                   list_factory(list_factory(bytes_type)))
-  }
+_EXPECTED_COLUMN_VALUES = {
+    path.ColumnPath(["int_feature"]):
+        pa.array([[1], [2], [3]], type=pa.large_list(pa.int64())),
+    path.ColumnPath(["float_feature"]):
+        pa.array([[1, 2, 3, 4], [2, 3, 4, 5], None],
+                 type=pa.large_list(pa.float32())),
+    path.ColumnPath([_SEQUENCE_COLUMN_NAME, "int_feature"]):
+        pa.array([[[1, 2], [3]], None, [[4]]],
+                 pa.large_list(pa.large_list(pa.int64()))),
+    path.ColumnPath([_SEQUENCE_COLUMN_NAME, "string_feature"]):
+        pa.array([None, [[b"foo", b"bar"], []], [[b"baz"]]],
+                 pa.large_list(pa.large_list(pa.large_binary())))
+}
 
 
 def _WriteInputs(filename):
@@ -210,10 +202,9 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
 
   def _ValidateRecordBatch(
-      self, tfxio, record_batch, raw_record_column_name=None):
+      self, record_batch, raw_record_column_name=None):
     self.assertIsInstance(record_batch, pa.RecordBatch)
     self.assertEqual(record_batch.num_rows, 3)
-    expected_column_values = _GetExpectedColumnValues(tfxio)
     for i, field in enumerate(record_batch.schema):
       if field.name == raw_record_column_name:
         continue
@@ -221,7 +212,7 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
         self.assertTrue(pa.types.is_struct(field.type))
         for seq_column, seq_field in zip(
             record_batch.column(i).flatten(), list(field.type)):
-          expected_array = expected_column_values[path.ColumnPath(
+          expected_array = _EXPECTED_COLUMN_VALUES[path.ColumnPath(
               [_SEQUENCE_COLUMN_NAME, seq_field.name])]
           self.assertTrue(
               seq_column.equals(expected_array),
@@ -229,19 +220,15 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
                   seq_field.name, seq_column, expected_array))
         continue
       self.assertTrue(
-          record_batch.column(i).equals(expected_column_values[path.ColumnPath(
+          record_batch.column(i).equals(_EXPECTED_COLUMN_VALUES[path.ColumnPath(
               [field.name])]), "Column {} did not match ({} vs {}).".format(
                   field.name, record_batch.column(i),
-                  expected_column_values[path.ColumnPath([field.name])]))
+                  _EXPECTED_COLUMN_VALUES[path.ColumnPath([field.name])]))
 
     if raw_record_column_name is not None:
-      if tfxio._can_produce_large_types:
-        raw_record_column_type = pa.large_list(pa.large_binary())
-      else:
-        raw_record_column_type = pa.list_(pa.binary())
       self.assertEqual(record_batch.schema.names[-1], raw_record_column_name)
-      self.assertTrue(
-          record_batch.columns[-1].type.equals(raw_record_column_type))
+      self.assertTrue(record_batch.columns[-1].type.equals(
+          pa.large_list(pa.large_binary())))
       self.assertEqual(record_batch.columns[-1].flatten().to_pylist(),
                        _SERIALIZED_EXAMPLES)
 
@@ -258,7 +245,7 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch, raw_column_name)
+      self._ValidateRecordBatch(record_batch, raw_column_name)
       self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
       tensor_adapter = tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
@@ -293,7 +280,7 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch, raw_column_name)
+      self._ValidateRecordBatch(record_batch, raw_column_name)
       expected_schema = tfxio.ArrowSchema()
       self.assertTrue(
           record_batch.schema.equals(expected_schema),
@@ -319,7 +306,7 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(tfxio, record_batch)
+      self._ValidateRecordBatch(record_batch)
       tensor_adapter = tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
       self.assertLen(dict_of_tensors, 1)

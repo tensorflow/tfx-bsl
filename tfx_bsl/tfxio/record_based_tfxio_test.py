@@ -123,12 +123,10 @@ class RecordBasedTfxioTest(parameterized.TestCase):
       raw_records,
       expected_raw_record_column,
       record_index_column_name=None):
-    # input_record_batch = pa.record_batch([pa.array([[1], [2]])], ["feature1"])
     column_name = "raw_record"
     output_record_batch = record_based_tfxio.AppendRawRecordColumn(
         record_batch=input_record_batch, column_name=column_name,
         raw_records=raw_records,
-        produce_large_types=True,
         record_index_column_name=record_index_column_name)
     self.assertEqual(
         output_record_batch.num_columns,

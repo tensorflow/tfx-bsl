@@ -91,7 +91,7 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
               **batch_util.GetBatchElementsKwargs(batch_size))
           | "Decode" >> beam.ParDo(_RecordsToRecordBatch(
               self._saved_decoder_path, self.raw_record_column_name,
-              self._can_produce_large_types, self._record_index_column_name)))
+              self._record_index_column_name)))
 
     return beam.ptransform_fn(_PTransformFn)()
 
@@ -253,12 +253,10 @@ class _RecordsToRecordBatch(beam.DoFn):
 
   def __init__(self, saved_decoder_path: Text,
                raw_record_column_name: Optional[Text],
-               produce_large_raw_record_column: bool,
                record_index_column_name: Optional[Text]):
     super().__init__()
     self._saved_decoder_path = saved_decoder_path
     self._raw_record_column_name = raw_record_column_name
-    self._produce_large_raw_record_column = produce_large_raw_record_column
     self._record_index_column_name = record_index_column_name
 
     self._tensors_to_record_batch_converter = None
@@ -283,5 +281,4 @@ class _RecordsToRecordBatch(beam.DoFn):
     else:
       yield record_based_tfxio.AppendRawRecordColumn(
           decoded, self._raw_record_column_name, records,
-          self._produce_large_raw_record_column,
           self._record_index_column_name)

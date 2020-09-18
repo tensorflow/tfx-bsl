@@ -41,9 +41,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
-            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary()))
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.large_list(pa.float32())),
+            pa.array([[b'hello'], [b'world']], pa.large_list(pa.large_binary()))
         ], ['int_feature', 'float_feature', 'str_feature'])),
     dict(
         testcase_name='missing_values',
@@ -60,9 +60,10 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([None, [1], None], pa.list_(pa.int64())),
-            pa.array([None, None, [12.34]], pa.list_(pa.float32())),
-            pa.array([None, [b'hello'], None], pa.list_(pa.binary())),
+            pa.array([None, [1], None], pa.large_list(pa.int64())),
+            pa.array([None, None, [12.34]], pa.large_list(pa.float32())),
+            pa.array([None, [b'hello'], None], pa.large_list(
+                pa.large_binary())),
         ], ['f1', 'f2', 'f3'])),
     dict(
         testcase_name='mixed_int_and_float',
@@ -74,8 +75,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.FLOAT,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[2], [1.5]], pa.list_(pa.float32())),
-            pa.array([[1.5], [2]], pa.list_(pa.float32()))
+            pa.array([[2], [1.5]], pa.large_list(pa.float32())),
+            pa.array([[1.5], [2]], pa.large_list(pa.float32()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='mixed_int_and_string',
@@ -87,8 +88,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b'2'], [b'abc']], pa.list_(pa.binary())),
-            pa.array([[b'abc'], [b'2']], pa.list_(pa.binary()))
+            pa.array([[b'2'], [b'abc']], pa.large_list(pa.large_binary())),
+            pa.array([[b'abc'], [b'2']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='mixed_float_and_string',
@@ -100,8 +101,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b'2.3'], [b'abc']], pa.list_(pa.binary())),
-            pa.array([[b'abc'], [b'2.3']], pa.list_(pa.binary()))
+            pa.array([[b'2.3'], [b'abc']], pa.large_list(pa.large_binary())),
+            pa.array([[b'abc'], [b'2.3']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='unicode',
@@ -112,7 +113,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[u'\U0001f951'.encode('utf-8')]], pa.list_(pa.binary()))
+            pa.array([[u'\U0001f951'.encode('utf-8')]],
+                     pa.large_list(pa.large_binary()))
         ], ['f1'])),
     dict(
         testcase_name='quotes',
@@ -124,8 +126,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[b'ab,cd,ef'], [b'wx,xy,yz']], pa.list_(pa.binary()))
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[b'ab,cd,ef'], [b'wx,xy,yz']],
+                     pa.large_list(pa.large_binary()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='space_delimiter',
@@ -137,8 +140,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[b'ab,cd,ef'], [b'wx,xy,yz']], pa.list_(pa.binary()))
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[b'ab,cd,ef'], [b'wx,xy,yz']],
+                     pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         delimiter=' '),
     dict(
@@ -151,8 +155,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[b'this is a \ttext'], None], pa.list_(pa.binary()))
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[b'this is a \ttext'], None],
+                     pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         delimiter='\t'),
     dict(
@@ -165,8 +170,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.FLOAT,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[-1]], pa.list_(pa.int64())),
-            pa.array([[-2.5]], pa.list_(pa.float32()))
+            pa.array([[-1]], pa.large_list(pa.int64())),
+            pa.array([[-2.5]], pa.large_list(pa.float32()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='int64_boundary',
@@ -190,10 +195,12 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[-9223372036854775808]], pa.list_(pa.int64())),
-            pa.array([[9223372036854775807]], pa.list_(pa.int64())),
-            pa.array([[b'-9223372036854775809']], pa.list_(pa.binary())),
-            pa.array([[b'9223372036854775808']], pa.list_(pa.binary()))
+            pa.array([[-9223372036854775808]], pa.large_list(pa.int64())),
+            pa.array([[9223372036854775807]], pa.large_list(pa.int64())),
+            pa.array([[b'-9223372036854775809']],
+                     pa.large_list(pa.large_binary())),
+            pa.array([[b'9223372036854775808']], pa.large_list(
+                pa.large_binary()))
         ], ['int64min', 'int64max', 'int64min-1', 'int64max+1'])),
     dict(
         testcase_name='skip_blank_lines',
@@ -206,8 +213,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.INT,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1]], pa.list_(pa.int64())),
-            pa.array([[2]], pa.list_(pa.int64()))
+            pa.array([[1]], pa.large_list(pa.int64())),
+            pa.array([[2]], pa.large_list(pa.int64()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='consider_blank_lines',
@@ -220,8 +227,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.INT,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([None, [1]], pa.list_(pa.int64())),
-            pa.array([None, [2]], pa.list_(pa.int64()))
+            pa.array([None, [1]], pa.large_list(pa.int64())),
+            pa.array([None, [2]], pa.large_list(pa.int64()))
         ], ['f1', 'f2'])),
     dict(
         testcase_name='skip_blank_lines_single_column',
@@ -233,7 +240,7 @@ _TEST_CASES = [
             csv_decoder.ColumnType.INT,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays(
-            [pa.array([[1]], pa.list_(pa.int64()))], ['f1'])),
+            [pa.array([[1]], pa.large_list(pa.int64()))], ['f1'])),
     dict(
         testcase_name='consider_blank_lines_single_column',
         input_lines=['', '1'],
@@ -244,7 +251,7 @@ _TEST_CASES = [
             csv_decoder.ColumnType.INT,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays(
-            [pa.array([None, [1]], pa.list_(pa.int64()))], ['f1'])),
+            [pa.array([None, [1]], pa.large_list(pa.int64()))], ['f1'])),
     dict(
         testcase_name='empty_csv',
         input_lines=[],
@@ -268,7 +275,7 @@ _TEST_CASES = [
         expected_csv_cells=[[b'12|14']],
         expected_types=[csv_decoder.ColumnType.INT],
         expected_record_batch=pa.RecordBatch.from_arrays(
-            [pa.array([[12, 14]], pa.list_(pa.int64()))], ['x']),
+            [pa.array([[12, 14]], pa.large_list(pa.int64()))], ['x']),
         delimiter=' ',
         multivalent_columns=['x'],
         secondary_delimiter='|'),
@@ -281,8 +288,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.INT, csv_decoder.ColumnType.STRING
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1, 2], [5, 1]], pa.list_(pa.int64())),
-            pa.array([[b'abcdef'], [b'wxxyyz']], pa.list_(pa.binary()))
+            pa.array([[1, 2], [5, 1]], pa.large_list(pa.int64())),
+            pa.array([[b'abcdef'], [b'wxxyyz']], pa.large_list(
+                pa.large_binary()))
         ], ['f1', 'f2']),
         delimiter=' ',
         multivalent_columns=['f1'],
@@ -297,7 +305,7 @@ _TEST_CASES = [
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
             pa.array([None], pa.null()),
-            pa.array([[b'test']], pa.list_(pa.binary()))
+            pa.array([[b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -311,7 +319,7 @@ _TEST_CASES = [
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
             pa.array([None], pa.null()),
-            pa.array([[b'test']], pa.list_(pa.binary()))
+            pa.array([[b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -324,8 +332,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING, csv_decoder.ColumnType.STRING
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b'', b''], [b'a', b'b']], pa.list_(pa.binary())),
-            pa.array([[b'test'], [b'test']], pa.list_(pa.binary()))
+            pa.array([[b'', b''], [b'a', b'b']], pa.large_list(
+                pa.large_binary())),
+            pa.array([[b'test'], [b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -338,8 +347,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.FLOAT, csv_decoder.ColumnType.STRING
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1, 2.3]], pa.list_(pa.float32())),
-            pa.array([[b'test']], pa.list_(pa.binary()))
+            pa.array([[1, 2.3]], pa.large_list(pa.float32())),
+            pa.array([[b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -352,8 +361,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING, csv_decoder.ColumnType.STRING
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b'2.3', b'abc']], pa.list_(pa.binary())),
-            pa.array([[b'test']], pa.list_(pa.binary()))
+            pa.array([[b'2.3', b'abc']], pa.large_list(pa.large_binary())),
+            pa.array([[b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -366,8 +375,8 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING, csv_decoder.ColumnType.STRING
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b'1', b'abc']], pa.list_(pa.binary())),
-            pa.array([[b'test']], pa.list_(pa.binary()))
+            pa.array([[b'1', b'abc']], pa.large_list(pa.large_binary())),
+            pa.array([[b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -380,8 +389,9 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING, csv_decoder.ColumnType.STRING
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b'1', b'abc'], [b'2', b'2']], pa.list_(pa.binary())),
-            pa.array([[b'test'], [b'test']], pa.list_(pa.binary()))
+            pa.array([[b'1', b'abc'], [b'2', b'2']],
+                     pa.large_list(pa.large_binary())),
+            pa.array([[b'test'], [b'test']], pa.large_list(pa.large_binary()))
         ], ['f1', 'f2']),
         multivalent_columns=['f1'],
         secondary_delimiter='|'),
@@ -413,49 +423,11 @@ _TEST_CASES = [
               }
               """, schema_pb2.Schema()),
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
-            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary()))
-        ], ['int_feature', 'float_feature', 'str_feature'])),
-    dict(
-        testcase_name='large_list',
-        input_lines=['1', '5'],
-        column_names=['large_list_feature'],
-        expected_csv_cells=[
-            [b'1'],
-            [b'5'],
-        ],
-        expected_types=[csv_decoder.ColumnType.INT],
-        schema=text_format.Parse(
-            """feature {
-                name: "large_list_feature"
-                type: INT
-              }
-              """, schema_pb2.Schema()),
-        expected_record_batch=pa.RecordBatch.from_arrays(
-            [pa.array([[1], [5]], pa.large_list(pa.int64()))],
-            ['large_list_feature']),
-        produce_large_types=True),
-    dict(
-        testcase_name='large_string',
-        input_lines=['hello', 'world'],
-        column_names=['large_string_feature'],
-        expected_csv_cells=[
-            [b'hello'],
-            [b'world'],
-        ],
-        expected_types=[csv_decoder.ColumnType.STRING],
-        schema=text_format.Parse(
-            """feature {
-                name: "large_string_feature"
-                type: BYTES
-              }
-              """, schema_pb2.Schema()),
-        expected_record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.large_list(pa.float32())),
             pa.array([[b'hello'], [b'world']],
                      pa.large_list(pa.large_binary()))
-        ], ['large_string_feature']),
-        produce_large_types=True),
+        ], ['int_feature', 'float_feature', 'str_feature'])),
     dict(
         testcase_name='attach_raw_records',
         input_lines=['1,2.0,hello', '5,12.34,world'],
@@ -470,11 +442,12 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
-            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary())),
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.large_list(pa.float32())),
+            pa.array([[b'hello'], [b'world']], pa.large_list(
+                pa.large_binary())),
             pa.array([[b'1,2.0,hello'], [b'5,12.34,world']],
-                     pa.list_(pa.binary()))
+                     pa.large_list(pa.large_binary()))
         ], ['int_feature', 'float_feature', 'str_feature', 'raw_records']),
         raw_record_column_name='raw_records'),
     dict(
@@ -505,11 +478,12 @@ _TEST_CASES = [
               }
               """, schema_pb2.Schema()),
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1], [5]], pa.list_(pa.int64())),
-            pa.array([[2.0], [12.34]], pa.list_(pa.float32())),
-            pa.array([[b'hello'], [b'world']], pa.list_(pa.binary())),
+            pa.array([[1], [5]], pa.large_list(pa.int64())),
+            pa.array([[2.0], [12.34]], pa.large_list(pa.float32())),
+            pa.array([[b'hello'], [b'world']],
+                     pa.large_list(pa.large_binary())),
             pa.array([[b'1,2.0,hello'], [b'5,12.34,world']],
-                     pa.list_(pa.binary()))
+                     pa.large_list(pa.large_binary()))
         ], ['int_feature', 'float_feature', 'str_feature', 'raw_records'
            ]),
         raw_record_column_name='raw_records'),
@@ -523,10 +497,11 @@ _TEST_CASES = [
             csv_decoder.ColumnType.STRING,
         ],
         expected_record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[1, 2], [5, 1]], pa.list_(pa.int64())),
-            pa.array([[b'abcdef'], [b'wxxyyz']], pa.list_(pa.binary())),
+            pa.array([[1, 2], [5, 1]], pa.large_list(pa.int64())),
+            pa.array([[b'abcdef'], [b'wxxyyz']], pa.large_list(
+                pa.large_binary())),
             pa.array([[b'1,2 "abcdef"'], [b'5,1 "wxxyyz"']],
-                     pa.list_(pa.binary()))
+                     pa.large_list(pa.large_binary()))
         ], ['f1', 'f2', 'raw_records']),
         delimiter=' ',
         multivalent_columns=['f1'],
@@ -550,8 +525,7 @@ class CSVDecoderTest(parameterized.TestCase):
                            delimiter=',',
                            multivalent_columns=None,
                            secondary_delimiter=None,
-                           raw_record_column_name=None,
-                           produce_large_types=False):
+                           raw_record_column_name=None):
 
     def _check_csv_cells(actual):
       for i in range(len(actual)):
@@ -575,7 +549,7 @@ class CSVDecoderTest(parameterized.TestCase):
     def _check_arrow_schema(actual):
       for record_batch in actual:
         expected_arrow_schema = csv_decoder.GetArrowSchema(
-            column_names, schema, raw_record_column_name, produce_large_types)
+            column_names, schema, raw_record_column_name)
         self.assertEqual(record_batch.schema, expected_arrow_schema)
 
     with beam.Pipeline() as p:
@@ -606,8 +580,7 @@ class CSVDecoderTest(parameterized.TestCase):
                   skip_blank_lines=skip_blank_lines,
                   multivalent_columns=multivalent_columns,
                   secondary_delimiter=secondary_delimiter,
-                  raw_record_column_name=raw_record_column_name,
-                  produce_large_types=produce_large_types),
+                  raw_record_column_name=raw_record_column_name),
               beam.pvalue.AsSingleton(inferred_types)))
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
@@ -627,8 +600,7 @@ class CSVDecoderTest(parameterized.TestCase):
               schema=schema,
               multivalent_columns=multivalent_columns,
               secondary_delimiter=secondary_delimiter,
-              raw_record_column_name=raw_record_column_name,
-              produce_large_types=produce_large_types))
+              raw_record_column_name=raw_record_column_name))
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
 
@@ -637,14 +609,16 @@ class CSVDecoderTest(parameterized.TestCase):
     column_names = ['int_feature', 'float_feature', 'str_feature']
     schema = text_format.Parse("""feature { name: "int_feature" type: INT }""",
                                schema_pb2.Schema())
-    self.assertEqual(csv_decoder.GetArrowSchema(column_names, schema),
-                     pa.schema([pa.field('int_feature', pa.list_(pa.int64()))]))
+    self.assertEqual(
+        csv_decoder.GetArrowSchema(column_names, schema),
+        pa.schema([pa.field('int_feature', pa.large_list(pa.int64()))]))
 
     def _check_record_batches(record_batches):
       self.assertLen(record_batches, 1)
       self.assertTrue(record_batches[0].equals(
           pa.RecordBatch.from_arrays(
-              [pa.array([[1], [5]], pa.list_(pa.int64()))], ['int_feature'])))
+              [pa.array([[1], [5]], pa.large_list(pa.int64()))],
+              ['int_feature'])))
 
     with beam.Pipeline() as p:
       record_batches = (

@@ -91,7 +91,6 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
               desired_batch_size=batch_size,
               multivalent_columns=self._multivalent_columns,
               secondary_delimiter=self._secondary_delimiter,
-              produce_large_types=self._can_produce_large_types,
               raw_record_column_name=self._raw_record_column_name))
 
       return record_batches
@@ -104,8 +103,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
                        "Arrow schema")
     return csv_decoder.GetArrowSchema(
         self._column_names,
-        self._schema,
-        large_types=self._can_produce_large_types)
+        self._schema)
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     result = (

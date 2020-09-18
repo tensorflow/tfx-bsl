@@ -195,11 +195,8 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
           pa.field("st2", pa.list_(pa.binary())),
       ]
     if attach_raw_records:
-      raw_record_column_type = (
-          pa.large_list(pa.large_binary())
-          if tfxio._can_produce_large_types else pa.list_(pa.binary()))
       expected_fields.append(
-          pa.field(raw_record_column_name, raw_record_column_type))
+          pa.field(raw_record_column_name, pa.large_list(pa.large_binary())))
     self.assertTrue(tfxio.ArrowSchema().equals(
         pa.schema(expected_fields)), tfxio.ArrowSchema())
 

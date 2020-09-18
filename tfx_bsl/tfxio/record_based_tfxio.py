@@ -160,14 +160,13 @@ class RecordBasedTFXIO(tfxio.TFXIO):
   def ArrowSchema(self) -> pa.Schema:
     schema = self._ArrowSchemaNoRawRecordColumn()
     if self._raw_record_column_name is not None:
-      column_type = (pa.large_list(pa.large_binary()) if
-                     self._can_produce_large_types else pa.list_(pa.binary()))
       if schema.get_field_index(self._raw_record_column_name) != -1:
         raise ValueError(
             "Raw record column name {} collided with a column in the schema."
             .format(self._raw_record_column_name))
       schema = schema.append(
-          pa.field(self._raw_record_column_name, column_type))
+          pa.field(self._raw_record_column_name,
+                   pa.large_list(pa.large_binary())))
     return schema
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
@@ -185,23 +184,17 @@ class RecordBasedTFXIO(tfxio.TFXIO):
 
 
 def CreateRawRecordColumn(
-    raw_records: Union[np.ndarray, List[bytes]],
-    produce_large_types: bool) -> pa.Array:
+    raw_records: Union[np.ndarray, List[bytes]]) -> pa.Array:
   """Returns an Array that satisfies the requirement of a raw record column."""
-  list_array_factory = (
-      pa.LargeListArray.from_arrays
-      if produce_large_types else pa.ListArray.from_arrays)
-  binary_type = pa.large_binary() if produce_large_types else pa.binary()
-  return list_array_factory(
+  return pa.LargeListArray.from_arrays(
       np.arange(0, len(raw_records) + 1, dtype=np.int64),
-      pa.array(raw_records, type=binary_type))
+      pa.array(raw_records, type=pa.large_binary()))
 
 
 def AppendRawRecordColumn(
     record_batch: pa.RecordBatch,
     column_name: Text,
     raw_records: List[bytes],
-    produce_large_types: bool,
     record_index_column_name: Optional[Text] = None
 ) -> pa.RecordBatch:
   """Appends `raw_records` as a new column in `record_batch`.
@@ -210,8 +203,6 @@ def AppendRawRecordColumn(
     record_batch: The RecordBatch to append to.
     column_name: The name of the column to be appended.
     raw_records: A list of bytes to be appended.
-    produce_large_types: If True, the appended column will be of type
-      large_list<large_binary>, otherwise list<binary>.
     record_index_column_name: If not specified, len(raw_records) must equal
       to record_batch.num_rows. Otherwise, `record_batch` must contain an
       list_like<integer> column to indicate which element in `raw_records`
@@ -249,7 +240,7 @@ def AppendRawRecordColumn(
             len(record_indices), len(record_batch)))
     raw_records = np.asarray(raw_records, dtype=np.object)[record_indices]
   assert schema.get_field_index(column_name) == -1
-  raw_record_column = CreateRawRecordColumn(raw_records, produce_large_types)
+  raw_record_column = CreateRawRecordColumn(raw_records)
   return pa.RecordBatch.from_arrays(
       list(record_batch.columns) + [raw_record_column],
       list(schema.names) + [column_name])

@@ -35,10 +35,8 @@ namespace tfx_bsl {
 // If a schema is provided then the record batch will contain only the fields
 // from the schema, in the same order as the Schema.  The data type of the
 // schema to determine the field types, with INT, BYTES and FLOAT fields in the
-// schema corresponding to the Arrow data types list_type[int64],
-// list_type[binary_type] and list_type[float32]. Where 'list' could be list or
-// large_list and 'binary_type' could be binary or large_binary, depending
-// on `use_large_types`.
+// schema corresponding to the Arrow data types large_list[int64],
+// large_list[large_binary] and large_list[float32].
 //
 // If a schema is not provided then the data type will be inferred, and chosen
 // from list_type[int64], list_type[binary_type] and list_type[float32].  In the
@@ -52,7 +50,6 @@ class ExamplesToRecordBatchDecoder {
  public:
   static Status Make(
       absl::optional<absl::string_view> serialized_schema,
-      bool use_large_types,
       std::unique_ptr<ExamplesToRecordBatchDecoder>* result);
   ~ExamplesToRecordBatchDecoder();
 
@@ -71,7 +68,7 @@ class ExamplesToRecordBatchDecoder {
 
  private:
   ExamplesToRecordBatchDecoder(
-      bool use_large_types, std::shared_ptr<arrow::Schema> arrow_schema,
+      std::shared_ptr<arrow::Schema> arrow_schema,
       std::unique_ptr<const absl::flat_hash_map<
           std::string, std::unique_ptr<FeatureDecoder>>>
           feature_decoders);
@@ -87,7 +84,6 @@ class ExamplesToRecordBatchDecoder {
   const std::unique_ptr<
       const absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>
       feature_decoders_;
-  const bool use_large_types_;
 };
 
 // Converts a RecordBatch to a list of examples.
@@ -105,11 +101,10 @@ Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
 // The sequence fields will be arranged in a struct array within a single column
 // of the record batch. The data type of the schema determines the field types,
 // with INT, BYTES and FLOAT fields in the schema corresponding to the Arrow
-// data types list_type[int64], list_type[binary_type], and list_type[float32]
-// for context features; and list_type[list_type[int64]],
-// list_type[list_type[binary_type]], and list_type[list_type[float32]] for
-// sequence features. 'list_type' could be list or large_list and 'binary_type'
-// could be binary or large_binary, depending on `use_large_types`.
+// data types large_list[int64], large_list[large_binary], and
+// large_list[float32] for context features; and large_list[large_list[int64]],
+// large_list[large_list[large_binary]], and large_list[large_list[float32]] for
+// sequence features.
 //
 // If a schema is not provided, then the data type will be inferred and chosen
 // from list_type[int64], list_type[binary_type], and list_type[float32] for
@@ -129,7 +124,7 @@ class SequenceExamplesToRecordBatchDecoder {
   // with or without a schema provided.
   static Status Make(
       const absl::optional<absl::string_view>& serialized_schema,
-      const std::string& sequence_feature_column_name, bool use_large_types,
+      const std::string& sequence_feature_column_name,
       std::unique_ptr<SequenceExamplesToRecordBatchDecoder>* result);
   ~SequenceExamplesToRecordBatchDecoder();
 
@@ -150,7 +145,7 @@ class SequenceExamplesToRecordBatchDecoder {
 
  private:
   SequenceExamplesToRecordBatchDecoder(
-      const std::string& sequence_feature_column_name, bool use_large_types,
+      const std::string& sequence_feature_column_name,
       std::shared_ptr<arrow::Schema> arrow_schema,
       std::shared_ptr<arrow::StructType> sequence_features_struct_type,
       std::unique_ptr<const absl::flat_hash_map<
@@ -183,9 +178,6 @@ class SequenceExamplesToRecordBatchDecoder {
   // feature that contains all sequence features as children must use this name.
   // No other features should use this name.
   const std::string sequence_feature_column_name_;
-  // If true, the Arrow large_list and large_binary types will be used in the
-  // RecordBatch the decoder creates instead of list and binary.
-  const bool use_large_types_;
   const std::shared_ptr<arrow::Schema> arrow_schema_;
   // The type of the StructArray used to hold the sequence features.
   const std::shared_ptr<arrow::StructType> sequence_features_struct_type_;

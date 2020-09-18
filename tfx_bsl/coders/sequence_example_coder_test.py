@@ -320,7 +320,6 @@ _TEST_SEQUENCE_EXAMPLES_NONE_TYPED = [
     """,
 ]
 
-# pylint: disable=g-long-lambda
 _DECODE_CASES = [
     dict(
         testcase_name="without_schema_first_example_typed",
@@ -330,25 +329,24 @@ _DECODE_CASES = [
             _SOME_FEATURES_TYPED_SEQUENCE_EXAMPLE,
             _EMPTY_VALUES_LIST_SEQUENCE_EXAMPLE
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([[1], None, None, []], type=list_factory(pa.int64())),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([[1], None, None, []], type=pa.large_list(pa.int64())),
             pa.array([[1.0, 2.0], None, None, []],
-                     type=list_factory(pa.float32())),
+                     type=pa.large_list(pa.float32())),
             pa.array([[b"a", b"b", b"c"], None, None, []],
-                     type=list_factory(binary_type)),
+                     type=pa.large_list(pa.large_binary())),
             pa.array([None, None, None, None], pa.null()),
-            pa.array([None, None, [1.0], None], type=list_factory(pa.float32())
-                    ),
+            pa.array([None, None, [1.0], None],
+                     type=pa.large_list(pa.float32())),
             pa.StructArray.from_arrays([
                 pa.array([None, None, [[1.0]], None],
-                         type=list_factory(list_factory(pa.float32()))),
+                         type=pa.large_list(pa.large_list(pa.float32()))),
                 pa.array([[[1, 2], [3]], [], [None, None, None], [[], []]],
-                         type=list_factory(list_factory(pa.int64()))),
+                         type=pa.large_list(pa.large_list(pa.int64()))),
                 pa.array([[[3.0, 4.0], [1.0, 2.0]], [], [None], [[]]],
-                         type=list_factory(list_factory(pa.float32()))),
+                         type=pa.large_list(pa.large_list(pa.float32()))),
                 pa.array([[[b"a", b"b"], [b"c"]], [], [None], [[]]],
-                         type=list_factory(list_factory(binary_type)))
+                         type=pa.large_list(pa.large_list(pa.large_binary())))
             ],
                                        names=[
                                            "sequence_v", "sequence_x",
@@ -396,25 +394,26 @@ _DECODE_CASES = [
             _SOME_FEATURES_TYPED_SEQUENCE_EXAMPLE,
             _EMPTY_VALUES_LIST_SEQUENCE_EXAMPLE
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([[1], None, None, []], type=list_factory(pa.int64())),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([[1], None, None, []], type=pa.large_list(pa.int64())),
             pa.array([[1.0, 2.0], None, None, []],
-                     type=list_factory(pa.float32())),
+                     type=pa.large_list(pa.float32())),
             pa.array([[b"a", b"b", b"c"], None, None, []],
-                     type=list_factory(binary_type)),
-            pa.StructArray.from_arrays(
-                [
-                    pa.array([[[1, 2], [3]], [], [None, None, None], [[], []]],
-                             type=list_factory(list_factory(pa.int64()))),
-                    pa.array([[[3.0, 4.0], [1.0, 2.0]], [], [None], [[]]],
-                             type=list_factory(list_factory(pa.float32()))),
-                    pa.array([[[b"a", b"b"], [b"c"]], [], [None], [[]]],
-                             type=list_factory(list_factory(binary_type)))
-                ],
-                names=["sequence_x", "sequence_y", "sequence_z"])
-        ], ["context_a", "context_b", "context_c", _TEST_SEQUENCE_COLUMN_NAME]
-                   )),
+                     type=pa.large_list(pa.large_binary())),
+            pa.StructArray.from_arrays([
+                pa.array([[[1, 2], [3]], [], [None, None, None], [[], []]],
+                         type=pa.large_list(pa.large_list(pa.int64()))),
+                pa.array([[[3.0, 4.0], [1.0, 2.0]], [], [None], [[]]],
+                         type=pa.large_list(pa.large_list(pa.float32()))),
+                pa.array([[[b"a", b"b"], [b"c"]], [], [None], [[]]],
+                         type=pa.large_list(pa.large_list(pa.large_binary())))
+            ],
+                                       names=[
+                                           "sequence_x", "sequence_y",
+                                           "sequence_z"
+                                       ])
+        ], ["context_a", "context_b", "context_c", _TEST_SEQUENCE_COLUMN_NAME
+           ])),
     dict(
         testcase_name="without_schema_untyped_then_typed_examples",
         schema_text_proto=None,
@@ -422,25 +421,24 @@ _DECODE_CASES = [
             _UNTYPED_SEQUENCE_EXAMPLE, _SOME_FEATURES_TYPED_SEQUENCE_EXAMPLE,
             _EMPTY_VALUES_LIST_SEQUENCE_EXAMPLE, _TYPED_SEQUENCE_EXAMPLE
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None, None, [], [1]], type=list_factory(pa.int64())),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None, None, [], [1]], type=pa.large_list(pa.int64())),
             pa.array([None, None, [], [1.0, 2.0]],
-                     type=list_factory(pa.float32())),
+                     type=pa.large_list(pa.float32())),
             pa.array([None, None, [], [b"a", b"b", b"c"]],
-                     type=list_factory(binary_type)),
+                     type=pa.large_list(pa.large_binary())),
             pa.array([None, None, None, None], pa.null()),
-            pa.array([None, [1.0], None, None], type=list_factory(pa.float32())
-                    ),
+            pa.array([None, [1.0], None, None],
+                     type=pa.large_list(pa.float32())),
             pa.StructArray.from_arrays([
                 pa.array([None, [[1.0]], None, None],
-                         type=list_factory(list_factory(pa.float32()))),
+                         type=pa.large_list(pa.large_list(pa.float32()))),
                 pa.array([[], [None, None, None], [[], []], [[1, 2], [3]]],
-                         type=list_factory(list_factory(pa.int64()))),
+                         type=pa.large_list(pa.large_list(pa.int64()))),
                 pa.array([[], [None], [[]], [[3.0, 4.0], [1.0, 2.0]]],
-                         type=list_factory(list_factory(pa.float32()))),
+                         type=pa.large_list(pa.large_list(pa.float32()))),
                 pa.array([[], [None], [[]], [[b"a", b"b"], [b"c"]]],
-                         type=list_factory(list_factory(binary_type)))
+                         type=pa.large_list(pa.large_list(pa.large_binary())))
             ],
                                        names=[
                                            "sequence_v", "sequence_x",
@@ -487,38 +485,38 @@ _DECODE_CASES = [
             _UNTYPED_SEQUENCE_EXAMPLE, _SOME_FEATURES_TYPED_SEQUENCE_EXAMPLE,
             _EMPTY_VALUES_LIST_SEQUENCE_EXAMPLE, _TYPED_SEQUENCE_EXAMPLE
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None, None, [], [1]], type=list_factory(pa.int64())),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None, None, [], [1]], type=pa.large_list(pa.int64())),
             pa.array([None, None, [], [1.0, 2.0]],
-                     type=list_factory(pa.float32())),
+                     type=pa.large_list(pa.float32())),
             pa.array([None, None, [], [b"a", b"b", b"c"]],
-                     type=list_factory(binary_type)),
-            pa.StructArray.from_arrays(
-                [
-                    pa.array([[], [None, None, None], [[], []], [[1, 2], [3]]],
-                             type=list_factory(list_factory(pa.int64()))),
-                    pa.array([[], [None], [[]], [[3.0, 4.0], [1.0, 2.0]]],
-                             type=list_factory(list_factory(pa.float32()))),
-                    pa.array([[], [None], [[]], [[b"a", b"b"], [b"c"]]],
-                             type=list_factory(list_factory(binary_type)))
-                ],
-                names=["sequence_x", "sequence_y", "sequence_z"])
-        ], ["context_a", "context_b", "context_c", _TEST_SEQUENCE_COLUMN_NAME]
-                   )),
+                     type=pa.large_list(pa.large_binary())),
+            pa.StructArray.from_arrays([
+                pa.array([[], [None, None, None], [[], []], [[1, 2], [3]]],
+                         type=pa.large_list(pa.large_list(pa.int64()))),
+                pa.array([[], [None], [[]], [[3.0, 4.0], [1.0, 2.0]]],
+                         type=pa.large_list(pa.large_list(pa.float32()))),
+                pa.array([[], [None], [[]], [[b"a", b"b"], [b"c"]]],
+                         type=pa.large_list(pa.large_list(pa.large_binary())))
+            ],
+                                       names=[
+                                           "sequence_x", "sequence_y",
+                                           "sequence_z"
+                                       ])
+        ], ["context_a", "context_b", "context_c", _TEST_SEQUENCE_COLUMN_NAME
+           ])),
     dict(
         testcase_name="without_schema_no_typed_examples",
         schema_text_proto=None,
         sequence_examples_text_proto=_TEST_SEQUENCE_EXAMPLES_NONE_TYPED,
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
+        expected=pa.RecordBatch.from_arrays([
             pa.array([None, None], type=pa.null()),
             pa.array([None, None], type=pa.null()),
             pa.array([None, None], type=pa.null()),
             pa.array([None, None], type=pa.null()),
             pa.StructArray.from_arrays([
-                pa.array([None, [None]], type=list_factory(pa.null())),
-                pa.array([[], [None]], type=list_factory(pa.null())),
+                pa.array([None, [None]], type=pa.large_list(pa.null())),
+                pa.array([[], [None]], type=pa.large_list(pa.null())),
             ],
                                        names=[
                                            "sequence_w",
@@ -562,23 +560,24 @@ _DECODE_CASES = [
           }
         }""",
         sequence_examples_text_proto=_TEST_SEQUENCE_EXAMPLES_NONE_TYPED,
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None, None], type=list_factory(pa.int64())),
-            pa.array([None, None], type=list_factory(pa.float32())),
-            pa.array([None, None], type=list_factory(binary_type)),
-            pa.StructArray.from_arrays(
-                [
-                    pa.array([[], [None]],
-                             type=list_factory(list_factory(pa.int64()))),
-                    pa.array([None, None],
-                             type=list_factory(list_factory(pa.float32()))),
-                    pa.array([None, None],
-                             type=list_factory(list_factory(binary_type)))
-                ],
-                names=["sequence_x", "sequence_y", "sequence_z"])
-        ], ["context_a", "context_b", "context_c", _TEST_SEQUENCE_COLUMN_NAME]
-                   )),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None, None], type=pa.large_list(pa.int64())),
+            pa.array([None, None], type=pa.large_list(pa.float32())),
+            pa.array([None, None], type=pa.large_list(pa.large_binary())),
+            pa.StructArray.from_arrays([
+                pa.array([[], [None]],
+                         type=pa.large_list(pa.large_list(pa.int64()))),
+                pa.array([None, None],
+                         type=pa.large_list(pa.large_list(pa.float32()))),
+                pa.array([None, None],
+                         type=pa.large_list(pa.large_list(pa.large_binary())))
+            ],
+                                       names=[
+                                           "sequence_x", "sequence_y",
+                                           "sequence_z"
+                                       ])
+        ], ["context_a", "context_b", "context_c", _TEST_SEQUENCE_COLUMN_NAME
+           ])),
     dict(
         testcase_name="build_nulls_for_unseen_feature",
         schema_text_proto="""
@@ -602,12 +601,12 @@ _DECODE_CASES = [
             _SOME_FEATURES_TYPED_SEQUENCE_EXAMPLE,
             _EMPTY_VALUES_LIST_SEQUENCE_EXAMPLE
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None, None, None, None], type=list_factory(binary_type)),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None, None, None, None],
+                     type=pa.large_list(pa.large_binary())),
             pa.StructArray.from_arrays([
                 pa.array([None, None, None, None],
-                         type=list_factory(list_factory(pa.int64())))
+                         type=pa.large_list(pa.large_list(pa.int64())))
             ],
                                        names=["sequence_u"]),
         ], ["context_u", _TEST_SEQUENCE_COLUMN_NAME])),
@@ -637,11 +636,10 @@ _DECODE_CASES = [
         }
         """
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None], type=list_factory(binary_type)),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None], type=pa.large_list(pa.large_binary())),
             pa.StructArray.from_arrays(
-                [pa.array([[]], type=list_factory(list_factory(pa.int64())))],
+                [pa.array([[]], type=pa.large_list(pa.large_list(pa.int64())))],
                 names=["sequence_a"]),
         ], ["context_a", _TEST_SEQUENCE_COLUMN_NAME])),
     dict(
@@ -660,9 +658,8 @@ _DECODE_CASES = [
         }
         """
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None], type=list_factory(binary_type)),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None], type=pa.large_list(pa.large_binary())),
         ], ["context_a"])),
     dict(
         testcase_name="duplicate_context_feature_names_in_schema",
@@ -685,9 +682,8 @@ _DECODE_CASES = [
         }
         """
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([None], type=list_factory(binary_type)),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([None], type=pa.large_list(pa.large_binary())),
         ], ["context_a"])),
     dict(
         testcase_name="duplicate_sequence_feature_names_in_schema",
@@ -715,10 +711,9 @@ _DECODE_CASES = [
         }
         """
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
+        expected=pa.RecordBatch.from_arrays([
             pa.StructArray.from_arrays(
-                [pa.array([[]], type=list_factory(list_factory(pa.int64())))],
+                [pa.array([[]], type=pa.large_list(pa.large_list(pa.int64())))],
                 names=["sequence_a"]),
         ], [_TEST_SEQUENCE_COLUMN_NAME])),
     dict(
@@ -727,8 +722,7 @@ _DECODE_CASES = [
         sequence_examples_text_proto=["""
         feature_lists {}
         """],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
+        expected=pa.RecordBatch.from_arrays([
             pa.StructArray.from_buffers(pa.struct([]), 1, [None]),
         ], [_TEST_SEQUENCE_COLUMN_NAME])),
     dict(
@@ -748,9 +742,8 @@ _DECODE_CASES = [
         }
         """
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
-            pa.array([[1, 2]], type=list_factory(pa.int64())),
+        expected=pa.RecordBatch.from_arrays([
+            pa.array([[1, 2]], type=pa.large_list(pa.int64())),
         ], ["context_a"])),
     dict(
         testcase_name="without_schema_only_sequence_features",
@@ -771,16 +764,14 @@ _DECODE_CASES = [
         }
         """
         ],
-        create_expected=lambda list_factory, binary_type: pa.RecordBatch.
-        from_arrays([
+        expected=pa.RecordBatch.from_arrays([
             pa.StructArray.from_arrays([
                 pa.array([[[1, 2]]],
-                         type=list_factory(list_factory(pa.int64()))),
+                         type=pa.large_list(pa.large_list(pa.int64()))),
             ],
                                        names=["sequence_x"])
         ], [_TEST_SEQUENCE_COLUMN_NAME])),
 ]
-# pylint: enable=g-long-lambda
 
 _INVALID_INPUT_CASES = [
     dict(
@@ -881,8 +872,9 @@ _INVALID_INPUT_CASES = [
 
 class SequenceExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
-  def _test_decode(self, schema_text_proto, sequence_examples_text_proto,
-                   create_expected, use_large_types):
+  @parameterized.named_parameters(*_DECODE_CASES)
+  def test_decode(self, schema_text_proto, sequence_examples_text_proto,
+                  expected):
     serialized_sequence_examples = [
         text_format.Parse(pbtxt,
                           tf.train.SequenceExample()).SerializeToString()
@@ -896,36 +888,19 @@ class SequenceExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     if serialized_schema:
       coder = sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
           _TEST_SEQUENCE_COLUMN_NAME,
-          serialized_schema,
-          use_large_types=use_large_types)
+          serialized_schema)
     else:
       coder = sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-          _TEST_SEQUENCE_COLUMN_NAME, use_large_types=use_large_types)
+          _TEST_SEQUENCE_COLUMN_NAME)
 
     result = coder.DecodeBatch(serialized_sequence_examples)
     self.assertIsInstance(result, pa.RecordBatch)
-    if use_large_types:
-      expected = create_expected(pa.large_list, pa.large_binary())
-    else:
-      expected = create_expected(pa.list_, pa.binary())
     self.assertTrue(
         result.equals(expected),
         "actual: {}\n expected:{}".format(result, expected))
 
     if serialized_schema is not None:
       self.assertTrue(coder.ArrowSchema().equals(result.schema))
-
-  @parameterized.named_parameters(*_DECODE_CASES)
-  def test_decode(self, schema_text_proto, sequence_examples_text_proto,
-                  create_expected):
-    self._test_decode(schema_text_proto, sequence_examples_text_proto,
-                      create_expected, use_large_types=False)
-
-  @parameterized.named_parameters(*_DECODE_CASES)
-  def test_decode_large_types(self, schema_text_proto,
-                              sequence_examples_text_proto, create_expected):
-    self._test_decode(schema_text_proto, sequence_examples_text_proto,
-                      create_expected, use_large_types=True)
 
   @parameterized.named_parameters(*_INVALID_INPUT_CASES)
   def test_invalid_input(self, schema_text_proto, sequence_examples_text_proto,

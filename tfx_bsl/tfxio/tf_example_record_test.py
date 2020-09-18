@@ -161,24 +161,16 @@ def CreateExamplesAsTensors():
 _EXAMPLES_AS_TENSORS = CreateExamplesAsTensors()
 
 
-def GetExpectedColumnValues(tfxio):
-  if tfxio._can_produce_large_types:
-    int_type = pa.large_list(pa.int64())
-    float_type = pa.large_list(pa.float32())
-    bytes_type = pa.large_list(pa.large_binary())
-  else:
-    int_type = pa.list_(pa.int64())
-    float_type = pa.list_(pa.float32())
-    bytes_type = pa.list_(pa.binary())
-
-  return {
-      "int_feature":
-          pa.array([[1], [2], [3]], type=int_type),
-      "float_feature":
-          pa.array([[1, 2, 3, 4], [2, 3, 4, 5], [4, 5, 6, 7]], type=float_type),
-      "string_feature":
-          pa.array([None, ["foo", "bar"], None], type=bytes_type),
-  }
+_EXPECTED_COLUMN_VALUES = {
+    "int_feature":
+        pa.array([[1], [2], [3]], type=pa.large_list(pa.int64())),
+    "float_feature":
+        pa.array([[1, 2, 3, 4], [2, 3, 4, 5], [4, 5, 6, 7]],
+                 type=pa.large_list(pa.float32())),
+    "string_feature":
+        pa.array([None, ["foo", "bar"], None],
+                 type=pa.large_list(pa.large_binary())),
+}
 
 
 def _WriteInputs(filename):
@@ -207,24 +199,19 @@ class TfExampleRecordTest(tf.test.TestCase):
       self, tfxio, record_batch, raw_record_column_name=None):
     self.assertIsInstance(record_batch, pa.RecordBatch)
     self.assertEqual(record_batch.num_rows, 3)
-    expected_column_values = GetExpectedColumnValues(tfxio)
     for i, field in enumerate(record_batch.schema):
       if field.name == raw_record_column_name:
         continue
       self.assertTrue(record_batch.column(i).equals(
-          expected_column_values[field.name]),
+          _EXPECTED_COLUMN_VALUES[field.name]),
                       "Column {} did not match ({} vs {})."
                       .format(field.name, record_batch.column(i),
-                              expected_column_values[field.name]))
+                              _EXPECTED_COLUMN_VALUES[field.name]))
 
     if raw_record_column_name is not None:
-      if tfxio._can_produce_large_types:
-        raw_record_column_type = pa.large_list(pa.large_binary())
-      else:
-        raw_record_column_type = pa.list_(pa.binary())
       self.assertEqual(record_batch.schema.names[-1], raw_record_column_name)
-      self.assertTrue(
-          record_batch.columns[-1].type.equals(raw_record_column_type))
+      self.assertTrue(record_batch.columns[-1].type.equals(
+          pa.large_list(pa.large_binary())))
       self.assertEqual(record_batch.columns[-1].flatten().to_pylist(),
                        _SERIALIZED_EXAMPLES)
 

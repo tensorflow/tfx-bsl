@@ -43,11 +43,8 @@ class TestUtilTest(absltest.TestCase):
       record_batch = record_batches[0]
       self.assertEqual(record_batch.num_rows, 1)
       self.assertEqual(record_batch.num_columns, 1)
-      expected_type = (
-          pa.large_list(pa.int64())
-          if tfxio._can_produce_large_types else pa.list_(pa.int64()))
       self.assertTrue(record_batch[0].equals(
-          pa.array([[123]], type=expected_type)))
+          pa.array([[123]], type=pa.large_list(pa.int64()))))
 
     with beam.Pipeline() as p:
       record_batches = p | beam.Create(examples) | tfxio.BeamSource()

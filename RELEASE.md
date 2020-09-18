@@ -10,6 +10,9 @@
 
 ## Breaking changes
 
+*  Coders (Example, CSV) do not support outputting ListArray/BinaryArray any
+   more. They can only output LargeListArray/LargeBinaryArray.
+
 # Version 0.24.0
 
 ## Major Features and Improvements
