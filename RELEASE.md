@@ -7,6 +7,8 @@
 ## Major Features and Improvements
 
 ## Bug Fixes and Other Changes
+*  TensorToArrow returns LargeListArray/LargeBinaryArray in place of
+   ListArray/BinaryArray.
 
 ## Breaking changes
 

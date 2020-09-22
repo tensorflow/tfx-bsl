@@ -69,12 +69,12 @@ Status IndexIn(const std::shared_ptr<arrow::Array>& values,
                const std::shared_ptr<arrow::Array>& value_set,
                std::shared_ptr<arrow::Array>* matched_value_set_indices);
 
-// Makes an Arrow ListArray from parent indices and values.
+// Makes an Arrow LargeListArray from parent indices and values.
 // For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] and
 // values_array_py is (an arrow Array of) [0, 1, 2, 3, 4], then the result will
-// be a ListArray of integers: [[0], [1, 2], <empty_list>, [3, 4], <empty_list>]
-// where <empty_list> is `null` if `empyt_list_as_null` is true, or `[]` if
-// false.
+// be a LargeListArray of integers:
+// [[0], [1, 2], <empty_list>, [3, 4], <empty_list>]  where <empty_list> is
+// `null` if `empyt_list_as_null` is true, or `[]` if false.
 // `num_parents` must be a Python integer (int or long) and it must be greater
 // than or equal to max(parent_indices) + 1.
 // `parent_indices` must be a int64 1-D numpy array and the indices must be

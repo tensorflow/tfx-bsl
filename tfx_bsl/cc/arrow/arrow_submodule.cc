@@ -146,10 +146,10 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
         return result;
       },
       py::doc(
-          "Makes an Arrow ListArray from parent indices and values."
+          "Makes an Arrow LargeListArray from parent indices and values."
           "For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] "
           "and values_array_py is (an arrow Array of) [0, 1, 2, 3, 4], then "
-          "the result will be a ListArray of integers: "
+          "the result will be a LargeListArray of integers: "
           "[[0], [1, 2], <empty_list>, [3, 4], <empty_list>] "
           "where <empty_list> is `null` if `empyt_list_as_null` is true, or "
           "`[]`if false. `num_parents` must be a Python integer (int or long) "

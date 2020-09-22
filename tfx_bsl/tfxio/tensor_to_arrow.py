@@ -187,7 +187,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
   def arrow_fields(self) -> List[pa.Field]:
     return [
         pa.field(self._tensor_name,
-                 pa.list_(_tf_dtype_to_arrow_type(self._type_spec.dtype)))
+                 pa.large_list(_tf_dtype_to_arrow_type(self._type_spec.dtype)))
     ]
 
   def tensor_representation(self) -> schema_pb2.TensorRepresentation:
@@ -216,7 +216,6 @@ class _RaggedTensorHandler(_TypeHandler):
     # pylint: disable=protected-access
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec._dtype)
     self._row_partition_dtype = type_spec._row_splits_dtype
-    # pylint: enable=protected-access
 
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
 
@@ -224,19 +223,20 @@ class _RaggedTensorHandler(_TypeHandler):
       """Recursively constructs nested arrow arrays from a tensor."""
       if isinstance(tensor, tf.RaggedTensor):
         values = tensor.values
-        return pa.ListArray.from_arrays(
+        return pa.LargeListArray.from_arrays(
             offsets=np.asarray(tensor.row_splits),
             values=_create_nested_list(values))
       else:
-        return pa.array(np.asarray(tensor))
+        return pa.array(np.asarray(tensor), self._values_arrow_type)
 
     return [_create_nested_list(tensor)]
 
   def arrow_fields(self) -> List[pa.Field]:
     # TODO(b/159717195): clean up protected-access
-    arrow_type = pa.list_(_tf_dtype_to_arrow_type(self._type_spec._dtype))  # pylint: disable=protected-access
-    for _ in range(self._type_spec._ragged_rank - 1):  # pylint: disable=protected-access
-      arrow_type = pa.list_(arrow_type)
+    # pylint: disable=protected-access
+    arrow_type = _tf_dtype_to_arrow_type(self._type_spec._dtype)
+    for _ in range(self._type_spec._ragged_rank):
+      arrow_type = pa.large_list(arrow_type)
     return [
         pa.field(self._tensor_name, arrow_type)
     ]
@@ -257,10 +257,16 @@ class _RaggedTensorHandler(_TypeHandler):
     if not isinstance(type_spec, tf.RaggedTensorSpec):
       return False
     # TODO(b/159717195): clean up protected-access
-    if len(type_spec._shape) - type_spec._ragged_rank > 1:  # pylint: disable=protected-access
+    # pylint:disable=protected-access
+    if type_spec._ragged_rank < 1:
+      # We don't support RaggedTensors that are not ragged. They are
+      # essentially dense tensors and should be converted to them and be
+      # handled by the DenseTensorHandler (if implemented).
+      return False
+    if len(type_spec._shape) - type_spec._ragged_rank > 1:
       # We currently do not handle leaf value tensors that are not 1-D.
       return False
-    return type_spec._dtype != tf.bool  # pylint: disable=protected-access
+    return type_spec._dtype != tf.bool
 
 
 _ALL_HANDLERS_CLS = [_VarLenSparseTensorHandler, _RaggedTensorHandler]
@@ -269,7 +275,7 @@ _ALL_HANDLERS_CLS = [_VarLenSparseTensorHandler, _RaggedTensorHandler]
 def _tf_dtype_to_arrow_type(dtype: tf.DType):
   """Maps a tf Dtype to an Arrow type."""
   if dtype == tf.string:
-    return pa.binary()
+    return pa.large_binary()
   elif dtype == tf.bool:
     raise TypeError("Unable to handle bool tensors -- consider casting it to a "
                     "tf.uint8")
@@ -298,6 +304,11 @@ def _get_handler(
   for handler_cls in _ALL_HANDLERS_CLS:
     if handler_cls.can_handle(type_spec):
       return handler_cls(tensor_name, type_spec)
+  # We don't support tf.bool now because:
+  #   - if converted to pa.bool(), TFDV does not know how to handle it.
+  #   - if converted to pa.uint8() (or other integral types), we don't have
+  #     a place to note it was previously a tf.bool so TensorAdapter can
+  #     revert it as a tf.bool.
   raise ValueError(
       "No handler found for tensor {} of spec {}. "
       "Note that tensors with dtype == tf.bool cannot be handled in general -- "

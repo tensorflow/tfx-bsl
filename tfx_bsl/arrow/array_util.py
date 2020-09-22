@@ -77,11 +77,11 @@ def MakeListArrayFromParentIndicesAndValues(num_parents: int,
                                             parent_indices: pa.Array,
                                             values: pa.Array,
                                             empty_list_as_null: bool = True):
-  """Makes an Arrow ListArray from parent indices and values.
+  """Makes an Arrow LargeListArray from parent indices and values.
 
   For example, if `num_parents = 6`, `parent_indices = [0, 1, 1, 3, 3]` and
   `values` is (an arrow Array of) `[0, 1, 2, 3, 4]`, then the result will
-  be a `pa.ListArray` of integers:
+  be a `pa.LargeListArray` of integers:
   `[[0], [1, 2], <empty_list>, [3, 4], <empty_list>]`
   where `<empty_list>` is `null` if `empty_list_as_null` is True, or `[]` if
   False.
@@ -95,7 +95,7 @@ def MakeListArrayFromParentIndicesAndValues(num_parents: int,
       in the result ListArray. Otherwise they become empty sub-lists.
 
   Returns:
-    A ListArray.
+    A LargeListArray.
   """
   return _MakeListArrayFromParentIndicesAndValues(num_parents, parent_indices,
                                                   values, empty_list_as_null)

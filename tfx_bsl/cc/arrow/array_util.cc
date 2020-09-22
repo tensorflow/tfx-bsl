@@ -325,12 +325,12 @@ Status MakeListArrayFromParentIndicesAndValues(
     TFX_BSL_RETURN_IF_ERROR(
         FromArrowStatus(null_bitmap_builder.Reserve(num_parents)));
   }
-  arrow::TypedBufferBuilder<int32_t> offsets_builder;
+  arrow::TypedBufferBuilder<int64_t> offsets_builder;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(offsets_builder.Reserve(num_parents + 1)));
 
   offsets_builder.UnsafeAppend(0);
-  for (int i = 0, current_pi = 0; i < num_parents; ++i) {
+  for (int64_t i = 0, current_pi = 0; i < num_parents; ++i) {
     if (current_pi >= parent_indices_int64.length() ||
         parent_indices_int64.Value(current_pi) != i) {
       if (empty_list_as_null) null_bitmap_builder.UnsafeAppend(false);
@@ -354,9 +354,9 @@ Status MakeListArrayFromParentIndicesAndValues(
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(offsets_builder.Finish(&offsets_buffer)));
 
-  *out = std::make_shared<ListArray>(arrow::list(values->type()), num_parents,
-                                     offsets_buffer, values, null_bitmap_buffer,
-                                     null_count, /*offset=*/0);
+  *out = std::make_shared<LargeListArray>(
+      arrow::large_list(values->type()), num_parents, offsets_buffer, values,
+      null_bitmap_buffer, null_count, /*offset=*/0);
   return Status::OK();
 }
 

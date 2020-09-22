@@ -174,10 +174,10 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
     }
     if isinstance(decoder, _DecoderForTestingWithRecordIndex):
       expected_fields = [
-          pa.field("ragged_record_index", pa.list_(pa.int64())),
-          pa.field("sparse_record_index", pa.list_(pa.int64())),
-          pa.field("st1", pa.list_(pa.binary())),
-          pa.field("st2", pa.list_(pa.binary())),
+          pa.field("ragged_record_index", pa.large_list(pa.int64())),
+          pa.field("sparse_record_index", pa.large_list(pa.int64())),
+          pa.field("st1", pa.large_list(pa.large_binary())),
+          pa.field("st2", pa.large_list(pa.large_binary())),
       ]
       expected_tensor_representations["ragged_record_index"] = (
           text_format.Parse(
@@ -191,8 +191,8 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
               schema_pb2.TensorRepresentation()))
     else:
       expected_fields = [
-          pa.field("st1", pa.list_(pa.binary())),
-          pa.field("st2", pa.list_(pa.binary())),
+          pa.field("st1", pa.large_list(pa.large_binary())),
+          pa.field("st2", pa.large_list(pa.large_binary())),
       ]
     if attach_raw_records:
       expected_fields.append(
