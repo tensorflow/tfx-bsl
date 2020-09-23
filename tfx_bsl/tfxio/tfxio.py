@@ -24,8 +24,7 @@ for the high-level design.
 """
 
 import abc
-from typing import List, Optional, Text
-
+from typing import Iterator, List, Optional, Text
 import apache_beam as beam
 import pyarrow as pa
 import tensorflow as tf
@@ -52,6 +51,19 @@ class TFXIO(object, metaclass=abc.ABCMeta):
     Args:
       batch_size: if not None, the `pa.RecordBatch` produced will be of the
         specified size. Otherwise it's automatically tuned by Beam.
+    """
+
+  @abc.abstractmethod
+  def RecordBatches(
+      self, options: dataset_options.RecordBatchesOptions
+  ) -> Iterator[pa.RecordBatch]:
+    """Returns an iterable of record batches.
+
+    This can be used outside of beam to access data.
+
+    Args:
+      options: An options object for iterating over record batches. Look at
+        `dataset_options.RecordBatchesOptions` for more details.
     """
 
   @abc.abstractmethod
@@ -169,6 +181,11 @@ class _ProjectedTFXIO(TFXIO):
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
     return self.projected.BeamSource(batch_size)
+
+  def RecordBatches(
+      self, options: dataset_options.RecordBatchesOptions
+  ) -> Iterator[pa.RecordBatch]:
+    return self.projected.RecordBatches(options)
 
   def ArrowSchema(self) -> pa.Schema:
     return self.projected.ArrowSchema()

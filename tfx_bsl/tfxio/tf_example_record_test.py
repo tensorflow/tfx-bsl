@@ -347,6 +347,34 @@ class TfExampleRecordTest(tf.test.TestCase):
       record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
+  def testRecordBatches(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    options = dataset_options.RecordBatchesOptions(
+        batch_size=len(_EXAMPLES), shuffle=False, num_epochs=1)
+    for record_batch in tfxio.RecordBatches(options):
+      self._ValidateRecordBatch(tfxio, record_batch)
+
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testRecordBatchesWithRawRecords(self):
+    raw_example_column_name = "raw_records"
+    tfxio = self._MakeTFXIO(_SCHEMA, raw_example_column_name)
+    options = dataset_options.RecordBatchesOptions(
+        batch_size=len(_EXAMPLES), shuffle=False, num_epochs=1)
+    for record_batch in tfxio.RecordBatches(options):
+      self._ValidateRecordBatch(tfxio, record_batch, raw_example_column_name)
+
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testRecordBatchesWithProject(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    feature_name = "string_feature"
+    projected_tfxio = tfxio.Project([feature_name])
+    options = dataset_options.RecordBatchesOptions(
+        batch_size=len(_EXAMPLES), shuffle=False, num_epochs=1)
+    for record_batch in projected_tfxio.RecordBatches(options):
+      self._ValidateRecordBatch(projected_tfxio, record_batch)
+      self.assertIn(feature_name, record_batch.schema.names)
+      self.assertLen(record_batch.schema.names, 1)
+
   @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
   def testTensorFlowDataset(self):
     tfxio = self._MakeTFXIO(_SCHEMA)

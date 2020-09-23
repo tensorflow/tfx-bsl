@@ -21,6 +21,7 @@ import pyarrow as pa
 from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import sequence_example_coder
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
@@ -175,7 +176,11 @@ class TFSequenceExampleBeamRecord(_TFSequenceExampleRecordBase):
                                        projected_schema,
                                        self.raw_record_column_name)
 
-  def TensorFlowDataset(self):
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
     raise NotImplementedError(
         "TFExampleBeamRecord is unable to provide a TensorFlowDataset "
         "because it does not do I/O")
@@ -227,7 +232,11 @@ class TFSequenceExampleRecord(_TFSequenceExampleRecordBase):
         schema=projected_schema,
         raw_record_column_name=self.raw_record_column_name)
 
-  def TensorFlowDataset(self):
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
     raise NotImplementedError
 
 

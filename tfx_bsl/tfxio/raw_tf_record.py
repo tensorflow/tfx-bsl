@@ -19,6 +19,7 @@ import apache_beam as beam
 import pyarrow as pa
 import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
 from tfx_bsl.coders import batch_util
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tfxio
@@ -70,7 +71,12 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
     # The only column is the raw record column.
     return pa.schema([])
 
-  def TensorFlowDataset(self) -> tf.data.Dataset:
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
     raise NotImplementedError
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:

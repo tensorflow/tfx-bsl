@@ -14,6 +14,7 @@
 """Tests for tfx_bsl.tfxio.tfxio."""
 
 import pyarrow as pa
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import tfxio
 
 from google.protobuf import text_format
@@ -60,7 +61,12 @@ class _FakeTFXIO(tfxio.TFXIO):
     raise NotImplementedError
 
   # not used in tests.
-  def TensorFlowDataset(self):
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
+  # not used in tests.
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
     raise NotImplementedError
 
 

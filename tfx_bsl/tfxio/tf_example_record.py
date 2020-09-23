@@ -14,7 +14,7 @@
 """TFXIO implementation for tf.Example records."""
 
 import abc
-from typing import List, Optional, Text, Union
+from typing import Iterator, List, Optional, Text, Union
 
 import apache_beam as beam
 import pyarrow as pa
@@ -23,6 +23,7 @@ from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import example_coder
 from tfx_bsl.tfxio import dataset_options
+from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
@@ -172,7 +173,8 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
                                self.telemetry_descriptors, projected_schema,
                                self.raw_record_column_name)
 
-  def TensorFlowDataset(self):
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
     raise NotImplementedError(
         "TFExampleBeamRecord is unable to provide a TensorFlowDataset "
         "because it does not do I/O")
@@ -223,6 +225,24 @@ class TFExampleRecord(_TFExampleRecordBase):
         raw_record_column_name=self.raw_record_column_name,
         telemetry_descriptors=self.telemetry_descriptors)
 
+  def RecordBatches(
+      self, options: dataset_options.RecordBatchesOptions
+  ) -> Iterator[pa.RecordBatch]:
+    dataset = dataset_util.make_tf_record_dataset(
+        self._file_pattern, options.batch_size, options.drop_final_batch,
+        options.num_epochs, options.shuffle, options.shuffle_buffer_size,
+        options.shuffle_seed)
+
+    decoder = example_coder.ExamplesToRecordBatchDecoder(
+        self._schema.SerializeToString())
+    for examples in dataset.as_numpy_iterator():
+      decoded = decoder.DecodeBatch(examples)
+      if self._raw_record_column_name is None:
+        yield decoded
+      else:
+        yield record_based_tfxio.AppendRawRecordColumn(
+            decoded, self._raw_record_column_name, examples.tolist())
+
   def TensorFlowDataset(
       self,
       options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
@@ -261,7 +281,7 @@ class TFExampleRecord(_TFExampleRecordBase):
         file_pattern,
         features=features,
         batch_size=options.batch_size,
-        reader_args=[record_based_tfxio.DetectCompressionType(file_pattern)],
+        reader_args=[dataset_util.detect_compression_type(file_pattern)],
         num_epochs=options.num_epochs,
         shuffle=options.shuffle,
         shuffle_buffer_size=options.shuffle_buffer_size,

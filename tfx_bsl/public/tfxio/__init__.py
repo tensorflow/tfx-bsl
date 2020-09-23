@@ -21,6 +21,7 @@ https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardiz
 
 from tfx_bsl.tfxio.csv_tfxio import BeamRecordCsvTFXIO
 from tfx_bsl.tfxio.csv_tfxio import CsvTFXIO
+from tfx_bsl.tfxio.dataset_options import RecordBatchesOptions
 from tfx_bsl.tfxio.dataset_options import TensorFlowDatasetOptions
 from tfx_bsl.tfxio.tensor_adapter import TensorAdapter
 from tfx_bsl.tfxio.tensor_adapter import TensorAdapterConfig

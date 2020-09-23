@@ -20,6 +20,7 @@ from typing import List, Optional, Text
 import apache_beam as beam
 import pyarrow as pa
 from tfx_bsl.coders import csv_decoder
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
@@ -167,7 +168,11 @@ class BeamRecordCsvTFXIO(_CsvTFXIOBase):
             .with_input_types(bytes)
             .with_output_types(bytes))
 
-  def TensorFlowDataset(self):
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
     raise NotImplementedError
 
 
@@ -265,5 +270,9 @@ class CsvTFXIO(_CsvTFXIOBase):
         telemetry_descriptors=self.telemetry_descriptors,
         skip_header_lines=self._skip_header_lines)
 
-  def TensorFlowDataset(self):
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
     raise NotImplementedError

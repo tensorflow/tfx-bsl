@@ -22,6 +22,7 @@ import tensorflow as tf
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import tf_graph_record_decoder
 from tfx_bsl.tfxio import dataset_options
+from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_to_arrow
@@ -169,6 +170,9 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
+  def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
+    raise NotImplementedError
+
   def TensorFlowDataset(
       self,
       options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
@@ -197,18 +201,12 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
     Raises:
       ValueError: if label_key in the dataset option is not in the arrow schema.
     """
-    file_pattern = tf.convert_to_tensor(self._file_pattern)
-    batch_size = options.batch_size
-    drop_final_batch = options.drop_final_batch
-    num_epochs = options.num_epochs
-    shuffle = options.shuffle
-    shuffle_buffer_size = options.shuffle_buffer_size
-    shuffle_seed = options.shuffle_seed
-    label_key = options.label_key
-    compression_type = record_based_tfxio.DetectCompressionType(file_pattern)
+    dataset = dataset_util.make_tf_record_dataset(
+        self._file_pattern, options.batch_size, options.drop_final_batch,
+        options.num_epochs, options.shuffle, options.shuffle_buffer_size,
+        options.shuffle_seed)
 
     decoder = tf_graph_record_decoder.load_decoder(self._saved_decoder_path)
-
     def _ParseFn(record):
       # TODO(andylou): Change this once we plumb the projected columns into the
       # decoder itself.
@@ -218,24 +216,9 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
           for k, v in tensors_dict.items()
           if k in self._tensor_representations
       }
-
-    dataset = tf.data.Dataset.list_files(
-        file_pattern, shuffle=shuffle, seed=shuffle_seed)
-
-    dataset = dataset.interleave(
-        lambda filename: tf.data.TFRecordDataset(filename, compression_type),
-        num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-    if shuffle:
-      dataset = dataset.shuffle(shuffle_buffer_size, shuffle_seed)
-    if num_epochs != 1:
-      dataset = dataset.repeat(num_epochs)
-
-    drop_final_batch = drop_final_batch or num_epochs is None
-
-    dataset = dataset.batch(batch_size, drop_remainder=drop_final_batch)
     dataset = dataset.map(_ParseFn)
 
+    label_key = options.label_key
     if label_key is not None:
       if label_key not in self.TensorRepresentations():
         raise ValueError(
