@@ -7,7 +7,8 @@
 ## Major Features and Improvements
 
 *   Add `RecordBatches` interface to TFXIO. This interface returns an iterable
-    of record batches, which can be used outside of beam to access data.
+    of record batches, which can be used outside of Apache Beam or TensorFlow to
+    access data.
 
 ## Bug Fixes and Other Changes
 *  TensorToArrow returns LargeListArray/LargeBinaryArray in place of

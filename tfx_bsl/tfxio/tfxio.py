@@ -59,7 +59,7 @@ class TFXIO(object, metaclass=abc.ABCMeta):
   ) -> Iterator[pa.RecordBatch]:
     """Returns an iterable of record batches.
 
-    This can be used outside of beam to access data.
+    This can be used outside of Apache Beam or TensorFlow to access data.
 
     Args:
       options: An options object for iterating over record batches. Look at
