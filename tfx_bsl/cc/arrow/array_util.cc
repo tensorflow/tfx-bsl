@@ -15,6 +15,7 @@
 
 #include "arrow/array/concatenate.h"
 #include "arrow/compute/kernels/match.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
@@ -222,6 +223,122 @@ class GetBinaryArrayTotalByteSizeVisitor : public arrow::ArrayVisitor {
 
   size_t result_ = 0;
 };
+
+bool IsStringType(const arrow::DataType& t) {
+  return t.id() == arrow::Type::STRING || t.id() == arrow::Type::LARGE_STRING;
+}
+
+bool IsBinaryType(const arrow::DataType& t) {
+  return t.id() == arrow::Type::BINARY || t.id() == arrow::Type::LARGE_BINARY;
+}
+
+// A memo table that holds unique string_views and (optionally) a null.
+// Each unique value (including the null) has an index in the table. The index
+// is determined by table insertion order of the first occurence of a value.
+class StringViewMemoTable {
+ public:
+  template<typename BinaryArrayT>
+  StringViewMemoTable(const BinaryArrayT& values) : null_index_(-1) {
+    lookup_table_.reserve(values.length());
+    int size = 0;
+    for (int i = 0; i < values.length(); ++i) {
+      if (values.IsNull(i)) {
+        if (null_index_ < 0) null_index_ = size++;
+        continue;
+      }
+      auto value = values.GetView(i);
+      auto iter_and_inserted =
+        lookup_table_.insert(std::make_pair(
+            absl::string_view(value.data(), value.size()), size));
+      if (iter_and_inserted.second) ++size;
+    }
+  }
+
+  int Lookup(absl::string_view value) const {
+    auto iter = lookup_table_.find(value);
+    if (iter == lookup_table_.end()) return -1;
+    return iter->second;
+  }
+
+  int null_index() const {
+    return null_index_;
+  }
+
+ private:
+  // slot index of null value. -1 if null value does not exist in the table.
+  int null_index_;
+  // Maps a value to a slot index.
+  absl::flat_hash_map<absl::string_view, int> lookup_table_;
+};
+
+template <typename BinaryArrayT>
+Status LookupIndices(
+    const BinaryArrayT& values,
+    const StringViewMemoTable& memo_table,
+    std::shared_ptr<Array>* matched_value_set_indices) {
+  arrow::Int32Builder result_builder;
+  TFX_BSL_RETURN_IF_ERROR(
+      FromArrowStatus(result_builder.Reserve(values.length())));
+  for (int i = 0; i < values.length(); ++i) {
+    if (values.IsNull(i)) {
+      if (memo_table.null_index() > 0) {
+        result_builder.UnsafeAppend(memo_table.null_index());
+      } else {
+        result_builder.UnsafeAppendNull();
+      }
+      continue;
+    }
+    auto value = values.GetView(i);
+    int index =
+        memo_table.Lookup(absl::string_view(value.data(), value.size()));
+    if (index < 0) {
+      result_builder.UnsafeAppendNull();
+    } else {
+      result_builder.UnsafeAppend(index);
+    }
+  }
+  TFX_BSL_RETURN_IF_ERROR(
+      FromArrowStatus(result_builder.Finish(matched_value_set_indices)));
+  return Status::OK();
+}
+
+Status IndexInBinaryArray(const Array& values, const Array& values_set,
+                          std::shared_ptr<Array>* matched_value_set_indices) {
+  std::unique_ptr<StringViewMemoTable> memo_table;
+  switch (values_set.type()->id()) {
+    case arrow::Type::BINARY:
+    case arrow::Type::STRING:
+      memo_table = absl::make_unique<StringViewMemoTable>(
+          static_cast<const arrow::BinaryArray&>(values_set));
+      break;
+    case arrow::Type::LARGE_BINARY:
+    case arrow::Type::LARGE_STRING:
+      memo_table = absl::make_unique<StringViewMemoTable>(
+          static_cast<const arrow::LargeBinaryArray&>(values_set));
+      break;
+    default:
+      return errors::FailedPrecondition("values_set is not binary-like");
+  }
+
+  switch (values.type()->id()) {
+    case arrow::Type::BINARY:
+    case arrow::Type::STRING:
+      TFX_BSL_RETURN_IF_ERROR(
+          LookupIndices(static_cast<const arrow::BinaryArray&>(values),
+                        *memo_table, matched_value_set_indices));
+      break;
+    case arrow::Type::LARGE_BINARY:
+    case arrow::Type::LARGE_STRING:
+      TFX_BSL_RETURN_IF_ERROR(
+          LookupIndices(static_cast<const arrow::LargeBinaryArray&>(values),
+                        *memo_table, matched_value_set_indices));
+      break;
+    default:
+      return errors::FailedPrecondition("values is not binary-like");
+  }
+  return Status::OK();
+}
+
 }  // namespace
 
 Status GetElementLengths(
@@ -282,6 +399,14 @@ Status ValueCounts(const std::shared_ptr<arrow::Array>& array,
 Status IndexIn(const std::shared_ptr<arrow::Array>& values,
              const std::shared_ptr<arrow::Array>& value_set,
              std::shared_ptr<arrow::Array>* matched_value_set_indices) {
+  // arrow::compute::Match does not support LargeBinary (as of 0.17).
+  // TODO(zhuo): clean up this once tfx_bsl is built with arrow 1.0+.
+  auto values_type = values->type();
+  auto value_set_type = value_set->type();
+  if ((IsStringType(*values_type) && IsStringType(*value_set_type)) ||
+      (IsBinaryType(*values_type) && IsBinaryType(*value_set_type))) {
+    return IndexInBinaryArray(*values, *value_set, matched_value_set_indices);
+  }
   arrow::compute::FunctionContext ctx;
   arrow::compute::Datum result;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::compute::Match(

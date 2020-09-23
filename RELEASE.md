@@ -9,6 +9,7 @@
 ## Bug Fixes and Other Changes
 *  TensorToArrow returns LargeListArray/LargeBinaryArray in place of
    ListArray/BinaryArray.
+*  array_util.IndexIn now supports LargeBinaryArray inputs.
 
 ## Breaking changes
 

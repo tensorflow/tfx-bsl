@@ -192,11 +192,40 @@ class ArrayUtilTest(parameterized.TestCase):
     self.assertDictEqual(self._value_counts_struct_array_to_dict(
         array_util.ValueCounts(empty_array)), expected_result)
 
-  def test_match(self):
+  def test_indexin_integer(self):
     values = pa.array([99, 42, 3, None])
     value_set = pa.array([3, 3, 99])
-    self.assertEqual([1, None, 0, None],
-                     list(array_util.IndexIn(values, value_set)))
+    actual = array_util.IndexIn(values, value_set)
+    actual.validate()
+    self.assertTrue(
+        actual.equals(pa.array([1, None, 0, None], type=pa.int32())))
+
+  @parameterized.parameters(
+      *(list(
+          itertools.product([pa.binary(), pa.large_binary()],
+                            [pa.binary(), pa.large_binary()])) +
+        list(
+            itertools.product([pa.string(), pa.large_string()],
+                              [pa.string(), pa.large_string()]))))
+  def test_indexin_binary_alike(self, values_type, value_set_type):
+    # Case #1: value_set does not contain null.
+    values = pa.array(["aa", "bb", "cc", None], values_type)
+    value_set = pa.array(["cc", "cc", "aa"], value_set_type)
+    actual = array_util.IndexIn(values, value_set)
+    actual.validate()
+    self.assertTrue(
+        actual.equals(pa.array([1, None, 0, None], type=pa.int32())),
+        "actual: {}".format(actual))
+
+    # Case #2: value_set contains nulls.
+    values = pa.array(["aa", "bb", "cc", None], values_type)
+    value_set = pa.array(["cc", None, None, "bb"], value_set_type)
+    actual = array_util.IndexIn(values, value_set)
+    actual.validate()
+    self.assertTrue(
+        actual.equals(pa.array([None, 2, 0, 1], type=pa.int32())),
+        "actual: {}".format(actual))
+
 
 _MAKE_LIST_ARRAY_INVALID_INPUT_TEST_CASES = [
     dict(

@@ -13,6 +13,7 @@ cc_library(
         "//tfx_bsl/cc/util:status",
         "//tfx_bsl/cc/util:status_util",
         "@arrow",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
