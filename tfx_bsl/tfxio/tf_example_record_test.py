@@ -347,6 +347,7 @@ class TfExampleRecordTest(tf.test.TestCase):
       record_batch_pcoll = p | tfxio.BeamSource(batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
   def testRecordBatches(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
     options = dataset_options.RecordBatchesOptions(
