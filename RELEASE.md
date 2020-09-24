@@ -20,6 +20,24 @@
 *  Coders (Example, CSV) do not support outputting ListArray/BinaryArray any
    more. They can only output LargeListArray/LargeBinaryArray.
 
+# Version 0.24.1
+
+## Major Features and Improvements
+
+*   N/A
+
+## Bug Fixes and Other Changes
+
+*   Depends on `apache-beam[gcp]>=2.24,<3`.
+
+## Breaking changes
+
+*   N/A
+
+## Deprecations
+
+*   N/A
+
 # Version 0.24.0
 
 ## Major Features and Improvements
