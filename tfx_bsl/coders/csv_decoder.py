@@ -352,7 +352,9 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
             l.append(None)
         continue
       if len(csv_row) != len(self._column_handlers):
-        raise ValueError("Encountered a row of unexpected number of columns")
+        raise ValueError(
+            "Encountered a row of unexpected number of columns: {} vs. {}"
+            .format(len(csv_row), len(self._column_handlers)))
       column_idx = 0
       for csv_cell, handler in zip(csv_row, self._column_handlers):
         if handler is None:
