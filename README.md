@@ -28,6 +28,19 @@ depend on `tfx_bsl`, will depend on a specific minor version of it (e.g.
 pip install tfx-bsl
 ```
 
+### Nightly Packages
+
+TFX-BSL also hosts nightly packages at https://pypi-nightly.tensorflow.org on
+Google Cloud. To install the latest nightly package, please use the following
+command:
+
+```bash
+pip install -i https://pypi-nightly.tensorflow.org/simple tfx-bsl
+```
+
+This will install the nightly packages for the major dependencies of TFX-BSL
+such as TensorFlow Metadata (TFMD).
+
 However it is a dependency of many TFX components and usually as a user you
 don't need to install it directly.
 

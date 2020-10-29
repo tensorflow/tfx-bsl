@@ -9,6 +9,19 @@
 *   Add `RecordBatches` interface to TFXIO. This interface returns an iterable
     of record batches, which can be used outside of Apache Beam or TensorFlow to
     access data.
+*   From this release TFX-BSL will also be hosting nightly packages on
+    https://pypi-nightly.tensorflow.org. To install the nightly package use the
+    following command:
+
+    ```
+    pip install -i https://pypi-nightly.tensorflow.org/simple tfx-bsl
+    ```
+
+    Note: These nightly packages are unstable and breakages are likely to
+    happen. The fix could often take a week or more depending on the complexity
+    involved for the wheels to be available on the PyPI cloud service. You can
+    always use the stable version of TFX-BSL available on PyPI by running the
+    command `pip install tfx-bsl` .
 
 ## Bug Fixes and Other Changes
 *  TensorToArrow returns LargeListArray/LargeBinaryArray in place of
