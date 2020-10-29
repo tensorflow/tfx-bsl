@@ -1,79 +1,67 @@
-From e9eabdd49452547bb7623aa70b9325caa1c29ce0 Mon Sep 17 00:00:00 2001
+From a7c6168dfea437e6bceb429c5fa1c068c2d68695 Mon Sep 17 00:00:00 2001
 From: Zhuo Peng <1835738+brills@users.noreply.github.com>
-Date: Wed, 10 Jun 2020 21:06:01 -0700
-Subject: [PATCH] Arrow C-ABI patch.
+Date: Mon, 26 Oct 2020 16:35:44 -0700
+Subject: [PATCH 1/2] patch for MSVC
 
 ---
- cpp/src/arrow/c/bridge.cc     | 5 +++--
- cpp/src/arrow/record_batch.cc | 8 +++++++-
- cpp/src/arrow/type_fwd.h      | 6 ++++++
- 3 files changed, 16 insertions(+), 3 deletions(-)
+ cpp/src/arrow/type_fwd.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
 
-diff --git cpp/src/arrow/c/bridge.cc cpp/src/arrow/c/bridge.cc
-index 9d973efeb..82553a0d5 100644
---- cpp/src/arrow/c/bridge.cc
-+++ cpp/src/arrow/c/bridge.cc
-@@ -503,6 +503,7 @@ void ReleaseExportedArray(struct ArrowArray* array) {
-
- struct ArrayExporter {
-   Status Export(const std::shared_ptr<ArrayData>& data) {
-+    data->GetNullCount();
-     // Store buffer pointers
-     export_.buffers_.resize(data->buffers.size());
-     std::transform(data->buffers.begin(), data->buffers.end(), export_.buffers_.begin(),
-@@ -1194,7 +1195,7 @@ struct ArrayImporter {
-
-   Result<std::shared_ptr<RecordBatch>> MakeRecordBatch(std::shared_ptr<Schema> schema) {
-     DCHECK_NE(data_, nullptr);
--    if (data_->null_count != 0) {
-+    if (data_->GetNullCount() != 0) {
-       return Status::Invalid(
-           "ArrowArray struct has non-zero null count, "
-           "cannot be imported as RecordBatch");
-@@ -1397,7 +1398,7 @@ struct ArrayImporter {
-
-   Status ImportNullBitmap(int32_t buffer_id = 0) {
-     RETURN_NOT_OK(ImportBitsBuffer(buffer_id));
--    if (data_->null_count != 0 && data_->buffers[buffer_id] == nullptr) {
-+    if (data_->null_count > 0 && data_->buffers[buffer_id] == nullptr) {
-       return Status::Invalid(
-           "ArrowArray struct has null bitmap buffer but non-zero null_count ",
-           data_->null_count);
-diff --git cpp/src/arrow/record_batch.cc cpp/src/arrow/record_batch.cc
-index b91b7993c..45ca8d2e7 100644
---- cpp/src/arrow/record_batch.cc
-+++ cpp/src/arrow/record_batch.cc
-@@ -195,7 +195,13 @@ Result<std::shared_ptr<RecordBatch>> RecordBatch::FromStructArray(
- }
-
- Result<std::shared_ptr<Array>> RecordBatch::ToStructArray() const {
--  return StructArray::Make(columns(), schema()->fields());
-+  if (num_columns() != 0) {
-+    return StructArray::Make(columns(), schema()->fields());
-+  }
-+  return std::make_shared<StructArray>(arrow::struct_({}), num_rows_,
-+                                       std::vector<std::shared_ptr<Array>>{},
-+                                       /*null_bitmap=*/nullptr,
-+                                       /*null_count=*/0, /*offset=*/0);
- }
-
- std::vector<std::shared_ptr<Array>> RecordBatch::columns() const {
 diff --git cpp/src/arrow/type_fwd.h cpp/src/arrow/type_fwd.h
-index 991354532..177f8fb36 100644
+index fc25b2723..783bf3d07 100644
 --- cpp/src/arrow/type_fwd.h
 +++ cpp/src/arrow/type_fwd.h
-@@ -24,6 +24,12 @@
+@@ -25,6 +25,13 @@
  #include "arrow/util/macros.h"
  #include "arrow/util/visibility.h"
-
+ 
 +// Work around C2528 error
 +#ifdef _MSC_VER
 +#if _MSC_VER >= 1900
 +#undef timezone
 +#endif
 +#endif
++
  namespace arrow {
-
+ 
  template <typename T>
---
-2.27.0.278.ge193c7cf3a9-goog
+-- 
+2.29.0.rc1.297.gfa9743e501-goog
+
+
+From a458c591b237c0661e64971e8f4cce88e9de1886 Mon Sep 17 00:00:00 2001
+From: Zhuo Peng <1835738+brills@users.noreply.github.com>
+Date: Mon, 26 Oct 2020 18:00:36 -0700
+Subject: [PATCH 2/2] uint128
+
+---
+ cpp/src/arrow/util/int128_internal.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git cpp/src/arrow/util/int128_internal.h cpp/src/arrow/util/int128_internal.h
+index 1d7c89806..7146f10ec 100644
+--- cpp/src/arrow/util/int128_internal.h
++++ cpp/src/arrow/util/int128_internal.h
+@@ -23,7 +23,7 @@
+ #if defined(__SIZEOF_INT128__) && !defined(ARROW_UBSAN)
+ #define ARROW_USE_NATIVE_INT128
+ #else
+-#include <boost/multiprecision/cpp_int.hpp>
++#include "absl/numeric/int128.h"
+ #endif
+ 
+ namespace arrow {
+@@ -40,8 +40,8 @@ namespace internal {
+ using int128_t = __int128_t;
+ using uint128_t = __uint128_t;
+ #else
+-using boost::multiprecision::int128_t;
+-using boost::multiprecision::uint128_t;
++using int128_t = absl::int128;
++using uint128_t = absl::uint128;
+ #endif
+ 
+ }  // namespace internal
+-- 
+2.29.0.rc1.297.gfa9743e501-goog
+

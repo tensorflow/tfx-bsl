@@ -263,7 +263,7 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
       [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
          const std::shared_ptr<arrow::Array>& indices) {
         std::shared_ptr<arrow::RecordBatch> result;
-        Status s = RecordBatchTake(*record_batch, *indices, &result);
+        Status s = RecordBatchTake(record_batch, indices, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }

@@ -38,28 +38,6 @@ using ::arrow::RecordBatch;
 using ::arrow::Schema;
 using ::arrow::Type;
 
-// TODO(zhuo): Clean this up once tfx-bsl builds exclusively against arrow
-// 0.17+.
-#if (ARROW_VERSION_MAJOR <= 0) && (ARROW_VERSION_MINOR < 17)
-arrow::Status MakeArrayOfNullShim(const std::shared_ptr<DataType>& type,
-                                  int64_t length,
-                                  std::shared_ptr<Array>* result) {
-  return arrow::MakeArrayOfNull(type, length, result);
-}
-
-#else
-
-arrow::Status MakeArrayOfNullShim(const std::shared_ptr<DataType>& type,
-                                  int64_t length,
-                                  std::shared_ptr<Array>* result) {
-  auto status_or = arrow::MakeArrayOfNull(type, length);
-  ARROW_RETURN_NOT_OK(status_or);
-  *result = std::move(status_or).ValueOrDie();
-  return arrow::Status::OK();
-}
-
-#endif
-
 std::shared_ptr<DataType> GetListValueType(const DataType& list_type) {
   switch (list_type.id()) {
     case Type::LIST:
@@ -148,6 +126,8 @@ class ArrayTypeMerger {
     const auto* merged_struct_type =
         static_cast<const arrow::StructType*>(merged_type_.get());
 
+    // TODO(b/171748040): replace children() with fields(), child() with field()
+    // after arrow 2.0.0.
     std::vector<std::shared_ptr<Field>> children =
         merged_struct_type->children();
     absl::flat_hash_map<std::string, int> name_to_index;
@@ -187,8 +167,8 @@ Status PromoteArrayDataToType(const std::shared_ptr<ArrayData>& array_data,
   }
   if (current_type->id() == Type::NA) {
     std::shared_ptr<Array> array_of_null;
-    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-        MakeArrayOfNullShim(target_type, array_data->length, &array_of_null)));
+    TFX_BSL_ASSIGN_OR_RETURN_ARROW(
+        array_of_null, arrow::MakeArrayOfNull(target_type, array_data->length));
     *promoted = array_of_null->data();
     return Status::OK();
   }
@@ -223,9 +203,10 @@ Status PromoteArrayDataToType(const std::shared_ptr<ArrayData>& array_data,
               current_struct_type.GetFieldIndex(child_name);
           if (current_child_index < 0) {
             std::shared_ptr<Array> array_of_null;
-            TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-                MakeArrayOfNullShim(target_struct_type.child(i)->type(),
-                                    array_data->length, &array_of_null)));
+            TFX_BSL_ASSIGN_OR_RETURN_ARROW(
+                array_of_null,
+                arrow::MakeArrayOfNull(target_struct_type.child(i)->type(),
+                                       array_data->length));
             child_data[i] = array_of_null->data();
           } else {
             TFX_BSL_RETURN_IF_ERROR(PromoteArrayDataToType(
@@ -306,15 +287,16 @@ class FieldRep {
     for (const auto& variant : arrays_or_nulls_) {
       arrays_to_concat.emplace_back();
       if (absl::holds_alternative<int64_t>(variant)) {
-        TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-            MakeArrayOfNullShim(merged_type, absl::get<int64_t>(variant),
-                                &arrays_to_concat.back())));
+        TFX_BSL_ASSIGN_OR_RETURN_ARROW(
+            arrays_to_concat.back(),
+            arrow::MakeArrayOfNull(merged_type, absl::get<int64_t>(variant)));
       } else {
         TFX_BSL_RETURN_IF_ERROR(
             PromoteArrayToType(absl::get<std::shared_ptr<Array>>(variant),
                                merged_type, &arrays_to_concat.back()));
       }
     }
+    // TODO(b/171748040): use the concatenate() that returns a Result<>.
     TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(Concatenate(
         arrays_to_concat, arrow::default_memory_pool(), merged_array)));
     return Status::OK();
@@ -385,13 +367,32 @@ Status TotalByteSize(const RecordBatch& record_batch,
   return Status::OK();
 }
 
+// TODO(b/171748040): clean this up.
+#if ARROW_VERSION_MAJOR < 1
 // Returns a RecordBatch that contains rows in `indices`.
-Status RecordBatchTake(const RecordBatch& record_batch, const Array& indices,
+Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
+                       const std::shared_ptr<Array>& indices,
                        std::shared_ptr<RecordBatch>* result) {
   arrow::compute::FunctionContext ctx;
   arrow::compute::TakeOptions options;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-      arrow::compute::Take(&ctx, record_batch, indices, options, result)));
+      arrow::compute::Take(&ctx, *record_batch, *indices, options, result)));
   return Status::OK();
 }
+#else
+// Returns a RecordBatch that contains rows in `indices`.
+Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
+                       const std::shared_ptr<Array>& indices,
+                       std::shared_ptr<RecordBatch>* result) {
+  arrow::Datum result_datum;
+  TFX_BSL_ASSIGN_OR_RETURN_ARROW(result_datum,
+                                 arrow::compute::Take(record_batch, indices));
+  if (result_datum.kind() != arrow::Datum::RECORD_BATCH) {
+    return errors::Internal(
+        absl::StrCat("Invalid return type from Take(): ", result_datum.kind()));
+  }
+  *result = result_datum.record_batch();
+  return Status::OK();
+}
+#endif
 }  // namespace tfx_bsl

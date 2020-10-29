@@ -53,16 +53,24 @@ tf_workspace(
 )
 
 # LINT.IfChange(arrow_version)
-ARROW_COMMIT = "ff7ee06020949daf66ac05090753e1a17736d9fa"  # 0.17.1
+ARROW_COMMIT = "478286658055bb91737394c2065b92a7e92fb0c1"  # 2.0.0
 # LINT.ThenChange(third_party/arrow/util/config.h)
 
 http_archive(
     name = "arrow",
     build_file = "//third_party:arrow.BUILD",
     strip_prefix = "arrow-%s" % ARROW_COMMIT,
-    sha256 = "2fca47067e97417d6ba0574b6b90a66752176ac4315a93e6e42d7af8c312e1c1",
+    sha256 = "4849ee9de2c76f1d6c481cac9ee7a1077d6d6d6e84f98fec53814455dba74403",
     urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
     patches = ["//third_party:arrow.patch"],
+)
+
+ABSL_COMMIT = "0f3bb466b868b523cf1dc9b2aaaed65c77b28862"  # lts_20200923.2
+http_archive(
+    name = "com_google_absl",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/%s.zip" % ABSL_COMMIT],
+    sha256 = "9929f3662141bbb9c6c28accf68dcab34218c5ee2d83e6365d9cb2594b3f3171",
+    strip_prefix = "abseil-cpp-%s" % ABSL_COMMIT,
 )
 
 # Specify the minimum required bazel version.
@@ -74,4 +82,4 @@ git_repository(
     remote = "https://github.com/tensorflow/metadata.git",
 )
 
-check_bazel_version_at_least("0.24.1")
+check_bazel_version_at_least("3.0.0")

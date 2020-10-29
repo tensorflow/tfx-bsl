@@ -19,10 +19,10 @@ cc_library(
 
 cc_library(
     name = "status_util",
-    srcs = ["status_util.cc"],
     hdrs = ["status_util.h"],
     deps = [
         ":status",
         "@arrow",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )

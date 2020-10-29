@@ -15,11 +15,37 @@
 #ifndef TFX_BSL_CC_UTIL_STATUS_UTIL_H_
 #define TFX_BSL_CC_UTIL_STATUS_UTIL_H_
 
+#include "absl/base/optimization.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
-Status FromArrowStatus(::arrow::Status arrow_status);
+// Creates a tfx_bsl::Status from an arrow::Status.
+inline Status FromArrowStatus(::arrow::Status arrow_status) {
+  if (ABSL_PREDICT_TRUE(arrow_status.ok())) return Status::OK();
+
+  if (arrow_status.IsNotImplemented()) {
+    return errors::Unimplemented(arrow_status.message());
+  }
+
+  return errors::Internal(absl::StrCat("Arrow error ",
+                                       arrow_status.CodeAsString(), " : ",
+                                       arrow_status.message()));
+}
+
+#define _ASSIGN_OR_RETURN_ARROW_NAME(x, y) x##y
+
+#define _TFX_BSL_ASSIGN_OR_RETURN_ARROW_IMPL(result_name, lhs, rexpr) \
+  auto result_name = (rexpr);                                         \
+  if (!result_name.status().ok()) {                                   \
+    return FromArrowStatus(result_name.status());                     \
+  }                                                                   \
+  lhs = std::move(result_name).MoveValueUnsafe();
+
+#define TFX_BSL_ASSIGN_OR_RETURN_ARROW(lhs, rexpr) \
+  _TFX_BSL_ASSIGN_OR_RETURN_ARROW_IMPL(            \
+      _ASSIGN_OR_RETURN_ARROW_NAME(__statusor, __COUNTER__), lhs, rexpr)
+
 }  // namespace tfx_bsl
 
 #endif   // TFX_BSL_CC_UTIL_STATUS_UTIL_H_

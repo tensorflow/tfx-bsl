@@ -14,7 +14,6 @@
 #include "tfx_bsl/cc/arrow/array_util.h"
 
 #include "arrow/array/concatenate.h"
-#include "arrow/compute/kernels/match.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
@@ -25,6 +24,11 @@
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 
+// TODO(b/171748040): clean this up.
+#if ARROW_VERSION_MAJOR < 1
+#include "arrow/compute/kernels/match.h"
+#endif
+
 namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
@@ -32,6 +36,37 @@ using ::arrow::LargeListArray;
 using ::arrow::ListArray;
 using ::arrow::Int32Builder;
 using ::arrow::Int64Builder;
+
+// TODO(b/171748040): clean this up.
+#if ARROW_VERSION_MAJOR < 1
+using Datum = ::arrow::compute::Datum;
+
+Status IndexInShim(
+    const Datum& values, const Datum& value_set, Datum* result) {
+  ::arrow::compute::FunctionContext ctx;
+  return FromArrowStatus(
+      arrow::compute::Match(&ctx, values, value_set, result));
+}
+
+Status ValueCountsShim(const Datum& values, std::shared_ptr<Array>* result) {
+  ::arrow::compute::FunctionContext ctx;
+  return FromArrowStatus(arrow::compute::ValueCounts(&ctx, values, result));
+}
+#else
+using Datum = ::arrow::Datum;
+
+Status IndexInShim(
+    const Datum& values, const Datum& value_set, Datum* result) {
+  TFX_BSL_ASSIGN_OR_RETURN_ARROW(*result,
+                                 arrow::compute::IndexIn(values, value_set));
+  return Status::OK();
+}
+
+Status ValueCountsShim(const Datum& values, std::shared_ptr<Array>* result) {
+  TFX_BSL_ASSIGN_OR_RETURN_ARROW(*result, arrow::compute::ValueCounts(values));
+  return Status::OK();
+}
+#endif
 
 std::unique_ptr<Int32Builder> GetOffsetsBuilder(const arrow::ListArray&) {
   return absl::make_unique<Int32Builder>();
@@ -140,8 +175,10 @@ class FillNullListsVisitor : public arrow::ArrayVisitor {
     std::shared_ptr<Array> offsets_array;
     ARROW_RETURN_NOT_OK(offsets_builder->Finish(&offsets_array));
 
-    return ListLikeArray::FromArrays(*offsets_array, element,
-                                     arrow::default_memory_pool(), result);
+    ARROW_ASSIGN_OR_RAISE(
+        *result, ListLikeArray::FromArrays(*offsets_array, element,
+                                           arrow::default_memory_pool()));
+    return arrow::Status::OK();
   }
 
   template <class ListLikeArray>
@@ -185,6 +222,7 @@ class FillNullListsVisitor : public arrow::ArrayVisitor {
     if (begin != end) {
       array_fragments.push_back(array.Slice(begin, end - begin));
     }
+    // TODO(zhuo): use the concatenate() that returns a Result<>.
     return arrow::Concatenate(array_fragments, arrow::default_memory_pool(),
                               &result_);
   }
@@ -390,10 +428,7 @@ Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
 
 Status ValueCounts(const std::shared_ptr<arrow::Array>& array,
                    std::shared_ptr<arrow::Array>* values_and_counts_array) {
-  arrow::compute::FunctionContext ctx;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-      arrow::compute::ValueCounts(&ctx, array, values_and_counts_array)));
-  return Status::OK();
+  return ValueCountsShim(array, values_and_counts_array);
 }
 
 Status IndexIn(const std::shared_ptr<arrow::Array>& values,
@@ -407,10 +442,8 @@ Status IndexIn(const std::shared_ptr<arrow::Array>& values,
       (IsBinaryType(*values_type) && IsBinaryType(*value_set_type))) {
     return IndexInBinaryArray(*values, *value_set, matched_value_set_indices);
   }
-  arrow::compute::FunctionContext ctx;
-  arrow::compute::Datum result;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::compute::Match(
-      &ctx, values, value_set, &result)));
+  Datum result;
+  TFX_BSL_RETURN_IF_ERROR(IndexInShim(values, value_set, &result));
   if (result.is_array()) {
     *matched_value_set_indices = result.make_array();
     return Status::OK();
@@ -761,12 +794,13 @@ Status CooFromListArray(
   // converted to a sparse tensor of k+1 dimensions. The buffer for the
   // coordinates will contain all the coordinates concatenated, so it needs to
   // hold (k + 1) * num_values numbers.
-  std::shared_ptr<arrow::Buffer> coo_buffer;
   const size_t coo_length = nested_row_splits.size();
   const size_t coo_buffer_size =
       coo_length * values->length() * sizeof(int64_t);
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::AllocateBuffer(
-      arrow::default_memory_pool(), coo_buffer_size, &coo_buffer)));
+  std::shared_ptr<arrow::Buffer> coo_buffer;
+  TFX_BSL_ASSIGN_OR_RETURN_ARROW(
+      coo_buffer,
+      arrow::AllocateBuffer(coo_buffer_size, arrow::default_memory_pool()));
   int64_t* coo_flat = reinterpret_cast<int64_t*>(coo_buffer->mutable_data());
 
   // COO for the `values`[i] is [x, ..., y, z] if `values`[i] is the z-th

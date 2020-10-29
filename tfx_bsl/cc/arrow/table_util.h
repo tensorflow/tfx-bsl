@@ -61,8 +61,8 @@ Status TotalByteSize(const arrow::RecordBatch& record_batch,
                      bool ignore_unsupported, size_t* result);
 
 // Returns a RecordBatch that contains rows in `indices`.
-Status RecordBatchTake(const arrow::RecordBatch& record_batch,
-                       const arrow::Array& indices,
+Status RecordBatchTake(const std::shared_ptr<arrow::RecordBatch>& record_batch,
+                       const std::shared_ptr<arrow::Array>& indices,
                        std::shared_ptr<arrow::RecordBatch>* result);
 }  // namespace tfx_bsl
 
