@@ -16,10 +16,11 @@
 #include <memory>
 
 #include "absl/strings/string_view.h"
-#include "tfx_bsl/cc/pybind11/arrow_casters.h"
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
+#include "tfx_bsl/cc/pybind11/arrow_casters.h"
 #include "tfx_bsl/cc/sketches/kmv_sketch.h"
 #include "tfx_bsl/cc/sketches/misragries_sketch.h"
+#include "tfx_bsl/cc/sketches/quantiles_sketch.h"
 #include "include/pybind11/pytypes.h"
 #include "include/pybind11/stl.h"
 
@@ -29,6 +30,7 @@ namespace py = pybind11;
 
 using ::tfx_bsl::sketches::KmvSketch;
 using ::tfx_bsl::sketches::MisraGriesSketch;
+using ::tfx_bsl::sketches::QuantilesSketch;
 
 void DefineKmvSketchClass(py::module sketch_module) {
   py::class_<KmvSketch>(sketch_module, "KmvSketch")
@@ -175,6 +177,63 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
       ));
 }
 
+void DefineQuantilesSketchClass(py::module sketch_module) {
+  py::class_<QuantilesSketch>(sketch_module, "QuantilesSketch")
+      .def(py::init<double, int64_t>())
+      .def(py::pickle(
+          [](QuantilesSketch& sketch) {
+            std::string serialized;
+            {
+              py::gil_scoped_release release_gil;
+              serialized = sketch.Serialize();
+            }
+            return py::bytes(serialized);
+          },
+          [](py::bytes byte_string) {
+            char* data;
+            Py_ssize_t size;
+            PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
+            return QuantilesSketch::Deserialize(absl::string_view(data, size));
+          }))
+      .def(
+          "Merge",
+          [](QuantilesSketch& sketch, QuantilesSketch& other) {
+            sketch.Merge(other);
+          },
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "AddValues",
+          [](QuantilesSketch& sketch,
+             const std::shared_ptr<arrow::Array>& values,
+             const std::shared_ptr<arrow::Array>& weights) {
+            Status s = sketch.AddWeightedValues(values, weights);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+          },
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "AddValues",
+          [](QuantilesSketch& sketch,
+             const std::shared_ptr<arrow::Array>& values) {
+            Status s = sketch.AddValues(values);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+          },
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "GetQuantiles",
+          [](QuantilesSketch& sketch, int64_t num_quantiles) {
+            std::shared_ptr<arrow::Array> result;
+            Status s = sketch.GetQuantiles(num_quantiles, &result);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+            return result;
+          },
+          py::call_guard<py::gil_scoped_release>());
+}
 }  // namespace
 
 void DefineSketchesSubmodule(py::module main_module) {
@@ -182,6 +241,7 @@ void DefineSketchesSubmodule(py::module main_module) {
   m.doc() = "Pybind11 bindings for sketch classes.";
   DefineKmvSketchClass(m);
   DefineMisraGriesSketchClass(m);
+  DefineQuantilesSketchClass(m);
 }
 
 }   // namespace tfx_bsl

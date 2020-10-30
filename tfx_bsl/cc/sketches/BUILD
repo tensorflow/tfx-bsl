@@ -52,6 +52,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -83,9 +84,29 @@ cc_library(
     deps = [
         ":kmv_sketch",
         ":misragries_sketch",
+        ":quantiles_sketch",
         "//tfx_bsl/cc/pybind11:absl_casters",
         "//tfx_bsl/cc/pybind11:arrow_casters",
         "@com_google_absl//absl/strings",
         "@pybind11",
+    ],
+)
+
+cc_library(
+    name = "quantiles_sketch",
+    srcs = [
+        "quantiles_sketch.cc",
+        "weighted_quantiles_buffer.h",
+        "weighted_quantiles_stream.h",
+        "weighted_quantiles_summary.h",
+    ],
+    hdrs = ["quantiles_sketch.h"],
+    deps = [
+        ":sketches_proto",
+        "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
+        "@arrow",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/types:optional",
     ],
 )

@@ -20,6 +20,7 @@
 try:
   from tfx_bsl.cc.tfx_bsl_extension.sketches import KmvSketch
   from tfx_bsl.cc.tfx_bsl_extension.sketches import MisraGriesSketch
+  from tfx_bsl.cc.tfx_bsl_extension.sketches import QuantilesSketch
 except ImportError as err:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.sketches. "
