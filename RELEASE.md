@@ -2,7 +2,17 @@
 
 # `tfx_bsl` release notes
 
-# Current Version(Still in Development)
+# Current version (not yet released; still in development)
+
+## Major Features and Improvements
+
+## Bug Fixes and Other Changes
+
+## Breaking changes
+
+## Deprecations
+
+# Version 0.25.0
 
 ## Major Features and Improvements
 
@@ -27,11 +37,17 @@
 *  TensorToArrow returns LargeListArray/LargeBinaryArray in place of
    ListArray/BinaryArray.
 *  array_util.IndexIn now supports LargeBinaryArray inputs.
+*  Depends on `apache-beam[gcp]>=2.25,<3`.
+*  Depends on `tensorflow-metadata>=0.25,<0.26`.
 
 ## Breaking changes
 
 *  Coders (Example, CSV) do not support outputting ListArray/BinaryArray any
    more. They can only output LargeListArray/LargeBinaryArray.
+
+## Deprecations
+
+*   N/A
 
 # Version 0.24.1
 

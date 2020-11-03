@@ -156,7 +156,7 @@ setup(
     # six, and protobuf) with TF.
     install_requires=[
         'absl-py>=0.9,<0.11',
-        'apache-beam[gcp]>=2.24,<3',
+        'apache-beam[gcp]>=2.25,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
         'pandas>=1.0,<2',
@@ -164,8 +164,8 @@ setup(
         'pyarrow>=0.17,<0.18',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,<3',
         'tensorflow-metadata' + select_constraint(
-            default='>=0.24,<0.25',
-            nightly='>=0.25.0.dev',
+            default='>=0.25,<0.26',
+            nightly='>=0.26.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master'),
         'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,<3',
     ],
