@@ -384,8 +384,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         metrics=['accuracy'])
 
     model_path = self._get_output_data_dir('model')
-    tf.compat.v1.keras.experimental.export_saved_model(
-        model, model_path, serving_only=True)
+    tf.saved_model.save(model, model_path, signatures=model.call)
 
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
