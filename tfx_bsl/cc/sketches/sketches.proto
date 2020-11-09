@@ -40,15 +40,32 @@ message MisraGries {
 
 // Experimental. Do not use.
 message Quantiles {
-  // The follow four fields are parallel (i.e. they are of the same length).
-  // They are made so to take advantage of the packed field feature of protobuf.
-  repeated double value = 1 [packed=true];
-  repeated double weight = 2 [packed=true];
-  repeated double min_rank = 3 [packed=true];
-  repeated double max_rank = 4 [packed=true];
-  // Parameters of the stream producing the sketch.
-  // Two sketches of different parameters may be merged, but the error bounds
-  // may change in that case.
-  double eps = 5;
-  int64 max_num_elements = 6;
+  // Quantiles computation stream. Contains multiple levels of summaries and a
+  // buffer of unprocessed elements.
+  message Stream {
+    // Contains processed input elements.
+    message Summary {
+      repeated double value = 1 [packed=true];
+      repeated double weight = 2 [packed=true];
+      repeated double min_rank = 3 [packed=true];
+      repeated double max_rank = 4 [packed=true];
+    }
+    repeated Summary summaries = 1;
+    // Contains unprocessed input elements.
+    message Buffer {
+      repeated double value = 1 [packed=true];
+      repeated double weight = 2 [packed=true];
+    }
+    Buffer buffer = 2;
+    // Parameters of the streams producing the sketch.
+    // Two streams with different parameters may be merged, but the error bounds
+    // may change in that case.
+    double eps = 3;
+    int64 max_num_elements = 4;
+  }
+  // Two sketches may only be merged on stream-to-stream basis.
+  // Currently, quantiles sketch only supports a single stream.
+  // TODO(iindyk): add support of multiple streams to quantiles sketch. This
+  // will enable elementwise quantiles calculation.
+  repeated Stream streams = 1;
 }

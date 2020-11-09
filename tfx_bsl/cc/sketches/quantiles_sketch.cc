@@ -24,6 +24,9 @@
 namespace tfx_bsl {
 namespace sketches {
 namespace {
+using Buffer = tensorflow::boosted_trees::quantiles::WeightedQuantilesBuffer<
+    double, double, std::less<double>>;
+using BufferEntry = Buffer::BufferEntry;
 using Stream =
     tensorflow::boosted_trees::quantiles::WeightedQuantilesStream<double,
                                                                   double>;
@@ -65,15 +68,24 @@ Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
 
 class QuantilesSketchImpl {
  public:
-  QuantilesSketchImpl(
-      double eps, int64_t max_num_elements,
-      tensorflow::boosted_trees::quantiles::WeightedQuantilesSummary<double,
-                                                                     double>
-          summary = {})
-      : eps_(eps),
-        max_num_elements_(max_num_elements),
-        stream_(absl::nullopt),
-        staged_summary_(std::move(summary)) {}
+  QuantilesSketchImpl(double eps, int64_t max_num_elements,
+                      std::vector<Summary> summaries = {},
+                      std::vector<BufferEntry> buffer_entries = {})
+      : eps_(eps), max_num_elements_(max_num_elements) {
+    stream_ = Stream(eps_, max_num_elements_);
+
+    // Recover local summaries.
+    if (!summaries.empty()) {
+      stream_->SetInternalSummaries(summaries);
+    }
+
+    // Recover buffer elements.
+    if (!buffer_entries.empty()) {
+      for (auto& entry : buffer_entries) {
+        stream_->PushEntry(entry.value, entry.weight);
+      }
+    }
+  }
 
   QuantilesSketchImpl(const QuantilesSketchImpl&) = delete;
   QuantilesSketchImpl& operator=(const QuantilesSketchImpl&) = delete;
@@ -99,19 +111,33 @@ class QuantilesSketchImpl {
     return Status::OK();
   }
 
-  // TODO(zhuo, iindyk): determine whether preserve all summary levels by
-  // calling stream_->SerializeInternalSummaries().
-  std::string Serialize() {
+  std::string Serialize() const {
     Quantiles sketch_proto;
-    sketch_proto.set_eps(eps_);
-    sketch_proto.set_max_num_elements(max_num_elements_);
-    const Summary& summary = GetSummary();
-    for (const auto& s : summary.GetEntryList()) {
-      sketch_proto.add_value(s.value);
-      sketch_proto.add_weight(s.weight);
-      sketch_proto.add_min_rank(s.min_rank);
-      sketch_proto.add_max_rank(s.max_rank);
+    Quantiles::Stream* stream_proto = sketch_proto.add_streams();
+    stream_proto->set_eps(eps_);
+    stream_proto->set_max_num_elements(max_num_elements_);
+
+    // Add local summaries.
+    const std::vector<Summary>& summaries = stream_->GetInternalSummaries();
+    for (const auto& summary : summaries) {
+      Quantiles::Stream::Summary* summary_proto = stream_proto->add_summaries();
+      for (const auto& entry : summary.GetEntryList()) {
+        summary_proto->add_value(entry.value);
+        summary_proto->add_weight(entry.weight);
+        summary_proto->add_min_rank(entry.min_rank);
+        summary_proto->add_max_rank(entry.max_rank);
+      }
     }
+
+    // Add buffer elements.
+    const std::vector<BufferEntry>& buffer_entries =
+        stream_->GetBufferEntryList();
+    Quantiles::Stream::Buffer* buffer_proto = stream_proto->mutable_buffer();
+    for (const auto& entry : buffer_entries) {
+      buffer_proto->add_value(entry.value);
+      buffer_proto->add_weight(entry.weight);
+    }
+
     return sketch_proto.SerializeAsString();
   }
 
@@ -119,21 +145,43 @@ class QuantilesSketchImpl {
       absl::string_view serialized) {
     Quantiles sketch_proto;
     sketch_proto.ParseFromArray(serialized.data(), serialized.size());
-    size_t num_summaries = sketch_proto.value_size();
-    std::vector<SummaryEntry> summary_entries;
-    summary_entries.reserve(num_summaries);
+    Quantiles::Stream stream_proto = sketch_proto.streams(0);
+
+    // Recover summaries.
+    std::vector<Summary> summaries;
+    size_t num_summaries = stream_proto.summaries_size();
+    summaries.reserve(num_summaries);
     for (int i = 0; i < num_summaries; ++i) {
-      summary_entries.push_back(
-          SummaryEntry(sketch_proto.value(i), sketch_proto.weight(i),
-                       sketch_proto.min_rank(i), sketch_proto.max_rank(i)));
+      Quantiles::Stream::Summary summary_proto = stream_proto.summaries(i);
+      std::vector<SummaryEntry> summary_entries;
+      size_t num_summary_entries = summary_proto.value_size();
+      summary_entries.reserve(num_summary_entries);
+      for (int j = 0; j < num_summary_entries; ++j) {
+        summary_entries.push_back(
+            SummaryEntry(summary_proto.value(j), summary_proto.weight(j),
+                         summary_proto.min_rank(j), summary_proto.max_rank(j)));
+      }
+      Summary summary;
+      summary.BuildFromSummaryEntries(summary_entries);
+      summaries.push_back(summary);
     }
-    Summary summary;
-    summary.BuildFromSummaryEntries(summary_entries);
+
+    // Recover buffer.
+    Quantiles::Stream::Buffer buffer_proto = stream_proto.buffer();
+    std::vector<BufferEntry> buffer_entries;
+    size_t num_buffer_entries = buffer_proto.value_size();
+    buffer_entries.reserve(num_buffer_entries);
+    for (int i = 0; i < num_buffer_entries; ++i) {
+      buffer_entries.push_back(
+          BufferEntry(buffer_proto.value(i), buffer_proto.weight(i)));
+    }
+
     return absl::make_unique<QuantilesSketchImpl>(
-        sketch_proto.eps(), sketch_proto.max_num_elements(),
-        std::move(summary));
+        stream_proto.eps(), stream_proto.max_num_elements(),
+        std::move(summaries), std::move(buffer_entries));
   }
 
+  // TODO(iindyk): remove `GetSummary` call and merge uncompressed streams.
   void Merge(QuantilesSketchImpl& other) {
     CreateStream();
     const Summary& other_summary = other.GetSummary();
@@ -215,9 +263,7 @@ Status QuantilesSketch::GetQuantiles(int64_t num_quantiles,
   return Status::OK();
 }
 
-std::string QuantilesSketch::Serialize() {
-  return impl_->Serialize();
-}
+std::string QuantilesSketch::Serialize() const { return impl_->Serialize(); }
 
 // static
 QuantilesSketch QuantilesSketch::Deserialize(absl::string_view serialized) {

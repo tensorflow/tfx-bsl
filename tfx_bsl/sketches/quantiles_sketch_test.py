@@ -13,12 +13,13 @@
 # limitations under the License.
 """Tests for tfx_bsl.sketches.QuantilesSketch."""
 
+import itertools
 import pickle
 
 import numpy as np
 import pyarrow as pa
-
 from tfx_bsl import sketches
+
 from absl.testing import absltest
 from absl.testing import parameterized
 
@@ -91,6 +92,13 @@ _QUANTILES_TEST_CASES = [
     ),
 ]
 
+_MAX_NUM_ELEMENTS = [2**10, 2**14, 2**18]
+_EPS = [0.01, 0.001, 0.0001, 0.000001]
+_NUM_QUANTILES = [2**2, 2**3, 2**4, 2**5, 2**6]
+
+_ACCURACY_TEST_CASES = list(
+    itertools.product(_MAX_NUM_ELEMENTS, _EPS, _NUM_QUANTILES))
+
 
 def _add_values(sketch, value, weight):
   if weight is None:
@@ -99,7 +107,31 @@ def _add_values(sketch, value, weight):
     sketch.AddValues(value, weight)
 
 
+def _pickle_roundtrip(s):
+  return pickle.loads(pickle.dumps(s))
+
+
 class QuantilesSketchTest(parameterized.TestCase):
+
+  def assertQuantilesAccuracy(self, quantiles, cdf, eps):
+    # Helper function to validate quantiles accuracy given a cdf function.
+    # This function assumes that quantiles input values are of the form
+    # range(N). Note that this function also validates order of quantiles since
+    # their cdf values are compared to ordered expected levels.
+    num_quantiles = len(quantiles)
+    expected_levels = [i / (num_quantiles - 1) for i in range(num_quantiles)]
+    for level, quantile in zip(expected_levels, quantiles):
+      quantile_cdf = cdf(quantile)
+      left_cdf = cdf(quantile - 1)
+      right_cdf = cdf(quantile + 1)
+      error_msg = (
+          "Accuracy of the given quantile is not sufficient, "
+          "quantile={} of expected level {}, its cdf is {}; cdf of a value to "
+          "the left is {}, to the right is {}. Error bound = {}.").format(
+              quantile, level, quantile_cdf, left_cdf, right_cdf, eps)
+      self.assertTrue(
+          abs(level - cdf(quantile)) < eps or left_cdf < level < right_cdf or
+          (level == 0 and left_cdf == 0), error_msg)
 
   @parameterized.named_parameters(*_QUANTILES_TEST_CASES)
   def test_quantiles(self, values, expected, weights=None):
@@ -139,15 +171,47 @@ class QuantilesSketchTest(parameterized.TestCase):
                              weights[len(weights) // 2:]):
       _add_values(s2, value, weight)
 
-    def pickle_roundtrip(s):
-      return pickle.loads(pickle.dumps(s))
-
-    s1 = pickle_roundtrip(s1)
-    s2 = pickle_roundtrip(s2)
+    s1 = _pickle_roundtrip(s1)
+    s2 = _pickle_roundtrip(s2)
     s1.Merge(s2)
 
     result = s1.GetQuantiles(len(expected) - 1)
     np.testing.assert_almost_equal(expected, result)
+
+  @parameterized.parameters(*_ACCURACY_TEST_CASES)
+  def test_accuracy(self, max_num_elements, eps, num_quantiles):
+    s = sketches.QuantilesSketch(eps / 2, max_num_elements)
+    values = pa.array(reversed(range(max_num_elements)))
+    weights = pa.array(range(max_num_elements))
+    total_weight = (max_num_elements - 1) * max_num_elements / 2
+
+    def cdf(x):
+      left_weight = (2 * (max_num_elements - 1) - x) * (x + 1) / 2
+      return left_weight / total_weight
+
+    _add_values(s, values, weights)
+    quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()
+    self.assertQuantilesAccuracy(quantiles, cdf, eps)
+
+  @parameterized.parameters(*_ACCURACY_TEST_CASES)
+  def test_accuracy_after_pickle(self, max_num_elements, eps, num_quantiles):
+    s = sketches.QuantilesSketch(eps / 2, max_num_elements)
+    values = pa.array(reversed(range(max_num_elements)))
+    weights = pa.array(range(max_num_elements))
+    total_weight = (max_num_elements - 1) * max_num_elements / 2
+
+    def cdf(x):
+      left_weight = (2 * (max_num_elements - 1) - x) * (x + 1) / 2
+      return left_weight / total_weight
+
+    _add_values(s, values[:max_num_elements // 2],
+                weights[:max_num_elements // 2])
+    s = _pickle_roundtrip(s)
+    _add_values(s, values[max_num_elements // 2:],
+                weights[max_num_elements // 2:])
+    s = _pickle_roundtrip(s)
+    quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()
+    self.assertQuantilesAccuracy(quantiles, cdf, eps)
 
 
 if __name__ == "__main__":

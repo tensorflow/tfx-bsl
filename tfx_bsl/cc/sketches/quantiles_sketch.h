@@ -28,8 +28,9 @@ class QuantilesSketchImpl;
 // A sketch to estimate the quantiles of a stream of numbers.
 class QuantilesSketch {
  public:
-  // eps: Controls the approximation error. Must be >0.
-  //   See weighted_quantiles_stream.h for details.
+  // eps: Controls the approximation error. Must be >0. Note that the error
+  //   bound must be divided by the the height of the distributed computation
+  //   graph. See weighted_quantiles_stream.h for details.
   // max_num_elements: An estimate of maxinum number of elements in the
   //   stream. If not known at the time of construction, a large-enough
   //   number (e.g. 2^32) may be specified at the cost of extra memory usage.
@@ -54,7 +55,7 @@ class QuantilesSketch {
                            std::shared_ptr<arrow::Array> weights);
 
   // Serializes the sketch into a string.
-  std::string Serialize();
+  std::string Serialize() const;
 
   // Deserializes the sketch from a string.
   static QuantilesSketch Deserialize(absl::string_view serialized);

@@ -16,6 +16,7 @@
 //   - removed dependencies on TensorFlow headers.
 //   - s/int64/int64_t
 //   - changed all the QCHECK* macro invocations to assert.
+//   - added `GetEntryList` method.
 #ifndef TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_BUFFER_H_
 #define TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_BUFFER_H_
 
@@ -107,6 +108,9 @@ class WeightedQuantilesBuffer {
     ret.resize(num_entries + 1);
     return ret;
   }
+
+  // Returns unprocessed vector of buffer entries.
+  const std::vector<BufferEntry>& GetEntryList() const { return vec_; }
 
   int64_t Size() const { return vec_.size(); }
   bool IsFull() const { return vec_.size() >= max_size_; }

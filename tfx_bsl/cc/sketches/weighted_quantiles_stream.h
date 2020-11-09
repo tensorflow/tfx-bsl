@@ -16,6 +16,10 @@
 //   - removed dependencies on TensorFlow headers.
 //   - s/int64/int64_t
 //   - changed all the QCHECK* macro invocations to assert.
+//   - added `GetBufferEntryList` method.
+//   - renamed `{Serialize, Deserialize}InternalSummaries` to
+//     `{Get, Set}InternalSummaries`.
+//   - removed assert that the buffer is empty from `GetInternalSummaries`.
 #ifndef TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_STREAM_H_
 #define TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_STREAM_H_
 
@@ -115,6 +119,11 @@ class WeightedQuantilesStream {
     PropagateLocalSummary();
   }
 
+  // Returns vector of buffer entries.
+  const std::vector<BufferEntry>& GetBufferEntryList() const {
+    return buffer_.GetEntryList();
+  }
+
   // Pushes full summary while maintaining approximation error invariants.
   void PushSummary(const std::vector<SummaryEntry>& summary) {
     // Validate state.
@@ -185,10 +194,8 @@ class WeightedQuantilesStream {
   static std::tuple<int64_t, int64_t> GetQuantileSpecs(double eps,
                                                       int64_t max_elements);
 
-  // Serializes the internal state of the stream.
-  std::vector<Summary> SerializeInternalSummaries() const {
-    // The buffer should be empty for serialize to work.
-    assert(buffer_.Size() == 0);
+  // Returns summaries of all levels.
+  const std::vector<Summary> GetInternalSummaries() const {
     std::vector<Summary> result;
     result.reserve(summary_levels_.size() + 1);
     for (const Summary& summary : summary_levels_) {
@@ -198,13 +205,13 @@ class WeightedQuantilesStream {
     return result;
   }
 
-  // Resets the state of the stream with a serialized state.
-  void DeserializeInternalSummaries(const std::vector<Summary>& summaries) {
-    // Clear the state before deserializing.
+  // Resets the state of the stream with given summaries.
+  void SetInternalSummaries(const std::vector<Summary>& summaries) {
+    // Clear the state before setting summary levels.
     buffer_.Clear();
     summary_levels_.clear();
     local_summary_.Clear();
-    QCHECK_GT(max_levels_, summaries.size() - 1);
+    assert(max_levels_ >= summaries.size() - 1);
     for (int i = 0; i < summaries.size() - 1; ++i) {
       summary_levels_.push_back(summaries[i]);
     }
