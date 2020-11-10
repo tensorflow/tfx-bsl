@@ -22,6 +22,7 @@ from typing import Any, List, Optional, Text, Union
 import apache_beam as beam
 import numpy as np
 import pyarrow as pa
+import tensorflow as tf
 from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tfxio
@@ -184,6 +185,25 @@ class RecordBasedTFXIO(tfxio.TFXIO):
 
   def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
     raise NotImplementedError
+
+  def _PopLabelFeatureFromDataset(self, dataset: tf.data.Dataset,
+                                  label_key: Text) -> tf.data.Dataset:
+    """Create a dataset that isolates the label_key feature from all features.
+
+    Args:
+      dataset: A dataset of dicts, where the keys are feature names, and values
+        are features.
+      label_key: The name of the feature that is isolated.
+
+    Returns:
+      A dataset of tuple (label_key_feature, features_dict), where features_dict
+      does not contain label_key.
+    """
+    if label_key not in self.TensorRepresentations():
+      raise ValueError(
+          "The `label_key` provided ({}) must be one of the following tensors"
+          "names: {}.".format(label_key, self.TensorRepresentations().keys()))
+    return dataset.map(lambda x: (x, x.pop(label_key)))
 
 
 def CreateRawRecordColumn(

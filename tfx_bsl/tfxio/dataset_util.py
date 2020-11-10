@@ -64,10 +64,17 @@ def detect_compression_type(file_patterns: tf.Tensor) -> tf.Tensor:
   return formats[index]
 
 
-def make_tf_record_dataset(file_pattern: List[Text], batch_size: int,
-                           drop_final_batch: bool, num_epochs: Optional[int],
-                           shuffle: Optional[bool], shuffle_buffer_size: int,
-                           shuffle_seed: Optional[int]) -> tf.data.Dataset:
+def make_tf_record_dataset(
+    file_pattern: List[Text],
+    batch_size: int,
+    drop_final_batch: bool,
+    num_epochs: Optional[int],
+    shuffle: Optional[bool],
+    shuffle_buffer_size: int,
+    shuffle_seed: Optional[int],
+    reader_num_threads: int = tf.data.experimental.AUTOTUNE,
+    sloppy_ordering: bool = False,
+) -> tf.data.Dataset:
   """Returns an interleaved TFRecordDataset with basic options.
 
   This implementation is a simplified version of
@@ -90,6 +97,13 @@ def make_tf_record_dataset(file_pattern: List[Text], batch_size: int,
       buffers). A large capacity ensures better shuffling but would increase
       memory usage and startup time.
     shuffle_seed: Randomization seed to use for shuffling.
+    reader_num_threads: Number of threads used to read records. If >1, the
+      results will be interleaved. Defaults to tf.data.experimental.AUTOTUNE.
+    sloppy_ordering: If `True`, reading performance will be improved at the
+      cost of non-deterministic ordering. If `False`, the order of elements
+      produced is deterministic prior to shuffling (elements are still
+      randomized if `shuffle=True`. Note that if the seed is set, then order
+      of elements after shuffling is deterministic). Defaults to False.
   """
   file_pattern = tf.convert_to_tensor(file_pattern)
 
@@ -99,7 +113,10 @@ def make_tf_record_dataset(file_pattern: List[Text], batch_size: int,
   compression_type = detect_compression_type(file_pattern)
   dataset = dataset.interleave(
       lambda filename: tf.data.TFRecordDataset(filename, compression_type),
-      num_parallel_calls=tf.data.experimental.AUTOTUNE)
+      num_parallel_calls=reader_num_threads)
+  options = tf.data.Options()
+  options.experimental_deterministic = not sloppy_ordering
+  dataset = dataset.with_options(options)
 
   if shuffle:
     dataset = dataset.shuffle(shuffle_buffer_size, shuffle_seed)

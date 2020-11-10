@@ -109,6 +109,19 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
     }
     return self_copy
 
+  def _ApplyDecoderToDataset(
+      self, dataset: tf.data.Dataset) -> tf.data.Dataset:
+    decoder = tf_graph_record_decoder.load_decoder(self._saved_decoder_path)
+
+    def _ParseFn(record):
+      tensors_dict = decoder.decode_record(record)
+      return {
+          k: v
+          for k, v in tensors_dict.items()
+          if k in self.TensorRepresentations()
+      }
+    return dataset.map(_ParseFn)
+
 
 class BeamRecordToTensorTFXIO(_RecordToTensorTFXIO):
   """TFXIO implementation that decodes records in pcoll[bytes] with TF Graph."""
@@ -206,25 +219,11 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
         options.num_epochs, options.shuffle, options.shuffle_buffer_size,
         options.shuffle_seed)
 
-    decoder = tf_graph_record_decoder.load_decoder(self._saved_decoder_path)
-    def _ParseFn(record):
-      # TODO(andylou): Change this once we plumb the projected columns into the
-      # decoder itself.
-      tensors_dict = decoder.decode_record(record)
-      return {
-          k: v
-          for k, v in tensors_dict.items()
-          if k in self._tensor_representations
-      }
-    dataset = dataset.map(_ParseFn)
+    dataset = self._ApplyDecoderToDataset(dataset)
 
     label_key = options.label_key
     if label_key is not None:
-      if label_key not in self.TensorRepresentations():
-        raise ValueError(
-            "The `label_key` provided ({}) must be one of the following tensors"
-            "names: {}.".format(label_key, self.TensorRepresentations().keys()))
-      dataset = dataset.map(lambda x: (x, x.pop(label_key)))
+      dataset = self._PopLabelFeatureFromDataset(dataset, label_key)
 
     return dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
