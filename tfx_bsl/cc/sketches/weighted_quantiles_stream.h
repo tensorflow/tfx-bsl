@@ -20,6 +20,7 @@
 //   - renamed `{Serialize, Deserialize}InternalSummaries` to
 //     `{Get, Set}InternalSummaries`.
 //   - removed assert that the buffer is empty from `GetInternalSummaries`.
+//   - added `PushStream` method.
 #ifndef TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_STREAM_H_
 #define TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_STREAM_H_
 
@@ -57,7 +58,9 @@ namespace quantiles {
 // - To distribute this algorithm with maintaining error bounds, we need
 //   the worker-computed summaries to have no more than eps / h error
 //   where h is the height of the distributed computation graph which
-//   is 2 for an MR with no combiner.
+//   is 2 for an MR with no combiner. If streams are merged without extraction
+//   of the final summary (e.g. with `PushStream`), then stream merging doesn't
+//   add level to the computation graph height.
 //
 // We mainly want to max out IO bw by ensuring we're not compute-bound and
 // using a reasonable amount of RAM.
@@ -133,6 +136,22 @@ class WeightedQuantilesStream {
     local_summary_.BuildFromSummaryEntries(summary);
     local_summary_.Compress(block_size_, eps_);
     PropagateLocalSummary();
+  }
+
+  // Pushes another stream while maintaining approximation error invariants.
+  void PushStream(const WeightedQuantilesStream& stream) {
+    // Error bound is only guaranteed if both streams have the same eps_.
+    assert(eps_ == stream.eps_);
+
+    // Push buffer elements.
+    for (const BufferEntry& entry : stream.GetBufferEntryList()) {
+      PushEntry(entry.value, entry.weight);
+    }
+
+    // Push all internal summaries.
+    for (const Summary& summary : stream.GetInternalSummaries()) {
+      PushSummary(summary.GetEntryList());
+    }
   }
 
   // Flushes approximator and finalizes state.

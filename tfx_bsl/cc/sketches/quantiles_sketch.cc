@@ -71,19 +71,17 @@ class QuantilesSketchImpl {
   QuantilesSketchImpl(double eps, int64_t max_num_elements,
                       std::vector<Summary> summaries = {},
                       std::vector<BufferEntry> buffer_entries = {})
-      : eps_(eps), max_num_elements_(max_num_elements) {
-    stream_ = Stream(eps_, max_num_elements_);
-
+      : eps_(eps),
+        max_num_elements_(max_num_elements),
+        stream_(Stream(eps_, max_num_elements_)) {
     // Recover local summaries.
     if (!summaries.empty()) {
-      stream_->SetInternalSummaries(summaries);
+      stream_.SetInternalSummaries(summaries);
     }
 
     // Recover buffer elements.
-    if (!buffer_entries.empty()) {
-      for (auto& entry : buffer_entries) {
-        stream_->PushEntry(entry.value, entry.weight);
-      }
+    for (auto& entry : buffer_entries) {
+      stream_.PushEntry(entry.value, entry.weight);
     }
   }
 
@@ -92,33 +90,46 @@ class QuantilesSketchImpl {
 
   Status AddWeightedValues(const arrow::DoubleArray& values,
                            const arrow::DoubleArray& weights) {
-    CreateStream();
+    if (finalized_) {
+      return errors::FailedPrecondition(
+          "Attempting to add values to a finalized sketch.");
+    }
+
     for (int i = 0; i < values.length(); ++i) {
       if (values.IsNull(i) || weights.IsNull(i) || weights.Value(i) <= 0) {
         continue;
       }
-      stream_->PushEntry(values.Value(i), weights.Value(i));
+      stream_.PushEntry(values.Value(i), weights.Value(i));
     }
     return Status::OK();
   }
 
   Status AddValues(const arrow::DoubleArray& values) {
-    CreateStream();
+    if (finalized_) {
+      return errors::FailedPrecondition(
+          "Attempting to add values to a finalized sketch.");
+    }
+
     for (int i = 0; i < values.length(); ++i) {
       if (values.IsNull(i)) continue;
-      stream_->PushEntry(values.Value(i), 1.0);
+      stream_.PushEntry(values.Value(i), 1.0);
     }
     return Status::OK();
   }
 
-  std::string Serialize() const {
+  Status Serialize(std::string& serialized) const {
+    if (finalized_) {
+      return errors::FailedPrecondition(
+          "Attempting to serialize a finalized sketch.");
+    }
+
     Quantiles sketch_proto;
     Quantiles::Stream* stream_proto = sketch_proto.add_streams();
     stream_proto->set_eps(eps_);
     stream_proto->set_max_num_elements(max_num_elements_);
 
     // Add local summaries.
-    const std::vector<Summary>& summaries = stream_->GetInternalSummaries();
+    const std::vector<Summary>& summaries = stream_.GetInternalSummaries();
     for (const auto& summary : summaries) {
       Quantiles::Stream::Summary* summary_proto = stream_proto->add_summaries();
       for (const auto& entry : summary.GetEntryList()) {
@@ -131,14 +142,14 @@ class QuantilesSketchImpl {
 
     // Add buffer elements.
     const std::vector<BufferEntry>& buffer_entries =
-        stream_->GetBufferEntryList();
+        stream_.GetBufferEntryList();
     Quantiles::Stream::Buffer* buffer_proto = stream_proto->mutable_buffer();
     for (const auto& entry : buffer_entries) {
       buffer_proto->add_value(entry.value);
       buffer_proto->add_weight(entry.weight);
     }
-
-    return sketch_proto.SerializeAsString();
+    serialized = sketch_proto.SerializeAsString();
+    return Status::OK();
   }
 
   static std::unique_ptr<QuantilesSketchImpl> Deserialize(
@@ -181,48 +192,46 @@ class QuantilesSketchImpl {
         std::move(summaries), std::move(buffer_entries));
   }
 
-  // TODO(iindyk): remove `GetSummary` call and merge uncompressed streams.
-  void Merge(QuantilesSketchImpl& other) {
-    CreateStream();
-    const Summary& other_summary = other.GetSummary();
-    stream_->PushSummary(other_summary.GetEntryList());
+  Status Merge(const QuantilesSketchImpl& other) {
+    if (finalized_) {
+      return errors::FailedPrecondition(
+          "Attempting to merge to a finalized sketch.");
+    }
+    if (other.finalized_) {
+      return errors::FailedPrecondition(
+          "Attempting to merge a finalized sketch.");
+    }
+
+    stream_.PushStream(other.stream_);
+    return Status::OK();
   }
 
-  Summary GetSummary() {
-    // The stream state is destoryed after Finalize(). But a stream can be
-    // recreated from the staged_summary_.
-    if (stream_) {
-      stream_->Finalize();
-      staged_summary_ = stream_->GetFinalSummary();
-      stream_ = absl::nullopt;
+  Summary GetFinalSummary() {
+    // The stream state is destroyed after Finalize().
+    if (!finalized_) {
+      stream_.Finalize();
+      finalized_ = true;
     }
-    return staged_summary_;
+    return stream_.GetFinalSummary();
   }
 
  private:
-  void CreateStream() {
-    if (!stream_) {
-      stream_ = Stream(eps_, max_num_elements_);
-      if (staged_summary_.Size() > 0) {
-        stream_->PushSummary(staged_summary_.GetEntryList());
-        staged_summary_.Clear();
-      }
-    }
-  }
-
   double eps_;
   int64_t max_num_elements_;
-
-  // stream_ may be nullopt due to the fact that stream_->Finalize() can only
-  // be called once. So once a stream_ is finalized, it will be dumped into
-  // `staged_summary_`. Later if a stream is needed, a new one will be created
-  // from `staged_summary_`.
-  absl::optional<Stream> stream_;
-  Summary staged_summary_;
+  Stream stream_;
+  bool finalized_ = false;
 };
 
+// Error bound is adjusted by height of the computation graph. Note that the
+// current implementation always has height of 2: one level from `AddValues`,
+// `AddWeightedValues` and `Merge` that perform multi-level summary compression
+// maintaining the error bound, and another level from `GetQuantiles` that
+// performs final summary compression adding to the final error bound. Final
+// summary compression can only be triggered once. See
+// weighted_quantiles_stream.h for details.
 QuantilesSketch::QuantilesSketch(double eps, int64_t max_num_elements)
-    : impl_(absl::make_unique<QuantilesSketchImpl>(eps, max_num_elements)) {}
+    : impl_(absl::make_unique<QuantilesSketchImpl>(eps / 2, max_num_elements)) {
+}
 
 QuantilesSketch::~QuantilesSketch() {}
 QuantilesSketch::QuantilesSketch(QuantilesSketch&&) = default;
@@ -245,16 +254,15 @@ Status QuantilesSketch::AddWeightedValues(
 Status QuantilesSketch::AddValues(std::shared_ptr<arrow::Array> values) {
   TFX_BSL_RETURN_IF_ERROR(MaybeCastToDoubleArray(&values));
   return impl_->AddValues(static_cast<const arrow::DoubleArray&>(*values));
-  return Status::OK();
 }
 
-void QuantilesSketch::Merge(QuantilesSketch& other) {
-  impl_->Merge(*other.impl_);
+Status QuantilesSketch::Merge(const QuantilesSketch& other) {
+  return impl_->Merge(*other.impl_);
 }
 
 Status QuantilesSketch::GetQuantiles(int64_t num_quantiles,
                                      std::shared_ptr<arrow::Array>* quantiles) {
-  Summary summary = impl_->GetSummary();
+  Summary summary = impl_->GetFinalSummary();
   std::vector<double> quantiles_vec = summary.GenerateQuantiles(num_quantiles);
   arrow::DoubleBuilder result_builder;
   TFX_BSL_RETURN_IF_ERROR(
@@ -263,7 +271,9 @@ Status QuantilesSketch::GetQuantiles(int64_t num_quantiles,
   return Status::OK();
 }
 
-std::string QuantilesSketch::Serialize() const { return impl_->Serialize(); }
+Status QuantilesSketch::Serialize(std::string& serialized) const {
+  return impl_->Serialize(serialized);
+}
 
 // static
 QuantilesSketch QuantilesSketch::Deserialize(absl::string_view serialized) {

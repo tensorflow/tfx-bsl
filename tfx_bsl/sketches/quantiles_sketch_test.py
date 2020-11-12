@@ -113,7 +113,7 @@ def _pickle_roundtrip(s):
 
 class QuantilesSketchTest(parameterized.TestCase):
 
-  def assertQuantilesAccuracy(self, quantiles, cdf, eps):
+  def assert_quantiles_accuracy(self, quantiles, cdf, eps):
     # Helper function to validate quantiles accuracy given a cdf function.
     # This function assumes that quantiles input values are of the form
     # range(N). Note that this function also validates order of quantiles since
@@ -180,7 +180,7 @@ class QuantilesSketchTest(parameterized.TestCase):
 
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy(self, max_num_elements, eps, num_quantiles):
-    s = sketches.QuantilesSketch(eps / 2, max_num_elements)
+    s = sketches.QuantilesSketch(eps, max_num_elements)
     values = pa.array(reversed(range(max_num_elements)))
     weights = pa.array(range(max_num_elements))
     total_weight = (max_num_elements - 1) * max_num_elements / 2
@@ -191,11 +191,11 @@ class QuantilesSketchTest(parameterized.TestCase):
 
     _add_values(s, values, weights)
     quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()
-    self.assertQuantilesAccuracy(quantiles, cdf, eps)
+    self.assert_quantiles_accuracy(quantiles, cdf, eps)
 
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy_after_pickle(self, max_num_elements, eps, num_quantiles):
-    s = sketches.QuantilesSketch(eps / 2, max_num_elements)
+    s = sketches.QuantilesSketch(eps, max_num_elements)
     values = pa.array(reversed(range(max_num_elements)))
     weights = pa.array(range(max_num_elements))
     total_weight = (max_num_elements - 1) * max_num_elements / 2
@@ -211,7 +211,31 @@ class QuantilesSketchTest(parameterized.TestCase):
                 weights[max_num_elements // 2:])
     s = _pickle_roundtrip(s)
     quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()
-    self.assertQuantilesAccuracy(quantiles, cdf, eps)
+    self.assert_quantiles_accuracy(quantiles, cdf, eps)
+
+  @parameterized.parameters(*_ACCURACY_TEST_CASES)
+  def test_accuracy_after_merge(self, max_num_elements, eps, num_quantiles):
+    s1 = sketches.QuantilesSketch(eps, max_num_elements)
+    s2 = sketches.QuantilesSketch(eps, max_num_elements)
+    s3 = sketches.QuantilesSketch(eps, max_num_elements)
+    values = pa.array(reversed(range(max_num_elements)))
+    weights = pa.array(range(max_num_elements))
+    total_weight = (max_num_elements - 1) * max_num_elements / 2
+
+    def cdf(x):
+      left_weight = (2 * (max_num_elements - 1) - x) * (x + 1) / 2
+      return left_weight / total_weight
+
+    _add_values(s1, values[:max_num_elements // 10],
+                weights[:max_num_elements // 10])
+    _add_values(s2, values[max_num_elements // 10:max_num_elements // 3],
+                weights[max_num_elements // 10:max_num_elements // 3])
+    _add_values(s3, values[max_num_elements // 3:],
+                weights[max_num_elements // 3:])
+    s2.Merge(s3)
+    s1.Merge(s2)
+    quantiles = s1.GetQuantiles(num_quantiles - 1).to_pylist()
+    self.assert_quantiles_accuracy(quantiles, cdf, eps)
 
 
 if __name__ == "__main__":

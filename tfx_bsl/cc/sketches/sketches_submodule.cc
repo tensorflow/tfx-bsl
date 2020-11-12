@@ -185,7 +185,10 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
             std::string serialized;
             {
               py::gil_scoped_release release_gil;
-              serialized = sketch.Serialize();
+              Status s = sketch.Serialize(serialized);
+              if (!s.ok()) {
+                throw std::runtime_error(s.ToString());
+              }
             }
             return py::bytes(serialized);
           },
@@ -197,8 +200,11 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
           }))
       .def(
           "Merge",
-          [](QuantilesSketch& sketch, QuantilesSketch& other) {
-            sketch.Merge(other);
+          [](QuantilesSketch& sketch, const QuantilesSketch& other) {
+            Status s = sketch.Merge(other);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
           },
           py::call_guard<py::gil_scoped_release>())
       .def(
