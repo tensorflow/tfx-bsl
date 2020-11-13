@@ -16,6 +16,7 @@
 #define TFX_BSL_CC_UTIL_STATUS_UTIL_H_
 
 #include "absl/base/optimization.h"
+#include "absl/status/status.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/util/status.h"
 
@@ -31,6 +32,17 @@ inline Status FromArrowStatus(::arrow::Status arrow_status) {
   return errors::Internal(absl::StrCat("Arrow error ",
                                        arrow_status.CodeAsString(), " : ",
                                        arrow_status.message()));
+}
+
+// Creates a tfx_bsl::Status from an absl::Status.
+inline Status FromAbslStatus(::absl::Status absl_status) {
+  if (absl_status.ok()) {
+    return Status::OK();
+  }
+
+  return errors::Internal(
+      absl::StrCat("Absl error ", absl::StatusCodeToString(absl_status.code()),
+                   " : ", absl_status.message()));
 }
 
 #define _ASSIGN_OR_RETURN_ARROW_NAME(x, y) x##y
