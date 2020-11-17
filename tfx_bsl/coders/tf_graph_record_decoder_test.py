@@ -42,7 +42,8 @@ class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
         "ragged_tensor": tf.RaggedTensor.from_sparse(sparse),
         "record_index": tf.RaggedTensor.from_row_splits(
             values=tf.range(tf.size(record), dtype=tf.int64),
-            row_splits=tf.range(tf.size(record) + 1, dtype=tf.int64))
+            row_splits=tf.range(tf.size(record) + 1, dtype=tf.int64)),
+        "dense_tensor": record,
     }
 
 
@@ -77,6 +78,7 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
         "record_index":
             tf.RaggedTensorSpec(
                 shape=[None, None], dtype=tf.int64, ragged_rank=1),
+        "dense_tensor": tf.TensorSpec(shape=[None], dtype=tf.string)
     })
     self.assertEqual(decoder.record_index_tensor_name, "record_index")
     tf_graph_record_decoder.save_decoder(decoder, self._tmp_dir)
@@ -84,11 +86,12 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
     self.assertEqual(loaded.record_index_tensor_name, "record_index")
 
     self.assertEqual(decoder.output_type_specs(), loaded.output_type_specs())
-    got = loaded.decode_record([b"abc", b"def"])
+    records = [b"abc", b"def"]
+    got = loaded.decode_record(records)
     self.assertLen(got, len(loaded.output_type_specs()))
     self.assertIn("sparse_tensor", got)
     st = got["sparse_tensor"]
-    self.assertAllEqual(st.values, [b"abc", b"def"])
+    self.assertAllEqual(st.values, records)
     self.assertAllEqual(st.indices, [[0, 0], [1, 0]])
     self.assertAllEqual(st.dense_shape, [2, 1])
 
@@ -97,6 +100,9 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
 
     rt = got["record_index"]
     self.assertAllEqual(rt, tf.ragged.constant([[0], [1]]))
+
+    dt = got["dense_tensor"]
+    self.assertAllEqual(dt, records)
 
     # Also test that .record_index_tensor_name can be accessed in graph
     # mode.

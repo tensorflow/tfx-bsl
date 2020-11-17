@@ -62,7 +62,7 @@ class TFGraphRecordDecoder(tf.Module, metaclass=abc.ABCMeta):
       (composite) tensor.
     """
     return {
-        k: v._type_spec for k, v in  # pylint: disable=protected-access
+        k: tf.type_spec_from_value(v) for k, v in
         self.decode_record.get_concrete_function().structured_outputs.items()
     }
 

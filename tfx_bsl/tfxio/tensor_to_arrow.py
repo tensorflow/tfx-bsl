@@ -115,7 +115,7 @@ class _TypeHandler(abc.ABC):
   def convert(self, tensor: TensorAlike) -> List[pa.Array]:
     if not self._type_spec.is_compatible_with(tensor):
       raise TypeError("Expected {} but got {}".format(
-          self._type_spec, _get_type_spec(tensor)))
+          self._type_spec, tf.type_spec_from_value(tensor)))
     return self._convert_internal(tensor)
 
   @abc.abstractmethod
@@ -280,16 +280,6 @@ def _tf_dtype_to_arrow_type(dtype: tf.DType):
     raise TypeError("Unable to handle bool tensors -- consider casting it to a "
                     "tf.uint8")
   return pa.from_numpy_dtype(dtype.as_numpy_dtype)
-
-
-def _get_type_spec(tensor_alike: TensorAlike):
-  """Returns the TypeSpec of a TensorAlike."""
-  if isinstance(tensor_alike, tf.Tensor):
-    return tf.TensorSpec.from_tensor(tensor_alike)
-  elif isinstance(tensor_alike, composite_tensor.CompositeTensor):
-    return tensor_alike._type_spec  # pylint:disable=protected-access
-  raise TypeError("Not a Tensor or CompositeTensor: {}".format(
-      type(tensor_alike)))
 
 
 def _make_handlers(
