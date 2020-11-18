@@ -214,11 +214,16 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
     Raises:
       ValueError: if label_key in the dataset option is not in the arrow schema.
     """
-    dataset = dataset_util.make_tf_record_dataset(
-        self._file_pattern, options.batch_size, options.drop_final_batch,
-        options.num_epochs, options.shuffle, options.shuffle_buffer_size,
-        options.shuffle_seed)
 
+    dataset = dataset_util.make_tf_record_dataset(
+        file_pattern=self._file_pattern,
+        batch_size=options.batch_size,
+        drop_final_batch=options.drop_final_batch,
+        num_epochs=options.num_epochs,
+        shuffle=options.shuffle,
+        shuffle_buffer_size=options.shuffle_buffer_size,
+        shuffle_seed=options.shuffle_seed,
+        sloppy_ordering=options.sloppy_ordering)
     dataset = self._ApplyDecoderToDataset(dataset)
 
     label_key = options.label_key

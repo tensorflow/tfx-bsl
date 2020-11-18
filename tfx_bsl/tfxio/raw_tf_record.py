@@ -20,6 +20,7 @@ import pyarrow as pa
 import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
 from tfx_bsl.coders import batch_util
 from tfx_bsl.tfxio import dataset_options
+from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tfxio
@@ -72,11 +73,6 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
     return pa.schema([])
 
   def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
-    raise NotImplementedError
-
-  def TensorFlowDataset(
-      self,
-      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
     raise NotImplementedError
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
@@ -140,6 +136,11 @@ class RawBeamRecordTFXIO(_RawRecordTFXIO):
             .with_input_types(bytes)
             .with_output_types(bytes))
 
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
+    raise NotImplementedError
+
 
 class RawTfRecordTFXIO(_RawRecordTFXIO):
   """Raw record TFXIO for TFRecord format."""
@@ -170,3 +171,19 @@ class RawTfRecordTFXIO(_RawRecordTFXIO):
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return record_based_tfxio.ReadTfRecord(self._file_pattern)
+
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
+
+    return (dataset_util.make_tf_record_dataset(
+        file_pattern=self._file_pattern,
+        batch_size=options.batch_size,
+        drop_final_batch=options.drop_final_batch,
+        num_epochs=options.num_epochs,
+        shuffle=options.shuffle,
+        shuffle_buffer_size=options.shuffle_buffer_size,
+        shuffle_seed=options.shuffle_seed,
+        sloppy_ordering=options.sloppy_ordering)
+            .map(lambda records: {self._raw_record_column_name: records})
+            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE))

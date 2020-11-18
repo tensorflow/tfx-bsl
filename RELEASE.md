@@ -5,6 +5,7 @@
 # Current version (not yet released; still in development)
 
 ## Major Features and Improvements
+*   `.TensorFlowDataset` interface is available in RawTfRecord TFXIO.
 
 ## Bug Fixes and Other Changes
 

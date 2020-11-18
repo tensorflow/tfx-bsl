@@ -14,12 +14,14 @@
 """Tests for tfx_bsl.tfxio.raw_tf_record."""
 
 import os
+import unittest
 
 from absl import flags
 import apache_beam as beam
 from apache_beam.testing import util as beam_testing_util
 import pyarrow as pa
 import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import raw_tf_record
 from tfx_bsl.tfxio import telemetry_test_util
 
@@ -92,6 +94,47 @@ class RawTfRecordTest(absltest.TestCase):
 
     with self.assertRaises(AssertionError):
       tfxio.Project(["some_other_name"])
+
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testTensorFlowDataset(self):
+    column_name = "raw_record"
+    tfxio = raw_tf_record.RawTfRecordTFXIO(
+        self._raw_record_file,
+        column_name,
+        telemetry_descriptors=["some", "component"])
+    ds = tfxio.TensorFlowDataset(dataset_options.TensorFlowDatasetOptions(
+        batch_size=1,
+        shuffle=False,
+        num_epochs=1,
+        reader_num_threads=1,
+        sloppy_ordering=False))
+    actual_records = [d[column_name].numpy()[0] for d in ds]
+    self.assertEqual(actual_records, _RAW_RECORDS)
+
+  def testTensorFlowDatasetGraphMode(self):
+    column_name = "raw_record"
+    tfxio = raw_tf_record.RawTfRecordTFXIO(
+        self._raw_record_file,
+        column_name,
+        telemetry_descriptors=["some", "component"])
+    actual_records = []
+    with tf.compat.v1.Graph().as_default():
+      ds = tfxio.TensorFlowDataset(
+          dataset_options.TensorFlowDatasetOptions(
+              batch_size=1,
+              shuffle=False,
+              num_epochs=1,
+              reader_num_threads=1,
+              sloppy_ordering=False))
+      iterator = tf.compat.v1.data.make_one_shot_iterator(ds)
+      next_elem = iterator.get_next()
+      with tf.compat.v1.Session() as sess:
+        while True:
+          try:
+            actual_records.append(sess.run(next_elem)[column_name][0])
+          except tf.errors.OutOfRangeError:
+            break
+    self.assertEqual(actual_records, _RAW_RECORDS)
 
 
 class RawBeamRecordTest(absltest.TestCase):
