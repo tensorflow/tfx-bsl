@@ -13,15 +13,17 @@
 # limitations under the License.
 """Package Setup script for TFX BSL."""
 
+import os
+import platform
+import subprocess
+import sys
+
 # pylint:disable=g-bad-import-order
 # setuptools must be imported prior to distutils.
 import setuptools
 from distutils import spawn
 from distutils.command import build
 # pylint:enable=g-bad-import-order
-import os
-import subprocess
-import sys
 
 from setuptools import find_packages
 from setuptools import setup
@@ -80,10 +82,14 @@ class _BazelBuildCommand(setuptools.Command):
           'Could not find "bazel" binary. Please visit '
           'https://docs.bazel.build/versions/master/install.html for '
           'installation instruction.')
+    self._additional_build_options = []
+    if platform.system() == 'Darwin':
+      self._additional_build_options = ['--macos_minimum_os=10.9']
 
   def run(self):
     subprocess.check_call(
-        [self._bazel_cmd, 'run', '-c', 'opt', '//tfx_bsl:move_generated_files'],
+        [self._bazel_cmd, 'run', '-c', 'opt'] + self._additional_build_options +
+        ['//tfx_bsl:move_generated_files'],
         # Bazel should be invoked in a directory containing bazel WORKSPACE
         # file, which is the root directory.
         cwd=os.path.dirname(os.path.realpath(__file__)),
