@@ -38,7 +38,7 @@ message MisraGries {
   double delta = 4;
 }
 
-// Experimental. Do not use.
+// Specifies how the Quantiles Sketch is formatted for serialization.
 message Quantiles {
   // Quantiles computation stream. Contains multiple levels of summaries and a
   // buffer of unprocessed elements.
@@ -64,8 +64,5 @@ message Quantiles {
     int64 max_num_elements = 4;
   }
   // Two sketches may only be merged on stream-to-stream basis.
-  // Currently, quantiles sketch only supports a single stream.
-  // TODO(iindyk): add support of multiple streams to quantiles sketch. This
-  // will enable elementwise quantiles calculation.
   repeated Stream streams = 1;
 }

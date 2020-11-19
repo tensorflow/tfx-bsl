@@ -32,7 +32,19 @@ _QUANTILES_TEST_CASES = [
             pa.array(np.linspace(101, 200, 100, dtype=np.float64)),
             pa.array(np.linspace(201, 300, 100, dtype=np.float64)),
         ],
-        expected=[1, 61, 121, 181, 241, 300]),
+        expected=[[1, 61, 121, 181, 241, 300]],
+        num_streams=1),
+    dict(
+        testcase_name="unweighted_elementwise",
+        values=[
+            pa.array(np.linspace(1, 500, 500, dtype=np.float64)),
+            pa.array(np.linspace(101, 600, 500, dtype=np.float64)),
+            pa.array(np.linspace(201, 700, 500, dtype=np.float64)),
+        ],
+        expected=[[1, 201, 301, 401, 501, 696], [2, 202, 302, 402, 502, 697],
+                  [3, 203, 303, 403, 503, 698], [4, 204, 304, 404, 504, 699],
+                  [5, 205, 305, 405, 505, 700]],
+        num_streams=5),
     dict(
         testcase_name="weighted",
         values=[
@@ -45,7 +57,24 @@ _QUANTILES_TEST_CASES = [
             pa.array([2] * 100, type=pa.float64()),
             pa.array([3] * 100, type=pa.float64()),
         ],
-        expected=[1, 111, 171, 221, 261, 300]),
+        expected=[[1, 111, 171, 221, 261, 300]],
+        num_streams=1),
+    dict(
+        testcase_name="weighted_elementwise",
+        values=[
+            pa.array(np.linspace(1, 500, 500, dtype=np.float64)),
+            pa.array(np.linspace(101, 600, 500, dtype=np.float64)),
+            pa.array(np.linspace(201, 700, 500, dtype=np.float64)),
+        ],
+        weights=[
+            pa.array([1] * 100, type=pa.float64()),
+            pa.array([2] * 100, type=pa.float64()),
+            pa.array([3] * 100, type=pa.float64()),
+        ],
+        expected=[[1, 231, 331, 431, 541, 696], [2, 232, 332, 432, 542, 697],
+                  [3, 233, 333, 433, 543, 698], [4, 234, 334, 434, 544, 699],
+                  [5, 235, 335, 435, 545, 700]],
+        num_streams=5),
     dict(
         testcase_name="infinity",
         values=[
@@ -53,8 +82,8 @@ _QUANTILES_TEST_CASES = [
                 [1.0, 2.0, np.inf, np.inf, -np.inf, 3.0, 4.0, 5.0, -np.inf]),
             pa.array([1.0, np.inf, -np.inf]),
         ],
-        expected=[-np.inf, -np.inf, 1, 4, np.inf, np.inf],
-    ),
+        expected=[[-np.inf, -np.inf, 1, 4, np.inf, np.inf]],
+        num_streams=1),
     dict(
         testcase_name="null",
         values=[
@@ -63,8 +92,8 @@ _QUANTILES_TEST_CASES = [
             pa.array(np.linspace(201, 300, 100, dtype=np.float64)),
             pa.array([None, None]),
         ],
-        expected=[1, 61, 121, 181, 241, 300],
-    ),
+        expected=[[1, 61, 121, 181, 241, 300]],
+        num_streams=1),
     dict(
         testcase_name="int",
         values=[
@@ -72,8 +101,8 @@ _QUANTILES_TEST_CASES = [
             pa.array(np.linspace(101, 200, 100, dtype=np.int32)),
             pa.array(np.linspace(201, 300, 100, dtype=np.int32)),
         ],
-        expected=[1, 61, 121, 181, 241, 300],
-    ),
+        expected=[[1, 61, 121, 181, 241, 300]],
+        num_streams=1),
     dict(
         testcase_name="negative_weights",
         values=[
@@ -88,8 +117,8 @@ _QUANTILES_TEST_CASES = [
             pa.array([3] * 100, type=pa.float64()),
             pa.array([0, -1]),
         ],
-        expected=[1, 111, 171, 221, 261, 300],
-    ),
+        expected=[[1, 111, 171, 221, 261, 300]],
+        num_streams=1),
 ]
 
 _MAX_NUM_ELEMENTS = [2**10, 2**14, 2**18]
@@ -133,20 +162,32 @@ class QuantilesSketchTest(parameterized.TestCase):
           abs(level - cdf(quantile)) < eps or left_cdf < level < right_cdf or
           (level == 0 and left_cdf == 0), error_msg)
 
+  def test_quantiles_sketch_init(self):
+    with self.assertRaisesRegex(RuntimeError, "eps must be positive"):
+      _ = sketches.QuantilesSketch(0, 1 << 32, 1)
+
+    with self.assertRaisesRegex(RuntimeError, "max_num_elements must be >= 1."):
+      _ = sketches.QuantilesSketch(0.0001, 0, 1)
+
+    with self.assertRaisesRegex(RuntimeError, "num_streams must be >= 1."):
+      _ = sketches.QuantilesSketch(0.0001, 1 << 32, 0)
+
+    _ = sketches.QuantilesSketch(0.0001, 1 << 32, 1)
+
   @parameterized.named_parameters(*_QUANTILES_TEST_CASES)
-  def test_quantiles(self, values, expected, weights=None):
-    s = sketches.QuantilesSketch(0.00001, 1<<32)
+  def test_quantiles(self, values, expected, num_streams, weights=None):
+    s = sketches.QuantilesSketch(0.00001, 1 << 32, num_streams)
     if weights is None:
       weights = [None] * len(values)
     for value, weight in zip(values, weights):
       _add_values(s, value, weight)
 
-    result = s.GetQuantiles(len(expected) - 1)
+    result = s.GetQuantiles(len(expected[0]) - 1).to_pylist()
     np.testing.assert_almost_equal(expected, result)
 
   @parameterized.named_parameters(*_QUANTILES_TEST_CASES)
-  def test_pickle(self, values, expected, weights=None):
-    s = sketches.QuantilesSketch(0.00001, 1<<32)
+  def test_pickle(self, values, expected, num_streams, weights=None):
+    s = sketches.QuantilesSketch(0.00001, 1 << 32, num_streams)
     if weights is None:
       weights = [None] * len(values)
     for value, weight in zip(values, weights):
@@ -155,18 +196,18 @@ class QuantilesSketchTest(parameterized.TestCase):
     self.assertIsInstance(pickled, bytes)
     unpickled = pickle.loads(pickled)
     self.assertIsInstance(unpickled, sketches.QuantilesSketch)
-    result = unpickled.GetQuantiles(len(expected) - 1)
+    result = unpickled.GetQuantiles(len(expected[0]) - 1).to_pylist()
     np.testing.assert_almost_equal(expected, result)
 
   @parameterized.named_parameters(*_QUANTILES_TEST_CASES)
-  def test_merge(self, values, expected, weights=None):
+  def test_merge(self, values, expected, num_streams, weights=None):
     if weights is None:
       weights = [None] * len(values)
-    s1 = sketches.QuantilesSketch(0.00001, 1 << 32)
+    s1 = sketches.QuantilesSketch(0.00001, 1 << 32, num_streams)
     for value, weight in zip(values[:len(values) // 2],
                              weights[:len(weights) // 2]):
       _add_values(s1, value, weight)
-    s2 = sketches.QuantilesSketch(0.00001, 1 << 32)
+    s2 = sketches.QuantilesSketch(0.00001, 1 << 32, num_streams)
     for value, weight in zip(values[len(values) // 2:],
                              weights[len(weights) // 2:]):
       _add_values(s2, value, weight)
@@ -175,12 +216,12 @@ class QuantilesSketchTest(parameterized.TestCase):
     s2 = _pickle_roundtrip(s2)
     s1.Merge(s2)
 
-    result = s1.GetQuantiles(len(expected) - 1)
+    result = s1.GetQuantiles(len(expected[0]) - 1).to_pylist()
     np.testing.assert_almost_equal(expected, result)
 
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy(self, max_num_elements, eps, num_quantiles):
-    s = sketches.QuantilesSketch(eps, max_num_elements)
+    s = sketches.QuantilesSketch(eps, max_num_elements, 1)
     values = pa.array(reversed(range(max_num_elements)))
     weights = pa.array(range(max_num_elements))
     total_weight = (max_num_elements - 1) * max_num_elements / 2
@@ -190,12 +231,12 @@ class QuantilesSketchTest(parameterized.TestCase):
       return left_weight / total_weight
 
     _add_values(s, values, weights)
-    quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()
+    quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()[0]
     self.assert_quantiles_accuracy(quantiles, cdf, eps)
 
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy_after_pickle(self, max_num_elements, eps, num_quantiles):
-    s = sketches.QuantilesSketch(eps, max_num_elements)
+    s = sketches.QuantilesSketch(eps, max_num_elements, 1)
     values = pa.array(reversed(range(max_num_elements)))
     weights = pa.array(range(max_num_elements))
     total_weight = (max_num_elements - 1) * max_num_elements / 2
@@ -210,14 +251,14 @@ class QuantilesSketchTest(parameterized.TestCase):
     _add_values(s, values[max_num_elements // 2:],
                 weights[max_num_elements // 2:])
     s = _pickle_roundtrip(s)
-    quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()
+    quantiles = s.GetQuantiles(num_quantiles - 1).to_pylist()[0]
     self.assert_quantiles_accuracy(quantiles, cdf, eps)
 
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy_after_merge(self, max_num_elements, eps, num_quantiles):
-    s1 = sketches.QuantilesSketch(eps, max_num_elements)
-    s2 = sketches.QuantilesSketch(eps, max_num_elements)
-    s3 = sketches.QuantilesSketch(eps, max_num_elements)
+    s1 = sketches.QuantilesSketch(eps, max_num_elements, 1)
+    s2 = sketches.QuantilesSketch(eps, max_num_elements, 1)
+    s3 = sketches.QuantilesSketch(eps, max_num_elements, 1)
     values = pa.array(reversed(range(max_num_elements)))
     weights = pa.array(range(max_num_elements))
     total_weight = (max_num_elements - 1) * max_num_elements / 2
@@ -234,7 +275,7 @@ class QuantilesSketchTest(parameterized.TestCase):
                 weights[max_num_elements // 3:])
     s2.Merge(s3)
     s1.Merge(s2)
-    quantiles = s1.GetQuantiles(num_quantiles - 1).to_pylist()
+    quantiles = s1.GetQuantiles(num_quantiles - 1).to_pylist()[0]
     self.assert_quantiles_accuracy(quantiles, cdf, eps)
 
 

@@ -179,7 +179,24 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
 
 void DefineQuantilesSketchClass(py::module sketch_module) {
   py::class_<QuantilesSketch>(sketch_module, "QuantilesSketch")
-      .def(py::init<double, int64_t>())
+      .def(py::init(
+               [](double eps, int64_t max_num_elements, int64_t num_streams) {
+                 std::unique_ptr<QuantilesSketch> result;
+                 Status s = QuantilesSketch::Make(eps, max_num_elements,
+                                                  num_streams, &result);
+                 if (!s.ok()) {
+                   throw std::runtime_error(s.ToString());
+                 }
+                 return result;
+               }),
+           py::doc("A sketch to estimate quantiles of streams of numbers.\n\n"
+                   "eps: Controls the approximation error. Must be >0.\n"
+                   "max_num_elements: An estimate of maximum number of input "
+                   "values. If not known at the time of construction, a "
+                   "large-enough number (e.g. 2^32) may be specified at the "
+                   "cost of extra memory usage. Must be >= 1.\n"
+                   "num_streams: Number of quantile streams being processed at "
+                   "the same time. Must be >=1."))
       .def(py::pickle(
           [](QuantilesSketch& sketch) {
             std::string serialized;
@@ -196,7 +213,13 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
             char* data;
             Py_ssize_t size;
             PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
-            return QuantilesSketch::Deserialize(absl::string_view(data, size));
+            std::unique_ptr<QuantilesSketch> result;
+            Status s = QuantilesSketch::Deserialize(
+                absl::string_view(data, size), &result);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+            return result;
           }))
       .def(
           "Merge",
@@ -206,7 +229,8 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
               throw std::runtime_error(s.ToString());
             }
           },
-          py::call_guard<py::gil_scoped_release>())
+          py::call_guard<py::gil_scoped_release>(),
+          py::doc("Merges the sketch with `other`."))
       .def(
           "AddValues",
           [](QuantilesSketch& sketch,
@@ -217,7 +241,17 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
               throw std::runtime_error(s.ToString());
             }
           },
-          py::call_guard<py::gil_scoped_release>())
+          py::call_guard<py::gil_scoped_release>(),
+          py::doc(
+              "Add values with weights to the sketch. If we consider that "
+              "values are given by rows and streams are given by columns, then "
+              "values array must have C-contiguous order (stream index varies "
+              "the fastest). Weights are considered to be the same for all "
+              "streams. Any numerical arrow array type is accepted. But they "
+              "will be converted to float64 if they are not of the type. Float "
+              "truncation may happen (for large int64 values). Values with "
+              "negative or zero weights will be ignored. Nulls in the array "
+              "will be skipped."))
       .def(
           "AddValues",
           [](QuantilesSketch& sketch,
@@ -227,7 +261,16 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
               throw std::runtime_error(s.ToString());
             }
           },
-          py::call_guard<py::gil_scoped_release>())
+          py::call_guard<py::gil_scoped_release>(),
+          py::doc(
+              "Add values with unit weights to the sketch. If we consider that "
+              "values are given by rows and streams are given by columns, then "
+              "values array must have C-contiguous order (stream index varies "
+              "the fastest). Any numerical arrow array type is accepted. But "
+              "they will be converted to float64 if they are not of the type. "
+              "Float truncation may happen (for large int64 values). Values "
+              "with negative or zero weights will be ignored. Nulls in the "
+              "array will be skipped."))
       .def(
           "GetQuantiles",
           [](QuantilesSketch& sketch, int64_t num_quantiles) {
@@ -238,7 +281,10 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
             }
             return result;
           },
-          py::call_guard<py::gil_scoped_release>());
+          py::call_guard<py::gil_scoped_release>(),
+          py::doc("Finalize the sketch and get quantiles of the numbers added "
+                  "so far. The result will be a FixedSizeListArray<float64> "
+                  "where lists represent output for each stream."));
 }
 }  // namespace
 
