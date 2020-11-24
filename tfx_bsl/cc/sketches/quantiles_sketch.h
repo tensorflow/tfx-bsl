@@ -71,6 +71,7 @@ class QuantilesSketch {
 
   // Get quantiles of the numbers added so far. `quantiles` will be a
   // FixedSizeListArray<float64> where lists represent output for each stream.
+  // `num_quantiles` must be >= 2.
   Status GetQuantiles(int64_t num_quantiles,
                       std::shared_ptr<arrow::Array>* quantiles);
 

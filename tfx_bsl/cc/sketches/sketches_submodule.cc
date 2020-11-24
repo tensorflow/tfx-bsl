@@ -284,7 +284,8 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
           py::call_guard<py::gil_scoped_release>(),
           py::doc("Finalize the sketch and get quantiles of the numbers added "
                   "so far. The result will be a FixedSizeListArray<float64> "
-                  "where lists represent output for each stream."));
+                  "where lists represent output for each stream. num_quantiles "
+                  "must be >= 2."));
 }
 }  // namespace
 

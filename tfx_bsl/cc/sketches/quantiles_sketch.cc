@@ -343,6 +343,10 @@ Status QuantilesSketch::Merge(const QuantilesSketch& other) {
 
 Status QuantilesSketch::GetQuantiles(int64_t num_quantiles,
                                      std::shared_ptr<arrow::Array>* quantiles) {
+  if (num_quantiles <= 1) {
+    return errors::InvalidArgument(
+        "Number of requested quantiles must be >= 2.");
+  }
   // Extract final summaries and generate quantiles.
   std::vector<Summary> final_summaries = impl_->GetFinalSummaries();
   std::vector<double> quantiles_vec;
