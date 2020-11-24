@@ -25,8 +25,10 @@ import tensorflow as tf
 from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry_test_util
 from tfx_bsl.tfxio import tf_example_record
+
 from google.protobuf import text_format
 from absl.testing import absltest
+from absl.testing import parameterized
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
@@ -179,7 +181,7 @@ def _WriteInputs(filename):
       w.write(s)
 
 
-class TfExampleRecordTest(tf.test.TestCase):
+class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
 
   @classmethod
   def setUpClass(cls):
@@ -287,10 +289,10 @@ class TfExampleRecordTest(tf.test.TestCase):
              shape { dim { size: 2 } }
              default_value { bytes_value: "zzz" }
            }""", schema_pb2.TensorRepresentation()),
-        "varlen_string":
+        "varlen_int":
             text_format.Parse(
                 """varlen_sparse_tensor {
-             column_name: "string_feature"
+             column_name: "int_feature"
            }""", schema_pb2.TensorRepresentation()),
         "varlen_float":
             text_format.Parse(
@@ -306,7 +308,7 @@ class TfExampleRecordTest(tf.test.TestCase):
     self.assertEqual(tensor_representations, tfxio.TensorRepresentations())
 
     projected_tfxio = tfxio.Project(
-        ["dense_string", "varlen_string", "varlen_float"])
+        ["dense_string", "varlen_int", "varlen_float"])
     self.assertEqual(tensor_representations,
                      projected_tfxio.TensorRepresentations())
 
@@ -323,7 +325,7 @@ class TfExampleRecordTest(tf.test.TestCase):
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
       self.assertLen(dict_of_tensors, 3)
       self.assertIn("dense_string", dict_of_tensors)
-      self.assertIn("varlen_string", dict_of_tensors)
+      self.assertIn("varlen_int", dict_of_tensors)
       self.assertIn("varlen_float", dict_of_tensors)
 
     with beam.Pipeline() as p:
@@ -384,9 +386,82 @@ class TfExampleRecordTest(tf.test.TestCase):
     for i, parsed_examples_dict in enumerate(
         tfxio.TensorFlowDataset(options=options)):
       self.assertLen(parsed_examples_dict, 3)
-      for feature_name, tensor in parsed_examples_dict.items():
+      for tensor_name, tensor in parsed_examples_dict.items():
         self._AssertSparseTensorEqual(
-            tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
+            tensor, _EXAMPLES_AS_TENSORS[i][tensor_name])
+
+  def testTensorFlowDatasetGraphMode(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    with tf.compat.v1.Graph().as_default():
+      ds = tfxio.TensorFlowDataset(options=options)
+      iterator = tf.compat.v1.data.make_one_shot_iterator(ds)
+      next_elem = iterator.get_next()
+      records = []
+      with tf.compat.v1.Session() as sess:
+        while True:
+          try:
+            records.append(sess.run(next_elem))
+          except tf.errors.OutOfRangeError:
+            break
+    for i, parsed_examples_dict in enumerate(records):
+      self.assertLen(parsed_examples_dict, 3)
+      for tensor_name, tensor in parsed_examples_dict.items():
+        self._AssertSparseTensorEqual(
+            tensor, _EXAMPLES_AS_TENSORS[i][tensor_name])
+
+  @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
+  def testTensorFlowDatasetWithTensorRepresentation(self):
+    schema = text_format.Parse("""
+      feature {
+        name: "int_feature"
+        type: INT
+        value_count {
+          min: 1
+          max: 1
+        }
+      }
+      feature {
+        name: "float_feature"
+        type: FLOAT
+        value_count {
+          min: 4
+          max: 4
+        }
+      }
+      feature {
+        name: "string_feature"
+        type: BYTES
+        value_count {
+          min: 0
+          max: 2
+        }
+      }
+      tensor_representation_group {
+    key: ""
+    value {
+      tensor_representation {
+        key: "var_len_feature"
+        value {
+          varlen_sparse_tensor {
+            column_name: "string_feature"
+          }
+        }
+      }
+    }
+  }
+    """, schema_pb2.Schema())
+    tfxio = self._MakeTFXIO(schema)
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, parsed_examples_dict in enumerate(
+        tfxio.TensorFlowDataset(options=options)):
+      self.assertLen(parsed_examples_dict, 1)
+      for tensor_name, tensor in parsed_examples_dict.items():
+        self.assertEqual(tensor_name, "var_len_feature")
+        self._AssertSparseTensorEqual(
+            tensor, _EXAMPLES_AS_TENSORS[i]["string_feature"])
 
   @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
   def testTensorFlowDatasetWithLabelKey(self):
@@ -398,9 +473,9 @@ class TfExampleRecordTest(tf.test.TestCase):
       self._AssertSparseTensorEqual(
           label_feature, _EXAMPLES_AS_TENSORS[i]["string_feature"])
       self.assertLen(parsed_examples_dict, 2)
-      for feature_name, tensor in parsed_examples_dict.items():
+      for tensor_name, tensor in parsed_examples_dict.items():
         self._AssertSparseTensorEqual(
-            tensor, _EXAMPLES_AS_TENSORS[i][feature_name])
+            tensor, _EXAMPLES_AS_TENSORS[i][tensor_name])
 
   @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
   def testProjectedTensorFlowDataset(self):
@@ -415,6 +490,294 @@ class TfExampleRecordTest(tf.test.TestCase):
       self.assertLen(parsed_examples_dict, 1)
       self._AssertSparseTensorEqual(parsed_examples_dict[feature_name],
                                     _EXAMPLES_AS_TENSORS[i][feature_name])
+
+  @parameterized.named_parameters(*[
+      dict(
+          testcase_name="same_feature_name",
+          schema_pbtxt="""
+            feature {
+              name: "string_feature"
+              type: BYTES
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "string_feature"
+                  value {
+                    varlen_sparse_tensor {
+                      column_name: "string_feature"
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          expected_parsing_config={
+              "string_feature": tf.io.VarLenFeature(dtype=tf.string)
+          },
+          expected_rename_dict={"string_feature": "string_feature"}),
+      dict(
+          testcase_name="rename_one_feature",
+          schema_pbtxt="""
+            feature {
+              name: "string_feature"
+              type: BYTES
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "var_len_feature_1"
+                  value {
+                    varlen_sparse_tensor {
+                      column_name: "string_feature"
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          expected_parsing_config={
+              "string_feature": tf.io.VarLenFeature(dtype=tf.string)
+          },
+          expected_rename_dict={"string_feature": "var_len_feature_1"}),
+      dict(
+          testcase_name="sparse_feature",
+          schema_pbtxt="""
+            feature {
+              name: "idx"
+              type: INT
+            }
+            feature {
+              name: "val"
+              type: FLOAT
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "sparse_feature"
+                  value {
+                    sparse_tensor {
+                      index_column_names: "idx"
+                      value_column_name: "val"
+                      dense_shape {
+                        dim {
+                          size: 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          expected_parsing_config={
+              "_tfx_bsl_sparse_feature_sparse_feature":
+                  tf.io.SparseFeature(
+                      index_key=["idx"],
+                      value_key="val",
+                      size=[1],
+                      dtype=tf.float32)
+          },
+          expected_rename_dict={
+              "_tfx_bsl_sparse_feature_sparse_feature": "sparse_feature"
+          }),
+      dict(
+          testcase_name="sparse_and_varlen_features_shared",
+          schema_pbtxt="""
+            feature {
+              name: "idx"
+              type: INT
+            }
+            feature {
+              name: "val"
+              type: FLOAT
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "sparse_feature"
+                  value {
+                    sparse_tensor {
+                      index_column_names: "idx"
+                      value_column_name: "val"
+                      dense_shape {
+                        dim {
+                          size: 1
+                        }
+                      }
+                    }
+                  }
+                }
+                tensor_representation {
+                  key: "varlen"
+                  value {
+                    varlen_sparse_tensor {
+                      column_name: "val"
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          expected_parsing_config={
+              "_tfx_bsl_sparse_feature_sparse_feature":
+                  tf.io.SparseFeature(
+                      index_key=["idx"],
+                      value_key="val",
+                      size=[1],
+                      dtype=tf.float32),
+              "val": tf.io.VarLenFeature(dtype=tf.float32)
+          },
+          expected_rename_dict={
+              "_tfx_bsl_sparse_feature_sparse_feature": "sparse_feature",
+              "val": "varlen"
+          }),
+  ])
+  def testValidGetTfExampleParserConfig(self, schema_pbtxt,
+                                        expected_parsing_config,
+                                        expected_rename_dict):
+    schema = text_format.Parse(schema_pbtxt, schema_pb2.Schema())
+    tfxio = self._MakeTFXIO(schema)
+
+    parser_config, rename_dict = tfxio._GetTfExampleParserConfig()
+
+    self.assertAllEqual(expected_parsing_config, parser_config)
+    self.assertAllEqual(expected_rename_dict, rename_dict)
+
+  @parameterized.named_parameters(*[
+      dict(
+          testcase_name="invalid_duplicate_feature",
+          schema_pbtxt="""
+            feature {
+              name: "string_feature"
+              type: BYTES
+              value_count {
+                min: 0
+                max: 2
+              }
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "string_feature"
+                  value {
+                    varlen_sparse_tensor {
+                      column_name: "string_feature"
+                    }
+                  }
+                }
+                tensor_representation {
+                  key: "string_feature_2"
+                  value {
+                    varlen_sparse_tensor {
+                      column_name: "string_feature"
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          error=ValueError,
+          error_string="Unable to create a valid parsing config.*"),
+      dict(
+          testcase_name="sparse_and_fixed_feature",
+          schema_pbtxt="""
+            feature {
+              name: "idx"
+              type: INT
+              value_count {
+                min: 1
+                max: 1
+              }
+            }
+            feature {
+              name: "val"
+              type: FLOAT
+              value_count {
+                min: 1
+                max: 1
+              }
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "sparse_feature"
+                  value {
+                    sparse_tensor {
+                      index_column_names: "idx"
+                      value_column_name: "val"
+                      dense_shape {
+                        dim {
+                          size: 1
+                        }
+                      }
+                    }
+                  }
+                }
+                tensor_representation {
+                  key: "fixed_feature"
+                  value {
+                    dense_tensor {
+                      column_name: "val"
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          error=ValueError,
+          error_string="Unable to create a valid parsing config.*"),
+      dict(
+          testcase_name="ragged_feature",
+          schema_pbtxt="""
+            feature {
+              name: "val"
+              type: FLOAT
+              value_count {
+                min: 1
+                max: 1
+              }
+            }
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "ragged_feature"
+                  value {
+                    ragged_tensor {
+                      feature_path {
+                        step: "val"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          """,
+          error=NotImplementedError,
+          error_string="TensorRepresentation: ragged_tensor is not supported"),
+      dict(
+          testcase_name="no_schema",
+          schema_pbtxt="",
+          error=ValueError,
+          error_string="Unable to create a parsing config because no schema.*"),
+  ])
+  def testInvalidGetTfExampleParserConfig(self, schema_pbtxt, error,
+                                          error_string):
+    if not schema_pbtxt:
+      schema = None
+    else:
+      schema = text_format.Parse(schema_pbtxt, schema_pb2.Schema())
+    tfxio = self._MakeTFXIO(schema)
+
+    with self.assertRaisesRegex(error, error_string):
+      tfxio._GetTfExampleParserConfig()
 
 
 class TFExampleBeamRecordTest(absltest.TestCase):

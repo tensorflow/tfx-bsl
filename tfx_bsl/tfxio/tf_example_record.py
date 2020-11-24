@@ -14,7 +14,7 @@
 """TFXIO implementation for tf.Example records."""
 
 import abc
-from typing import Iterator, List, Optional, Text, Union
+from typing import Any, Dict, Iterator, List, Optional, Text, Tuple, Union
 
 import apache_beam as beam
 import pyarrow as pa
@@ -26,10 +26,12 @@ from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
-from tfx_bsl.tfxio import tensor_representation_util
+from tfx_bsl.tfxio import tensor_representation_util as tensor_rep_util
 from tfx_bsl.tfxio import tfxio
 
 from tensorflow_metadata.proto.v0 import schema_pb2
+
+_FEATURE_NAME_PREFIX = "_tfx_bsl_"
 
 
 class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
@@ -51,6 +53,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         logical_format="tf_example",
         physical_format=physical_format)
     self._schema = schema
+
     if schema_for_decoding is not None:
       assert schema is not None
     self._schema_for_decoding = schema_for_decoding
@@ -87,13 +90,10 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         schema.SerializeToString()).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
-    result = (
-        tensor_representation_util.GetTensorRepresentationsFromSchema(
-            self._schema))
+    result = tensor_rep_util.GetTensorRepresentationsFromSchema(self._schema)
     if result is None:
       result = (
-          tensor_representation_util.InferTensorRepresentationsFromSchema(
-              self._schema))
+          tensor_rep_util.InferTensorRepresentationsFromSchema(self._schema))
     return result
 
   def _ProjectTfmdSchema(self, tensor_names: List[Text]) -> schema_pb2.Schema:
@@ -108,7 +108,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     paths = set()
     for tensor_name in tensor_names:
       paths.update(
-          tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
+          tensor_rep_util.GetSourceColumnsFromTensorRepresentation(
               tensor_representations[tensor_name]))
     result = schema_pb2.Schema()
     # Note: We only copy projected features into the new schema because the
@@ -118,7 +118,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
       if path.ColumnPath(f.name) in paths:
         result.feature.add().CopyFrom(f)
 
-    tensor_representation_util.SetTensorRepresentationsInSchema(
+    tensor_rep_util.SetTensorRepresentationsInSchema(
         result,
         {k: v for k, v in tensor_representations.items() if k in tensor_names})
 
@@ -127,6 +127,79 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   def _GetSchemaForDecoding(self) -> schema_pb2.Schema:
     return (self._schema
             if self._schema_for_decoding is None else self._schema_for_decoding)
+
+  def _GetTfExampleParserConfig(
+      self
+  ) -> Tuple[Dict[Text, Any], Dict[Text, Text]]:
+    """Creates a dict feature spec that can be used in tf.io.parse_example().
+
+    To reduce confusion: 'tensor name' are the keys of TensorRepresentations.
+    'feature name' are the keys to the tf.Example parser config.
+    'column name' are the features in the schema.
+
+    Returns:
+      Two maps. The first is the parser config that maps from feature
+      name to a tf.io Feature. The second is a mapping from feature names to
+      tensor names.
+
+    Raises:
+      ValueError: if the tf.Example parser config is invalid.
+    """
+    if self._schema is None:
+      raise ValueError(
+          "Unable to create a parsing config because no schema is provided.")
+
+    column_name_to_type = {f.name: f.type for f in self._schema.feature}
+    features = {}
+    feature_name_to_tensor_name = {}
+    for tensor_name, tensor_rep in self.TensorRepresentations().items():
+      paths = tensor_rep_util.GetSourceColumnsFromTensorRepresentation(
+          tensor_rep)
+      if len(paths) == 1:
+        # The parser config refers to a single tf.Example feature. In this case,
+        # the key to the parser config needs to be the name of the feature.
+        column_name = paths[0].initial_step()
+        value_type = column_name_to_type[column_name]
+      else:
+        # The parser config needs to refer to multiple tf.Example features. In
+        # this case the key to the parser config does not matter. We preserve
+        # the tensor representation key.
+        column_name = tensor_name
+        value_type = column_name_to_type[
+            tensor_rep_util.GetSourceValueColumnFromTensorRepresentation(
+                tensor_rep).initial_step()]
+      parse_config = tensor_rep_util.CreateTfExampleParserConfig(
+          tensor_rep, value_type)
+
+      if isinstance(parse_config, (tf.io.SparseFeature, tf.io.RaggedFeature)):
+        # Create internal naming, to prevent possible naming collisions between
+        # tensor_name and column_name.
+        feature_name = _FEATURE_NAME_PREFIX + tensor_name + "_" + column_name
+      else:
+        feature_name = column_name
+      if feature_name in feature_name_to_tensor_name:
+        clashing_tensor_rep = self.TensorRepresentations()[
+            feature_name_to_tensor_name[feature_name]]
+        raise ValueError(f"Unable to create a valid parsing config. Feature "
+                         f"name: {feature_name} is a duplicate of "
+                         f"tensor representation: {clashing_tensor_rep}")
+      feature_name_to_tensor_name[feature_name] = tensor_name
+      features[feature_name] = parse_config
+
+    _validate_tf_example_parser_config(features, self._schema)
+
+    return features, feature_name_to_tensor_name
+
+  def _RenameFeatures(
+      self, feature_dict: Dict[Text, Any],
+      feature_name_to_tensor_name: Dict[Text, Text]) -> Dict[Text, Any]:
+    """Renames the feature keys to use the tensor representation keys."""
+    renamed_feature_dict = {}
+    for feature_name, tensor in feature_dict.items():
+      renamed_feature_dict[
+          feature_name_to_tensor_name[feature_name]] = tensor
+
+    return renamed_feature_dict
 
 
 class TFExampleBeamRecord(_TFExampleRecordBase):
@@ -265,29 +338,32 @@ class TFExampleRecord(_TFExampleRecordBase):
     Raises:
       ValueError: if there is something wrong with the tensor_representation.
     """
-    feature_name_to_type = {f.name: f.type for f in self._schema.feature}
-
-    # Creates parsing config for each feature.
-    features = {}
-    tensor_representations = self.TensorRepresentations()
-    for feature_name, tensor_representation in tensor_representations.items():
-      feature_type = feature_name_to_type[feature_name]
-      features[
-          feature_name] = tensor_representation_util.CreateTfExampleParserConfig(
-              tensor_representation, feature_type)
+    tf_example_parser_config, feature_name_to_tensor_name = self._GetTfExampleParserConfig(
+        )
 
     file_pattern = tf.convert_to_tensor(self._file_pattern)
-    return tf.data.experimental.make_batched_features_dataset(
+    dataset = dataset_util.make_tf_record_dataset(
         file_pattern,
-        features=features,
         batch_size=options.batch_size,
-        reader_args=[dataset_util.detect_compression_type(file_pattern)],
         num_epochs=options.num_epochs,
         shuffle=options.shuffle,
         shuffle_buffer_size=options.shuffle_buffer_size,
         shuffle_seed=options.shuffle_seed,
-        drop_final_batch=options.drop_final_batch,
-        label_key=options.label_key)
+        reader_num_threads=options.reader_num_threads,
+        drop_final_batch=options.drop_final_batch)
+
+    # Parse `Example` tensors to a dictionary of `Feature` tensors.
+    dataset = dataset.apply(
+        tf.data.experimental.parse_example_dataset(tf_example_parser_config))
+
+    dataset = dataset.map(
+        lambda x: self._RenameFeatures(x, feature_name_to_tensor_name))
+
+    label_key = options.label_key
+    if label_key is not None:
+      dataset = self._PopLabelFeatureFromDataset(dataset, label_key)
+
+    return dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
 
 @beam.typehints.with_input_types(List[bytes])
@@ -319,3 +395,24 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
     else:
       yield record_based_tfxio.AppendRawRecordColumn(
           decoded, self._raw_record_column_name, examples)
+
+
+def _validate_tf_example_parser_config(config: Dict[Text, Any],
+                                       schema: schema_pb2.Schema) -> None:
+  """Validate a tf_example_parse_config by tracing parse_example."""
+
+  # TODO(b/173738031): We would have used a tf.io.validate_parsing_config() if
+  # it existed.
+  @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string)])
+  def parse(i):
+    tf.io.parse_example(i, config)
+
+  try:
+    # This forces a tracing of `parse`, and raises if the parsing config
+    # is not valid.
+    parse.get_concrete_function()
+
+  except (ValueError, TypeError) as err:
+    raise ValueError("Unable to create a valid parsing config from the "
+                     "provided schema's tensor representation: {}. Due to the "
+                     "following error: {}".format(schema, err))

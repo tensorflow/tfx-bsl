@@ -9,6 +9,12 @@
 
 ## Bug Fixes and Other Changes
 
+*   Fix TFExampleRecord TFXIO's TensorFlowDataset output key's to match the
+    tensor representation's tensor name (Previously this assumed the user
+    provided a tensor name that is the same as the feature name).
+*   Add utility in tensor_representation_util.py to get source columns from a
+    tensor representation.
+
 ## Breaking changes
 
 ## Deprecations

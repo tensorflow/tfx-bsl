@@ -82,6 +82,7 @@ class TFXIO(object, metaclass=abc.ABCMeta):
     the tf.data.Dataset created from `self.TensorFlowDataset()`.
 
     May raise an error if the TFMD schema was not provided at construction time.
+    May raise an error if the tensor representations are invalid.
     """
 
   @abc.abstractmethod

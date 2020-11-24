@@ -81,6 +81,17 @@ _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER = {
         lambda _: [],
 }
 
+_TENSOR_REPRESENTATION_KIND_TO_VALUE_COLUMN_GETTER = {
+    "dense_tensor":
+        lambda tr: path.ColumnPath(tr.dense_tensor.column_name),
+    "varlen_sparse_tensor":
+        lambda tr: path.ColumnPath(tr.varlen_sparse_tensor.column_name),
+    "sparse_tensor":
+        lambda tr: path.ColumnPath(tr.sparse_tensor.value_column_name),
+    "ragged_tensor":
+        lambda tr: path.ColumnPath.from_proto(tr.ragged_tensor.feature_path)
+}
+
 
 def SetTensorRepresentationsInSchema(
     schema: schema_pb2.Schema,
@@ -138,6 +149,28 @@ def GetSourceColumnsFromTensorRepresentation(
 
   return _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER[
       tensor_representation.WhichOneof("kind")](tensor_representation)
+
+
+def GetSourceValueColumnFromTensorRepresentation(
+    tensor_representation: schema_pb2.TensorRepresentation) -> path.ColumnPath:
+  """Returns the column name of value columns from the TensorRepresentation.
+
+  Each tensor representation will have one or more value column. A value column
+  is a column that contributes to the values of a (composite) tensor. Certain
+  composite tensor may consists of data from multiple columns, with one
+  providing the values, others providing structural information.
+
+  Args:
+    tensor_representation: The tensor representation that contains tensor
+      construction information.
+
+  Raises:
+    KeyError: if the tensor representation's "kind" is invalid. Valid "kinds"
+      are dense_tensor, varlen_sparse_tensor, sparse_tensor, or ragged_tensor.
+  """
+  return _TENSOR_REPRESENTATION_KIND_TO_VALUE_COLUMN_GETTER[
+      tensor_representation.WhichOneof("kind")](
+          tensor_representation)
 
 
 def CreateTfExampleParserConfig(

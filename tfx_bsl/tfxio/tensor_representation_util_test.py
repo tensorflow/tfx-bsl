@@ -540,6 +540,51 @@ _GET_SOURCE_COLUMNS_TEST_CASES = [
     ),
 ]
 
+_GET_SOURCE_VALUE_COLUMNS_TEST_CASES = [
+    dict(
+        testcase_name='dense_tensor',
+        pbtxt="""
+            dense_tensor {
+              column_name: "my_column"
+              shape {
+              }
+            }
+        """,
+        expected='my_column',
+    ),
+    dict(
+        testcase_name='varlen_sparse_tensor',
+        pbtxt="""
+         varlen_sparse_tensor {
+           column_name: "my_column"
+         }
+         """,
+        expected='my_column',
+    ),
+    dict(
+        testcase_name='sparse_tensor',
+        pbtxt="""
+          sparse_tensor {
+            index_column_names: "idx1"
+            index_column_names: "idx2"
+            value_column_name: "value"
+          }
+        """,
+        expected='value',
+    ),
+    dict(
+        testcase_name='ragged_tensor',
+        pbtxt="""
+          ragged_tensor {
+            feature_path {
+              step: "my_column"
+            }
+          }
+        """,
+        expected='my_column',
+    ),
+]
+
 
 def _MakeFixedLenFeatureTestCases():
   result = []
@@ -774,6 +819,13 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
     self.assertEqual(
         [path.ColumnPath(e) for e in expected],
         tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
+            text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())))
+
+  @parameterized.named_parameters(*_GET_SOURCE_VALUE_COLUMNS_TEST_CASES)
+  def testGetSourceValueColumnFromTensorRepresentation(self, pbtxt, expected):
+    self.assertEqual(
+        path.ColumnPath(expected),
+        tensor_representation_util.GetSourceValueColumnFromTensorRepresentation(
             text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())))
 
   @test_util.run_all_in_graph_and_eager_modes
