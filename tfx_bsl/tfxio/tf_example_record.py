@@ -71,7 +71,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
 
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
-    def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
+    def ptransform_fn(raw_records_pcoll: beam.pvalue.PCollection):
       return (raw_records_pcoll
               | "Batch" >> beam.BatchElements(
                   **batch_util.GetBatchElementsKwargs(batch_size))
@@ -79,7 +79,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
                   _DecodeBatchExamplesDoFn(self._GetSchemaForDecoding(),
                                            self.raw_record_column_name)))
 
-    return beam.ptransform_fn(_PTransformFn)()
+    return beam.ptransform_fn(ptransform_fn)()
 
   def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
     schema = self._GetSchemaForDecoding()
@@ -171,7 +171,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
       parse_config = tensor_rep_util.CreateTfExampleParserConfig(
           tensor_rep, value_type)
 
-      if isinstance(parse_config, (tf.io.SparseFeature, tf.io.RaggedFeature)):
+      if _is_multi_column_parser_config(parse_config):
         # Create internal naming, to prevent possible naming collisions between
         # tensor_name and column_name.
         feature_name = _FEATURE_NAME_PREFIX + tensor_name + "_" + column_name
@@ -338,8 +338,8 @@ class TFExampleRecord(_TFExampleRecordBase):
     Raises:
       ValueError: if there is something wrong with the tensor_representation.
     """
-    tf_example_parser_config, feature_name_to_tensor_name = self._GetTfExampleParserConfig(
-        )
+    (tf_example_parser_config,
+     feature_name_to_tensor_name) = self._GetTfExampleParserConfig()
 
     file_pattern = tf.convert_to_tensor(self._file_pattern)
     dataset = dataset_util.make_tf_record_dataset(
@@ -416,3 +416,13 @@ def _validate_tf_example_parser_config(config: Dict[Text, Any],
     raise ValueError("Unable to create a valid parsing config from the "
                      "provided schema's tensor representation: {}. Due to the "
                      "following error: {}".format(schema, err))
+
+
+def _is_multi_column_parser_config(parser_config):
+  if isinstance(parser_config, tf.io.SparseFeature):
+    return True
+  # Not all TF versions have tf.io.RaggedFeature.
+  if (hasattr(tf.io, "RaggedFeature") and
+      isinstance(parser_config, tf.io.RaggedFeature)):
+    return True
+  return False
