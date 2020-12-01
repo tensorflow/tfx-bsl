@@ -770,6 +770,56 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
 
     self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
+  @test_util.run_in_graph_and_eager_modes
+  def test0DSparseTensor(self):
+    values = [[1.0], None, [], [3.0]]
+    expected_values = [1.0, 3.0]
+    indices = [[99], None, [], [8]]
+
+    if tf.executing_eagerly():
+      expected_output = tf.sparse.SparseTensor(
+          indices=[[0], [3]],
+          values=tf.constant(expected_values, dtype=tf.float32),
+          dense_shape=(4,))
+    else:
+      expected_output = tf.compat.v1.SparseTensorValue(
+          indices=[[0], [3]],
+          values=np.array(expected_values, np.float32),
+          dense_shape=(4,))
+
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.array(indices, type=("list", pa.list_)[1](pa.int64())),
+        pa.array(values, type=("list", pa.list_)[1](pa.float32()))
+    ], ["key", "value"])
+    tensor_representation = text_format.Parse(
+        """
+              sparse_tensor {
+                value_column_name: "value"
+                dense_shape { }
+              }
+            """, schema_pb2.TensorRepresentation())
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           {"output": tensor_representation}))
+
+    expected_type_spec = tf.SparseTensorSpec([None], tf.float32)
+
+    converted = adapter.ToBatchTensors(record_batch)
+    self.assertLen(converted, 1)
+    self.assertIn("output", converted)
+    actual_output = converted["output"]
+    self.assertIsInstance(actual_output,
+                          (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
+    if tf.executing_eagerly():
+      self.assertTrue(
+          expected_type_spec.is_compatible_with(actual_output),
+          "{} is not compatible with spec {}".format(actual_output,
+                                                     expected_type_spec))
+
+    self.assertSparseAllEqual(expected_output, actual_output)
+
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
+
   @parameterized.named_parameters(*_Make1DSparseTensorTestCases())
   @test_util.run_in_graph_and_eager_modes
   def test1DSparseTensor(self, tensor_representation_textpb, record_batch,

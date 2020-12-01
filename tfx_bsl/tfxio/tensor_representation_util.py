@@ -298,12 +298,6 @@ def _InferSparseTensorRepresentationsFromSchema(
             "sparse_feature {} referred to index feature {} which did not "
             "exist in the schema".format(sparse_feature.name, index_key))
 
-    if len(index_features) != 1:
-      raise ValueError(
-          "sparse_feature {} had rank {} but currently only rank 1"
-          " sparse features are supported".format(
-              sparse_feature.name, len(index_features)))
-
     value_key = sparse_feature.value_feature.name
     try:
       columns_remaining.pop(value_key)
@@ -313,33 +307,33 @@ def _InferSparseTensorRepresentationsFromSchema(
           "exist in the schema or was referred to as an index or value multiple "
           "times.".format(sparse_feature.name, value_key))
 
-    if index_features[0].HasField("int_domain"):
-      # Currently we only handle O-based INT index features whose minimum
-      # domain value must be zero.
-      if not index_features[0].int_domain.HasField("min"):
-        raise ValueError("Cannot determine dense shape of sparse feature "
-                         "{}. The minimum domain value of index feature {}"
-                         " is not set."
-                         .format(sparse_feature.name, index_keys[0]))
-      if index_features[0].int_domain.min != 0:
-        raise ValueError("Only 0-based index features are supported. Sparse "
-                         "feature {} has index feature {} whose minimum "
-                         "domain value is {}.".format(
-                             sparse_feature.name, index_keys[0],
-                             index_features[0].int_domain.min))
+    shape = schema_pb2.FixedShape()
+    for index_feature, index_key in zip(index_features, index_keys):
+      if index_feature.HasField("int_domain"):
+        # Currently we only handle O-based INT index features whose minimum
+        # domain value must be zero.
+        if not index_feature.int_domain.HasField("min"):
+          raise ValueError("Cannot determine dense shape of sparse feature "
+                           "{}. The minimum domain value of index feature {}"
+                           " is not set.".format(sparse_feature.name,
+                                                 index_key))
+        if index_feature.int_domain.min != 0:
+          raise ValueError("Only 0-based index features are supported. Sparse "
+                           "feature {} has index feature {} whose minimum "
+                           "domain value is {}.".format(
+                               sparse_feature.name, index_key,
+                               index_feature.int_domain.min))
 
-      if not index_features[0].int_domain.HasField("max"):
-        raise ValueError("Cannot determine dense shape of sparse feature "
-                         "{}. The maximum domain value of index feature {}"
-                         " is not set."
-                         .format(sparse_feature.name, index_keys[0]))
-      shape = schema_pb2.FixedShape(dim=[
-          schema_pb2.FixedShape.Dim(size=index_features[0].int_domain.max + 1)
-      ])
-    else:
-      raise ValueError("Cannot determine dense shape of sparse feature {}."
-                       " The index feature {} had no int_domain set.".format(
-                           sparse_feature.name, index_keys[0]))
+        if not index_feature.int_domain.HasField("max"):
+          raise ValueError("Cannot determine dense shape of sparse feature "
+                           "{}. The maximum domain value of index feature {}"
+                           " is not set.".format(sparse_feature.name,
+                                                 index_key))
+        shape.dim.add(size=index_feature.int_domain.max + 1)
+      else:
+        raise ValueError("Cannot determine dense shape of sparse feature {}."
+                         " The index feature {} had no int_domain set.".format(
+                             sparse_feature.name, index_key))
 
     sparse_tensor_representations[sparse_feature.name] = (
         schema_pb2.TensorRepresentation(

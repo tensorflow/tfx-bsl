@@ -145,6 +145,75 @@ _INFER_TEST_CASES = [
         """,
         'expected': {}
     },
+    {
+        'testcase_name':
+            'sparse_feature_rank_0',
+        'ascii_proto':
+            """
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            value_feature {name: "value_key"}
+          }
+        """,
+        'expected': {
+            'x':
+                """
+              sparse_tensor {
+                value_column_name: "value_key"
+                dense_shape { }
+              }
+            """
+        }
+    },
+    {
+        'testcase_name':
+            'sparse_feature_rank_2',
+        'ascii_proto':
+            """
+          feature {
+            name: "index_key_1"
+            type: INT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "index_key_2"
+            type: INT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key_1"}
+            index_feature {name: "index_key_2"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        'expected': {
+            'x':
+                """
+              sparse_tensor {
+                index_column_names: "index_key_1"
+                index_column_names: "index_key_2"
+                value_column_name: "value_key"
+                dense_shape {
+                  dim {
+                    size: 1
+                  }
+                  dim {
+                    size: 1
+                  }
+                }
+              }
+            """
+        }
+    }
 ]
 
 _LEGACY_INFER_TEST_CASES = [
@@ -427,45 +496,6 @@ _INVALID_SCHEMA_INFER_TEST_CASES = [
         error_msg=(r'Cannot determine dense shape of sparse feature x. '
                    r'The maximum domain value of index feature index_key'
                    r' is not set.')),
-    dict(
-        testcase_name='sparse_feature_rank_0',
-        ascii_proto="""
-          feature {
-            name: "value_key"
-            type: INT
-          }
-          sparse_feature {
-            name: "x"
-            value_feature {name: "value_key"}
-          }
-        """,
-        error_msg=(r'sparse_feature x had rank 0 but currently only'
-                   r' rank 1 sparse features are supported')),
-    dict(
-        testcase_name='sparse_feature_rank_2',
-        ascii_proto="""
-          feature {
-            name: "index_key_1"
-            type: INT
-          }
-          feature {
-            name: "index_key_2"
-            type: INT
-          }
-          feature {
-            name: "value_key"
-            type: INT
-          }
-          sparse_feature {
-            name: "x"
-            is_sorted: true
-            index_feature {name: "index_key_1"}
-            index_feature {name: "index_key_2"}
-            value_feature {name: "value_key"}
-          }
-        """,
-        error_msg=(r'sparse_feature x had rank 2 but currently only '
-                   r'rank 1 sparse features are supported')),
     dict(
         testcase_name='sparse_feature_missing_index_key',
         ascii_proto="""
