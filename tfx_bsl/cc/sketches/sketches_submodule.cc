@@ -189,6 +189,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
                  }
                  return result;
                }),
+           py::arg("eps"), py::arg("max_num_elements"), py::arg("num_streams"),
            py::doc("A sketch to estimate quantiles of streams of numbers.\n\n"
                    "eps: Controls the approximation error. Must be >0.\n"
                    "max_num_elements: An estimate of maximum number of input "
