@@ -5,6 +5,17 @@
 # Current version (not yet released; still in development)
 
 ## Major Features and Improvements
+
+## Bug Fixes and Other Changes
+
+## Breaking changes
+
+## Deprecations
+
+# Version 0.26.0
+
+## Major Features and Improvements
+
 *   `.TensorFlowDataset` interface is available in RawTfRecord TFXIO.
 
 ## Bug Fixes and Other Changes
@@ -14,10 +25,15 @@
     provided a tensor name that is the same as the feature name).
 *   Add utility in tensor_representation_util.py to get source columns from a
     tensor representation.
+*   Depends on `tensorflow-metadata>=0.26,<0.27`.
 
 ## Breaking changes
 
+*   N/A
+
 ## Deprecations
+
+*   N/A
 
 # Version 0.25.0
 
