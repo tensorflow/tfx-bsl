@@ -14,13 +14,16 @@
 """RecordToTensorTFXIO."""
 
 import copy
+import datetime
 from typing import List, Iterator, Optional, Text, Union
 
 import apache_beam as beam
+from apache_beam.utils import shared
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import tf_graph_record_decoder
+from tfx_bsl.telemetry import util as telemetry_util
 from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
@@ -36,8 +39,8 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
                saved_decoder_path: Text,
                telemetry_descriptors: List[Text],
                physical_format: Text,
+               use_singleton_decoder: bool,
                raw_record_column_name: Optional[Text]):
-
     super().__init__(
         telemetry_descriptors,
         logical_format="tensor",
@@ -52,6 +55,7 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
         tensor_to_arrow_converter.arrow_schema())
     self._tensor_representations = (
         tensor_to_arrow_converter.tensor_representations())
+    self._use_singleton_decoder = use_singleton_decoder
 
     self._record_index_column_name = None
     record_index_tensor_name = decoder.record_index_tensor_name
@@ -91,7 +95,10 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
           | "BatchElements" >> beam.BatchElements(
               **batch_util.GetBatchElementsKwargs(batch_size))
           | "Decode" >> beam.ParDo(_RecordsToRecordBatch(
-              self._saved_decoder_path, self.raw_record_column_name,
+              self._saved_decoder_path,
+              self.telemetry_descriptors,
+              shared.Shared() if self._use_singleton_decoder else None,
+              self.raw_record_column_name,
               self._record_index_column_name)))
 
     return beam.ptransform_fn(_PTransformFn)()
@@ -125,6 +132,18 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
 
 class BeamRecordToTensorTFXIO(_RecordToTensorTFXIO):
   """TFXIO implementation that decodes records in pcoll[bytes] with TF Graph."""
+
+  def __init__(self,
+               saved_decoder_path: Text,
+               telemetry_descriptors: List[Text],
+               physical_format: Text,
+               raw_record_column_name: Optional[Text]):
+    super().__init__(
+        saved_decoder_path=saved_decoder_path,
+        telemetry_descriptors=telemetry_descriptors,
+        physical_format=physical_format,
+        use_singleton_decoder=False,
+        raw_record_column_name=raw_record_column_name)
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return (beam.ptransform_fn(lambda x: x)()
@@ -171,8 +190,9 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
         records.
     """
     super().__init__(
-        saved_decoder_path,
-        telemetry_descriptors,
+        saved_decoder_path=saved_decoder_path,
+        telemetry_descriptors=telemetry_descriptors,
+        use_singleton_decoder=False,
         physical_format="tfrecords_gzip",
         raw_record_column_name=raw_record_column_name)
     if not isinstance(file_pattern, list):
@@ -233,34 +253,74 @@ class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
     return dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
 
+class _DecodeFnWrapper(object):
+  """A wrapper over a saved decoder.
+
+  Thread-safe (all the fields should be considered read-only).
+  """
+
+  __slots__ = ["saved_decoder_path", "output_type_specs", "decode_fn",
+               # required in order to create weakrefs to a _DecodeFnWrapper.
+               "__weakref__"]
+
+  def __init__(self, saved_decoder_path: Text):
+    self.saved_decoder_path = saved_decoder_path
+    decoder = tf_graph_record_decoder.load_decoder(saved_decoder_path)
+    self.output_type_specs = decoder.output_type_specs()
+    # Store the concrete function to avoid tracing upon calling.
+    # TF guarantees its thread-safey.
+    self.decode_fn = decoder.decode_record.get_concrete_function()
+    # Call the concrete function once to force optimization of the graph, as
+    # we want that to be attributed as fixed setup cost.
+    # Here we assume that an empty string tensor (0 record) can be successfully
+    # decoded.
+    _ = self.decode_fn(tf.convert_to_tensor([""], dtype=tf.string))
+
+
 @beam.typehints.with_input_types(List[bytes])
 @beam.typehints.with_output_types(pa.RecordBatch)
 class _RecordsToRecordBatch(beam.DoFn):
   """DoFn to convert raw records to RecordBatches."""
 
   def __init__(self, saved_decoder_path: Text,
+               telemetry_descriptors: List[Text],
+               shared_decode_fn_handle: Optional[shared.Shared],
                raw_record_column_name: Optional[Text],
                record_index_column_name: Optional[Text]):
     super().__init__()
     self._saved_decoder_path = saved_decoder_path
     self._raw_record_column_name = raw_record_column_name
     self._record_index_column_name = record_index_column_name
+    self._shared_decode_fn_handle = shared_decode_fn_handle
 
     self._tensors_to_record_batch_converter = None
     self._decode_fn = None
+    self._decoder_load_seconds_distribution = beam.metrics.Metrics.distribution(
+        telemetry_util.MakeTfxNamespace(telemetry_descriptors),
+        "record_to_tensor_tfxio_decoder_load_seconds")
+    self._decoder_load_seconds = None
 
   def setup(self):
-    decoder = tf_graph_record_decoder.load_decoder(
-        self._saved_decoder_path)
+    start = datetime.datetime.now()
+    if self._shared_decode_fn_handle is not None:
+      decode_fn_wrapper = self._shared_decode_fn_handle.acquire(
+          lambda: _DecodeFnWrapper(self._saved_decoder_path))
+      assert decode_fn_wrapper.saved_decoder_path == self._saved_decoder_path
+    else:
+      decode_fn_wrapper = _DecodeFnWrapper(self._saved_decoder_path)
     self._tensors_to_record_batch_converter = (
         tensor_to_arrow.TensorsToRecordBatchConverter(
-            decoder.output_type_specs()))
-    # Store the concrete function to avoid tracing upon calling.
-    self._decode_fn = decoder.decode_record.get_concrete_function()
+            decode_fn_wrapper.output_type_specs))
+    self._decode_fn = decode_fn_wrapper.decode_fn
+    self._decoder_load_seconds = int(
+        (datetime.datetime.now() - start).total_seconds())
+
+  def finish_bundle(self):
+    if self._decoder_load_seconds is not None:
+      self._decoder_load_seconds_distribution.update(self._decoder_load_seconds)
+      self._decoder_load_seconds = None
 
   def process(self, records: List[bytes]) -> Iterator[pa.RecordBatch]:
-    # The concrete function only accepts Tensors, so tf.convert_to_tensor
-    # is needed.
     decoded = self._tensors_to_record_batch_converter.convert(
         self._decode_fn(tf.convert_to_tensor(records, dtype=tf.string)))
     if self._raw_record_column_name is None:
