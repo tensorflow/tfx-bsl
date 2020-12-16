@@ -137,12 +137,31 @@ class BeamRecordToTensorTFXIO(_RecordToTensorTFXIO):
                saved_decoder_path: Text,
                telemetry_descriptors: List[Text],
                physical_format: Text,
-               raw_record_column_name: Optional[Text]):
+               raw_record_column_name: Optional[Text],
+               experimental_use_singleton_decoder: bool = False):
+    """Initializer.
+
+    Args:
+      saved_decoder_path: The path to the saved TfGraphRecordDecoder to be
+        used for decoding the records. Note that this path must be accessible
+        by beam workers.
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
+      physical_format: A string that describes the physical format of the data.
+      raw_record_column_name: If not None, the generated Arrow RecordBatches
+        will contain a column of the given name that contains serialized
+        records.
+      experimental_use_singleton_decoder: Experimental flag. May go away without
+        notice. DO NOT SET.
+    """
     super().__init__(
         saved_decoder_path=saved_decoder_path,
         telemetry_descriptors=telemetry_descriptors,
         physical_format=physical_format,
-        use_singleton_decoder=False,
+        use_singleton_decoder=experimental_use_singleton_decoder,
         raw_record_column_name=raw_record_column_name)
 
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
