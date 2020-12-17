@@ -121,9 +121,9 @@ _QUANTILES_TEST_CASES = [
         num_streams=1),
 ]
 
-_MAX_NUM_ELEMENTS = [2**10, 2**14, 2**18]
-_EPS = [0.01, 0.001, 0.0001, 0.000001]
-_NUM_QUANTILES = [2**2, 2**3, 2**4, 2**5, 2**6]
+_MAX_NUM_ELEMENTS = [2**10, 2**14, 2**18, 2**19]
+_EPS = [0.5, 0.01, 0.001, 0.0001, 0.000001]
+_NUM_QUANTILES = [5**4, 3**6, 1000, 2**10]
 
 _ACCURACY_TEST_CASES = list(
     itertools.product(_MAX_NUM_ELEMENTS, _EPS, _NUM_QUANTILES))
@@ -219,6 +219,24 @@ class QuantilesSketchTest(parameterized.TestCase):
     result = s1.GetQuantiles(len(expected[0]) - 1).to_pylist()
     np.testing.assert_almost_equal(expected, result)
 
+  @parameterized.named_parameters(*_QUANTILES_TEST_CASES)
+  def test_compact(self, values, expected, num_streams, weights=None):
+    s = sketches.QuantilesSketch(0.00001, 1 << 32, num_streams)
+    num_values = len(values)
+    if weights is None:
+      weights = [None] * num_values
+    for value, weight in zip(values[:num_values // 2],
+                             weights[:num_values // 2]):
+      _add_values(s, value, weight)
+    s.Compact()
+    for value, weight in zip(values[num_values // 2:],
+                             weights[num_values // 2:]):
+      _add_values(s, value, weight)
+    s.Compact()
+
+    result = s.GetQuantiles(len(expected[0]) - 1).to_pylist()
+    np.testing.assert_almost_equal(expected, result)
+
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy(self, max_num_elements, eps, num_quantiles):
     s = sketches.QuantilesSketch(eps, max_num_elements, 1)
@@ -275,6 +293,35 @@ class QuantilesSketchTest(parameterized.TestCase):
                 weights[max_num_elements // 3:])
     s2.Merge(s3)
     s1.Merge(s2)
+    quantiles = s1.GetQuantiles(num_quantiles - 1).to_pylist()[0]
+    self.assert_quantiles_accuracy(quantiles, cdf, eps)
+
+  @parameterized.parameters(*_ACCURACY_TEST_CASES)
+  def test_accuracy_after_compact(self, max_num_elements, eps, num_quantiles):
+    s1 = sketches.QuantilesSketch(eps * (2 / 3), max_num_elements, 1)
+    s2 = sketches.QuantilesSketch(eps * (2 / 3), max_num_elements, 1)
+    s3 = sketches.QuantilesSketch(eps * (2 / 3), max_num_elements, 1)
+    values = pa.array(reversed(range(max_num_elements)))
+    weights = pa.array(range(max_num_elements))
+    total_weight = (max_num_elements - 1) * max_num_elements / 2
+
+    def cdf(x):
+      left_weight = (2 * (max_num_elements - 1) - x) * (x + 1) / 2
+      return left_weight / total_weight
+
+    _add_values(s1, values[:max_num_elements // 10],
+                weights[:max_num_elements // 10])
+    _add_values(s2, values[max_num_elements // 10:max_num_elements // 3],
+                weights[max_num_elements // 10:max_num_elements // 3])
+    _add_values(s3, values[max_num_elements // 3:],
+                weights[max_num_elements // 3:])
+    s2.Compact()
+    s3.Compact()
+    s2.Merge(s3)
+    s2.Compact()
+    s1.Compact()
+    s1.Merge(s2)
+    s1.Compact()
     quantiles = s1.GetQuantiles(num_quantiles - 1).to_pylist()[0]
     self.assert_quantiles_accuracy(quantiles, cdf, eps)
 

@@ -69,11 +69,13 @@ Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
 class QuantilesSketchImpl {
  public:
   QuantilesSketchImpl(double eps, int64_t max_num_elements, int64_t num_streams,
+                      bool compacted = false,
                       std::vector<std::vector<Summary>> summaries = {},
                       std::vector<std::vector<BufferEntry>> buffer_entries = {})
       : eps_(eps),
         max_num_elements_(max_num_elements),
-        num_streams_(num_streams) {
+        num_streams_(num_streams),
+        compacted_(compacted) {
     // Create streams
     streams_.reserve(num_streams_);
     for (int i = 0; i < num_streams_; ++i) {
@@ -142,6 +144,24 @@ class QuantilesSketchImpl {
     return Status::OK();
   }
 
+  Status Compact() {
+    if (finalized_) {
+      return errors::FailedPrecondition(
+          "Attempting to compact a finalized sketch.");
+    }
+    if (!compacted_) {
+      for (auto& stream : streams_) {
+        stream.Finalize();
+        std::vector<SummaryEntry> final_summary_entries =
+            stream.GetFinalSummary().GetEntryList();
+        stream = Stream(eps_, max_num_elements_);
+        stream.PushSummary(std::move(final_summary_entries));
+      }
+      compacted_ = true;
+    }
+    return Status::OK();
+  }
+
   Status Serialize(std::string& serialized) const {
     if (finalized_) {
       return errors::FailedPrecondition(
@@ -153,6 +173,7 @@ class QuantilesSketchImpl {
       Quantiles::Stream* stream_proto = sketch_proto.add_streams();
       stream_proto->set_eps(eps_);
       stream_proto->set_max_num_elements(max_num_elements_);
+      stream_proto->set_compacted(compacted_);
 
       // Add local summaries.
       const std::vector<Summary>& summaries = stream.GetInternalSummaries();
@@ -196,6 +217,7 @@ class QuantilesSketchImpl {
     buffer_entries.reserve(num_streams);
     const double eps = sketch_proto.streams(0).eps();
     const int64_t max_num_elements = sketch_proto.streams(0).max_num_elements();
+    const bool compacted = sketch_proto.streams(0).compacted();
 
     for (int stream_idx = 0; stream_idx < num_streams; ++stream_idx) {
       const Quantiles::Stream& stream_proto = sketch_proto.streams(stream_idx);
@@ -234,7 +256,7 @@ class QuantilesSketchImpl {
     }
 
     *result = absl::make_unique<QuantilesSketchImpl>(
-        eps, max_num_elements, num_streams, std::move(summaries),
+        eps, max_num_elements, num_streams, compacted, std::move(summaries),
         std::move(buffer_entries));
     return Status::OK();
   }
@@ -254,6 +276,9 @@ class QuantilesSketchImpl {
     }
     for (int i = 0; i < num_streams_; i++) {
       streams_[i].PushStream(other.streams_[i]);
+    }
+    if (other.compacted_) {
+      compacted_ = true;
     }
     return Status::OK();
   }
@@ -282,6 +307,7 @@ class QuantilesSketchImpl {
   const int64_t num_streams_;
   std::vector<Stream> streams_;
   bool finalized_ = false;
+  bool compacted_ = false;
 };
 
 // static
@@ -336,6 +362,8 @@ Status QuantilesSketch::AddValues(std::shared_ptr<arrow::Array> values) {
   TFX_BSL_RETURN_IF_ERROR(MaybeCastToDoubleArray(&values));
   return impl_->AddValues(static_cast<const arrow::DoubleArray&>(*values));
 }
+
+Status QuantilesSketch::Compact() { return impl_->Compact(); }
 
 Status QuantilesSketch::Merge(const QuantilesSketch& other) {
   return impl_->Merge(*other.impl_);

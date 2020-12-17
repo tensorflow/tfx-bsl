@@ -62,6 +62,8 @@ message Quantiles {
     // may change in that case.
     double eps = 3;
     int64 max_num_elements = 4;
+    // Indicates whether the stream was compacted before serialization.
+    bool compacted = 5;
   }
   // Two sketches may only be merged on stream-to-stream basis.
   repeated Stream streams = 1;

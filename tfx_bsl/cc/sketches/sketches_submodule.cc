@@ -191,7 +191,9 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
                }),
            py::arg("eps"), py::arg("max_num_elements"), py::arg("num_streams"),
            py::doc("A sketch to estimate quantiles of streams of numbers.\n\n"
-                   "eps: Controls the approximation error. Must be >0.\n"
+                   "eps: Controls the approximation error. Must be >0. It is "
+                   "recommended to multiply eps by 2/3 if `Compact` method is "
+                   "going to be used.\n"
                    "max_num_elements: An estimate of maximum number of input "
                    "values. If not known at the time of construction, a "
                    "large-enough number (e.g. 2^32) may be specified at the "
@@ -272,6 +274,24 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
               "Float truncation may happen (for large int64 values). Values "
               "with negative or zero weights will be ignored. Nulls in the "
               "array will be skipped."))
+      .def(
+          "Compact",
+          [](QuantilesSketch& sketch) {
+            Status s = sketch.Compact();
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+          },
+          py::call_guard<py::gil_scoped_release>(),
+          py::doc("Compacts state of the sketch if it wasn't done before and "
+                  "no compact sketches were merged to this, otherwise it is a "
+                  "no-op. Compact() before Serialize() will reduce the size of "
+                  "the sketch. For instance, if eps=0.0001, "
+                  "max_num_elements=2^32, num_streams=1 and the sketch is "
+                  "full, then its size will be reduced by ~16x. "
+                  "Warning: Compact() affects the error bound. It is "
+                  "recommended to multiply the desired worst-case error by 2/3 "
+                  "if this method is going to be used."))
       .def(
           "GetQuantiles",
           [](QuantilesSketch& sketch, int64_t num_quantiles) {

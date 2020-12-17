@@ -28,7 +28,8 @@ class QuantilesSketchImpl;
 // A sketch to estimate quantiles of streams of numbers.
 class QuantilesSketch {
  public:
-  // eps: Controls the approximation error. Must be >0.
+  // eps: Controls the approximation error. Must be >0. It is recommended to
+  //   multiply eps by 2/3 if `Compact` method is going to be used.
   //   See weighted_quantiles_stream.h for details.
   // max_num_elements: An estimate of maximum number of input values. If not
   //   known at the time of construction, a large-enough number (e.g. 2^32) may
@@ -58,6 +59,15 @@ class QuantilesSketch {
   Status AddValues(std::shared_ptr<arrow::Array> values);
   Status AddWeightedValues(std::shared_ptr<arrow::Array> values,
                            std::shared_ptr<arrow::Array> weights);
+
+  // Compacts state of the sketch if it wasn't done before and no compact
+  // sketches were merged to this, otherwise it is a no-op. Compact() before
+  // Serialize() will reduce the size of the sketch. For instance, if
+  // eps=0.0001, max_num_elements=2^32, num_streams=1 and the sketch is full,
+  // then its size will be reduced by ~16x. Warning: Compact() affects the error
+  // bound. It is recommended to multiply the desired worst-case error by 2/3 if
+  // this method is going to be used.
+  Status Compact();
 
   // Serializes the sketch into a string.
   Status Serialize(std::string& serialized) const;
