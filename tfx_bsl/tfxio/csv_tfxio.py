@@ -75,7 +75,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
                                       batch_size: Optional[int] = None
                                      ) -> beam.PTransform:
 
-    @beam.typehints.with_input_types(List[bytes])
+    @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
       """Returns RecordBatch of csv lines."""

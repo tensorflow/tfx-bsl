@@ -57,7 +57,7 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
                                       batch_size: Optional[int] = None
                                      ) -> beam.PTransform:
 
-    @beam.typehints.with_input_types(beam.Pipeline)
+    @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(raw_record_pcoll: beam.pvalue.PCollection):
       return (raw_record_pcoll

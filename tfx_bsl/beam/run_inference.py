@@ -137,8 +137,8 @@ _Signature = NamedTuple('_Signature', [('name', Text),
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(List[Union[tf.train.Example,
+                                            tf.train.SequenceExample]])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Classify(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
               inference_spec_type: model_spec_pb2.InferenceSpecType):
@@ -154,8 +154,8 @@ def _Classify(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(List[Union[tf.train.Example,
+                                            tf.train.SequenceExample]])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Regress(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
              inference_spec_type: model_spec_pb2.InferenceSpecType):
@@ -171,8 +171,8 @@ def _Regress(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(List[Union[tf.train.Example,
+                                            tf.train.SequenceExample]])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _Predict(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
              inference_spec_type: model_spec_pb2.InferenceSpecType):
@@ -193,8 +193,8 @@ def _Predict(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[tf.train.Example,
-                                       tf.train.SequenceExample])
+@beam.typehints.with_input_types(List[Union[tf.train.Example,
+                                            tf.train.SequenceExample]])
 @beam.typehints.with_output_types(prediction_log_pb2.PredictionLog)
 def _MultiInference(pcoll: beam.pvalue.PCollection,  # pylint: disable=invalid-name
                     inference_spec_type: model_spec_pb2.InferenceSpecType):
