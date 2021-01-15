@@ -59,11 +59,6 @@ Status GetArrayNullBitmapAsByteArray(
 Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
                                    size_t* total_byte_size);
 
-// Get counts of values in the array. Returns a struct array <values, counts>.
-Status ValueCounts(
-    const std::shared_ptr<arrow::Array>& array,
-    std::shared_ptr<arrow::Array>* values_and_counts_array);
-
 // IndexIn examines each slot in values against a value_set array."
 Status IndexIn(const std::shared_ptr<arrow::Array>& values,
                const std::shared_ptr<arrow::Array>& value_set,

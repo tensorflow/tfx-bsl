@@ -24,11 +24,6 @@
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 
-// TODO(b/171748040): clean this up.
-#if ARROW_VERSION_MAJOR < 1
-#include "arrow/compute/kernels/match.h"
-#endif
-
 namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
@@ -36,37 +31,6 @@ using ::arrow::LargeListArray;
 using ::arrow::ListArray;
 using ::arrow::Int32Builder;
 using ::arrow::Int64Builder;
-
-// TODO(b/171748040): clean this up.
-#if ARROW_VERSION_MAJOR < 1
-using Datum = ::arrow::compute::Datum;
-
-Status IndexInShim(
-    const Datum& values, const Datum& value_set, Datum* result) {
-  ::arrow::compute::FunctionContext ctx;
-  return FromArrowStatus(
-      arrow::compute::Match(&ctx, values, value_set, result));
-}
-
-Status ValueCountsShim(const Datum& values, std::shared_ptr<Array>* result) {
-  ::arrow::compute::FunctionContext ctx;
-  return FromArrowStatus(arrow::compute::ValueCounts(&ctx, values, result));
-}
-#else
-using Datum = ::arrow::Datum;
-
-Status IndexInShim(
-    const Datum& values, const Datum& value_set, Datum* result) {
-  TFX_BSL_ASSIGN_OR_RETURN_ARROW(*result,
-                                 arrow::compute::IndexIn(values, value_set));
-  return Status::OK();
-}
-
-Status ValueCountsShim(const Datum& values, std::shared_ptr<Array>* result) {
-  TFX_BSL_ASSIGN_OR_RETURN_ARROW(*result, arrow::compute::ValueCounts(values));
-  return Status::OK();
-}
-#endif
 
 std::unique_ptr<Int32Builder> GetOffsetsBuilder(const arrow::ListArray&) {
   return absl::make_unique<Int32Builder>();
@@ -426,11 +390,6 @@ Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
   return Status::OK();
 }
 
-Status ValueCounts(const std::shared_ptr<arrow::Array>& array,
-                   std::shared_ptr<arrow::Array>* values_and_counts_array) {
-  return ValueCountsShim(array, values_and_counts_array);
-}
-
 Status IndexIn(const std::shared_ptr<arrow::Array>& values,
              const std::shared_ptr<arrow::Array>& value_set,
              std::shared_ptr<arrow::Array>* matched_value_set_indices) {
@@ -442,8 +401,9 @@ Status IndexIn(const std::shared_ptr<arrow::Array>& values,
       (IsBinaryType(*values_type) && IsBinaryType(*value_set_type))) {
     return IndexInBinaryArray(*values, *value_set, matched_value_set_indices);
   }
-  Datum result;
-  TFX_BSL_RETURN_IF_ERROR(IndexInShim(values, value_set, &result));
+  arrow::Datum result;
+  TFX_BSL_ASSIGN_OR_RETURN_ARROW(result,
+                                 arrow::compute::IndexIn(values, value_set));
   if (result.is_array()) {
     *matched_value_set_indices = result.make_array();
     return Status::OK();

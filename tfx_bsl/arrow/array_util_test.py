@@ -167,31 +167,6 @@ class ArrayUtilTest(parameterized.TestCase):
     empty_array = pa.array([], type=binary_like_type)
     self.assertEqual(0, array_util.GetBinaryArrayTotalByteSize(empty_array))
 
-  def _value_counts_struct_array_to_dict(self, value_counts):
-    result = {}
-    for value_count in value_counts:
-      value_count = value_count.as_py()
-      result[value_count["values"]] = value_count["counts"]
-    return result
-
-  def test_value_counts_binary(self):
-    binary_array = pa.array([b"abc", b"ghi", b"def", b"ghi", b"ghi", b"def"])
-    expected_result = {b"abc": 1, b"ghi": 3, b"def": 2}
-    self.assertDictEqual(self._value_counts_struct_array_to_dict(
-        array_util.ValueCounts(binary_array)), expected_result)
-
-  def test_value_counts_integer(self):
-    int_array = pa.array([1, 4, 1, 3, 1, 4])
-    expected_result = {1: 3, 4: 2, 3: 1}
-    self.assertDictEqual(self._value_counts_struct_array_to_dict(
-        array_util.ValueCounts(int_array)), expected_result)
-
-  def test_value_counts_empty(self):
-    empty_array = pa.array([])
-    expected_result = {}
-    self.assertDictEqual(self._value_counts_struct_array_to_dict(
-        array_util.ValueCounts(empty_array)), expected_result)
-
   def test_indexin_integer(self):
     values = pa.array([99, 42, 3, None])
     value_set = pa.array([3, 3, 99])

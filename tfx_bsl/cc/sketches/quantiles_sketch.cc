@@ -33,24 +33,6 @@ using Stream =
 using Summary = Stream::Summary;
 using SummaryEntry = Stream::SummaryEntry;
 
-// TODO(b/171748040): clean this up.
-#if ARROW_VERSION_MAJOR < 1
-
-Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
-  if ((*array)->type()->id() == arrow::Type::DOUBLE) return Status::OK();
-
-  arrow::compute::FunctionContext ctx(arrow::default_memory_pool());
-  std::shared_ptr<arrow::Array> result;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow::compute::Cast(
-      &ctx, **array, arrow::float64(),
-      // Allow integer truncation (int64->float64).
-      arrow::compute::CastOptions(/*safe=*/false), &result)));
-  *array = std::move(result);
-  return Status::OK();
-}
-
-#else
-
 Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
   if ((*array)->type()->id() == arrow::Type::DOUBLE) return Status::OK();
   std::shared_ptr<arrow::Array> result;
@@ -61,8 +43,6 @@ Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
   *array = std::move(result);
   return Status::OK();
 }
-
-#endif
 
 }  // namespace
 

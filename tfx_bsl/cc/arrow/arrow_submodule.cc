@@ -95,19 +95,6 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       py::call_guard<py::gil_scoped_release>());
 
   m.def(
-      "ValueCounts",
-      [](const std::shared_ptr<arrow::Array>& array) {
-        std::shared_ptr<arrow::Array> result;
-        Status s = ValueCounts(array, &result);
-        if (!s.ok()) {
-          throw std::runtime_error(s.ToString());
-        }
-        return result;
-      },
-      py::doc("Get counts of values in the array. Returns a struct array "
-              "<values, counts>."),
-      py::call_guard<py::gil_scoped_release>());
-  m.def(
       "IndexIn",
       [](const std::shared_ptr<arrow::Array>& values,
          const std::shared_ptr<arrow::Array>& value_set) {
@@ -130,6 +117,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
           "values = [99, 42, 3, null] and value_set = [3, 99, null],"
           "the output will be = [1, null, 0, 2]"),
       py::call_guard<py::gil_scoped_release>());
+
   m.def(
       "MakeListArrayFromParentIndicesAndValues",
       [](size_t num_parents,
@@ -185,6 +173,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
           "contains the size of the bounding-box of `list_array`. Note that "
           "nulls and empty lists are not distinguished in the COO form."),
       py::call_guard<py::gil_scoped_release>());
+
   m.def("FillNullLists", [](const std::shared_ptr<arrow::Array>& list_array,
                             const std::shared_ptr<arrow::Array>& fill_with) {
     std::shared_ptr<arrow::Array> result;
@@ -194,6 +183,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
     }
     return result;
   });
+
   m.def("GetByteSize", [](const std::shared_ptr<arrow::Array>& array) {
     size_t result;
     Status s = GetByteSize(*array, &result);

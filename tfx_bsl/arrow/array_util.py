@@ -26,7 +26,6 @@ try:
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import GetArrayNullBitmapAsByteArray
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import GetBinaryArrayTotalByteSize
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import IndexIn
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import ValueCounts
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import MakeListArrayFromParentIndicesAndValues as _MakeListArrayFromParentIndicesAndValues
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import CooFromListArray
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import FillNullLists

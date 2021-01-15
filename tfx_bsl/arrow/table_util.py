@@ -83,16 +83,22 @@ def MergeRecordBatches(record_batches: List[pa.RecordBatch]) -> pa.RecordBatch:
       "Unable to merge empty RecordBatches.")
   if (all([r.schema.equals(first_schema) for r in record_batches[1:]])
       # combine_chunks() cannot correctly handle the case where there are
-      # 0 column.
+      # 0 column. (ARROW-11232)
       and first_schema):
     one_chunk_table = pa.Table.from_batches(record_batches).combine_chunks()
     batches = one_chunk_table.to_batches(max_chunksize=None)
     assert len(batches) == 1
     return batches[0]
   else:
-    # TODO(zhuo, b/158335158): switch to pa.Table.concat_tables(promote=True)
-    # once the upstream bug is fixed:
-    # https://jira.apache.org/jira/browse/ARROW-9071
+    # Our implementation of _MergeRecordBatches is different than
+    # pa.Table.concat_tables(
+    #     [pa.Table.from_batches([rb]) for rb in record_batches],
+    #     promote=True).combine_chunks().to_batches()[0]
+    # in its handling of struct-typed columns -- if two record batches have a
+    # column of the same name but of different struct types, _MergeRecordBatches
+    # will try merging (recursively) those struct types while concat_tables
+    # will not. We should consider upstreaming our implementation because it's a
+    # generalization
     return _MergeRecordBatches(record_batches)
 
 

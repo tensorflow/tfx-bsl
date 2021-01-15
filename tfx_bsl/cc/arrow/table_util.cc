@@ -126,30 +126,28 @@ class ArrayTypeMerger {
     const auto* merged_struct_type =
         static_cast<const arrow::StructType*>(merged_type_.get());
 
-    // TODO(b/171748040): replace children() with fields(), child() with field()
-    // after arrow 2.0.0.
-    std::vector<std::shared_ptr<Field>> children =
-        merged_struct_type->children();
+    std::vector<std::shared_ptr<Field>> fields =
+        merged_struct_type->fields();
     absl::flat_hash_map<std::string, int> name_to_index;
-    name_to_index.reserve(children.size());
-    for (int i = 0; i < children.size(); ++i) {
-      name_to_index[children[i]->name()] = i;
+    name_to_index.reserve(fields.size());
+    for (int i = 0; i < fields.size(); ++i) {
+      name_to_index[fields[i]->name()] = i;
     }
 
-    for (const auto& other_field : s.children()) {
+    for (const auto& other_field : s.fields()) {
       auto pos_and_inserted = name_to_index.insert(
-          std::make_pair(other_field->name(), children.size()));
+          std::make_pair(other_field->name(), fields.size()));
       if (pos_and_inserted.second) {
-        children.push_back(other_field);
+        fields.push_back(other_field);
       } else {
-        std::shared_ptr<Field>& field = children.at(
+        std::shared_ptr<Field>& field = fields.at(
             pos_and_inserted.first->second);
         ArrayTypeMerger m(field->type());
         TFX_BSL_RETURN_IF_ERROR(m.Merge(other_field->type()));
         field = arrow::field(other_field->name(), m.result());
       }
     }
-    merged_type_ = arrow::struct_(std::move(children));
+    merged_type_ = arrow::struct_(std::move(fields));
     return Status::OK();
   }
 
@@ -195,23 +193,23 @@ Status PromoteArrayDataToType(const std::shared_ptr<ArrayData>& array_data,
             static_cast<const arrow::StructType&>(*target_type);
         const auto& current_struct_type =
             static_cast<const arrow::StructType&>(*array_data->type);
-        const int target_num_children = target_struct_type.num_children();
-        std::vector<std::shared_ptr<ArrayData>> child_data(target_num_children);
-        for (int i = 0; i < target_num_children; ++i) {
-          const std::string& child_name = target_struct_type.child(i)->name();
-          const int current_child_index =
-              current_struct_type.GetFieldIndex(child_name);
-          if (current_child_index < 0) {
+        const int target_num_fields = target_struct_type.num_fields();
+        std::vector<std::shared_ptr<ArrayData>> child_data(target_num_fields);
+        for (int i = 0; i < target_num_fields; ++i) {
+          const std::string& field_name = target_struct_type.field(i)->name();
+          const int current_field_index =
+              current_struct_type.GetFieldIndex(field_name);
+          if (current_field_index < 0) {
             std::shared_ptr<Array> array_of_null;
             TFX_BSL_ASSIGN_OR_RETURN_ARROW(
                 array_of_null,
-                arrow::MakeArrayOfNull(target_struct_type.child(i)->type(),
+                arrow::MakeArrayOfNull(target_struct_type.field(i)->type(),
                                        array_data->length));
             child_data[i] = array_of_null->data();
           } else {
             TFX_BSL_RETURN_IF_ERROR(PromoteArrayDataToType(
-                array_data->child_data[current_child_index],
-                target_struct_type.child(i)->type(), &child_data[i]));
+                array_data->child_data[current_field_index],
+                target_struct_type.field(i)->type(), &child_data[i]));
           }
         }
         *promoted = array_data->Copy();
@@ -296,9 +294,9 @@ class FieldRep {
                                merged_type, &arrays_to_concat.back()));
       }
     }
-    // TODO(b/171748040): use the concatenate() that returns a Result<>.
-    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(Concatenate(
-        arrays_to_concat, arrow::default_memory_pool(), merged_array)));
+    TFX_BSL_ASSIGN_OR_RETURN_ARROW(
+        *merged_array,
+        Concatenate(arrays_to_concat, arrow::default_memory_pool()));
     return Status::OK();
   }
 
@@ -367,19 +365,6 @@ Status TotalByteSize(const RecordBatch& record_batch,
   return Status::OK();
 }
 
-// TODO(b/171748040): clean this up.
-#if ARROW_VERSION_MAJOR < 1
-// Returns a RecordBatch that contains rows in `indices`.
-Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
-                       const std::shared_ptr<Array>& indices,
-                       std::shared_ptr<RecordBatch>* result) {
-  arrow::compute::FunctionContext ctx;
-  arrow::compute::TakeOptions options;
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-      arrow::compute::Take(&ctx, *record_batch, *indices, options, result)));
-  return Status::OK();
-}
-#else
 // Returns a RecordBatch that contains rows in `indices`.
 Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
                        const std::shared_ptr<Array>& indices,
@@ -394,5 +379,4 @@ Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
   *result = result_datum.record_batch();
   return Status::OK();
 }
-#endif
 }  // namespace tfx_bsl
