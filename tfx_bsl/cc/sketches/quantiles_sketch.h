@@ -28,9 +28,7 @@ class QuantilesSketchImpl;
 // A sketch to estimate quantiles of streams of numbers.
 class QuantilesSketch {
  public:
-  // eps: Controls the approximation error. Must be >0. It is recommended to
-  //   multiply eps by 2/3 if `Compact` method is going to be used.
-  //   See weighted_quantiles_stream.h for details.
+  // eps: Controls the approximation error. Must be >0.
   // max_num_elements: An estimate of maximum number of input values. If not
   //   known at the time of construction, a large-enough number (e.g. 2^32) may
   //   be specified at the cost of extra memory usage. Must be >= 1.

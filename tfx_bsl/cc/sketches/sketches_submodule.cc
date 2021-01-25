@@ -191,9 +191,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
                }),
            py::arg("eps"), py::arg("max_num_elements"), py::arg("num_streams"),
            py::doc("A sketch to estimate quantiles of streams of numbers.\n\n"
-                   "eps: Controls the approximation error. Must be >0. It is "
-                   "recommended to multiply eps by 2/3 if `Compact` method is "
-                   "going to be used.\n"
+                   "eps: Controls the approximation error. Must be >0.\n"
                    "max_num_elements: An estimate of maximum number of input "
                    "values. If not known at the time of construction, a "
                    "large-enough number (e.g. 2^32) may be specified at the "
@@ -289,9 +287,9 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
                   "the sketch. For instance, if eps=0.0001, "
                   "max_num_elements=2^32, num_streams=1 and the sketch is "
                   "full, then its size will be reduced by ~16x. "
-                  "Warning: Compact() affects the error bound. It is "
-                  "recommended to multiply the desired worst-case error by 2/3 "
-                  "if this method is going to be used."))
+                  "Note that the error bound of the sketch is adjusted for use "
+                  "of Compact on the implementation level. It is therefore "
+                  "recommended (but not mandatory) to use Compact() once. "))
       .def(
           "GetQuantiles",
           [](QuantilesSketch& sketch, int64_t num_quantiles) {

@@ -304,15 +304,15 @@ Status QuantilesSketch::Make(double eps, int64_t max_num_elements,
     return errors::InvalidArgument("num_streams must be >= 1.");
   }
   // Error bound is adjusted by height of the computation graph. Note that the
-  // current implementation always has height of 2: one level from `AddValues`,
+  // current implementation has height of 3: one level from `AddValues`,
   // `AddWeightedValues` and `Merge` that perform multi-level summary
-  // compression maintaining the error bound, and another level from
-  // `GetQuantiles` that performs final summary compression adding to the final
-  // error bound. Final summary compression can only be triggered once. See
-  // weighted_quantiles_stream.h for details.
+  // compression maintaining the error bound, one level from `Compact` which
+  // guarantees to do a final summary compression in a single level, and another
+  // level from `GetQuantiles` that performs final summary compression adding to
+  // the final error bound. See weighted_quantiles_stream.h for details.
   *result = absl::WrapUnique(
       new QuantilesSketch(absl::make_unique<QuantilesSketchImpl>(
-          eps / 2, max_num_elements, num_streams)));
+          eps / 3, max_num_elements, num_streams)));
   return Status::OK();
 }
 

@@ -298,9 +298,9 @@ class QuantilesSketchTest(parameterized.TestCase):
 
   @parameterized.parameters(*_ACCURACY_TEST_CASES)
   def test_accuracy_after_compact(self, max_num_elements, eps, num_quantiles):
-    s1 = sketches.QuantilesSketch(eps * (2 / 3), max_num_elements, 1)
-    s2 = sketches.QuantilesSketch(eps * (2 / 3), max_num_elements, 1)
-    s3 = sketches.QuantilesSketch(eps * (2 / 3), max_num_elements, 1)
+    s1 = sketches.QuantilesSketch(eps, max_num_elements, 1)
+    s2 = sketches.QuantilesSketch(eps, max_num_elements, 1)
+    s3 = sketches.QuantilesSketch(eps, max_num_elements, 1)
     values = pa.array(reversed(range(max_num_elements)))
     weights = pa.array(range(max_num_elements))
     total_weight = (max_num_elements - 1) * max_num_elements / 2
