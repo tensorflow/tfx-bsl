@@ -10,18 +10,20 @@ cc_library(
     srcs = ["example_coder.cc"],
     hdrs = ["example_coder.h"],
     deps = [
-        "//tfx_bsl/cc/util:status",
-        "//tfx_bsl/cc/util:status_util",
-        "@arrow",
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
+        "@com_google_protobuf//:protobuf_lite",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:variant",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
-        "@protobuf_archive//:protobuf_lite",
+        "@arrow",
+        "//tfx_bsl/cc/util:status",
+        "//tfx_bsl/cc/util:status_util",
+        # In OSS, this target may appear not to exist. It is created from a patch:
+        # //third_party/tensorflow_expose_example_proto.patch
+        "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",
+        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
     ],
 )
 
@@ -35,7 +37,7 @@ cc_test(
         "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",
     ],
 )
 
@@ -48,7 +50,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@local_config_python//:numpy_headers",
         "@local_config_python//:python_headers",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",
     ],
 )
 

@@ -7,6 +7,13 @@ config_setting(
     ],
 )
 
+config_setting(
+    name = "macos",
+    constraint_values = [
+        "@bazel_tools//platforms:osx",
+    ],
+)
+
 _public_protos = ["//tfx_bsl/public/proto:public_protos"]
 
 _py_extension = select({

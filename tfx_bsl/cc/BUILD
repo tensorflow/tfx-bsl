@@ -1,13 +1,13 @@
 # Description:
 #   C++ libraries in tfx_bsl.
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_pybind_extension")
+load("//tfx_bsl:build_macros.bzl", "tfx_bsl_pybind_extension")
 
 package(default_visibility = ["//visibility:private"])
 
 licenses(["notice"])
 
 # DO NOT directly depend on this target. Depend on tfx_bsl_extension_lib instead.
-tf_pybind_extension(
+tfx_bsl_pybind_extension(
     name = "tfx_bsl_extension",
     srcs = [
         "tfx_bsl_extension.cc",

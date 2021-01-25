@@ -1,0 +1,193 @@
+From d71dd5b389c314253d29184ebd01f2fbbb03ba59 Mon Sep 17 00:00:00 2001
+From: Zhuo Peng <1835738+brills@users.noreply.github.com>
+Date: Wed, 20 Jan 2021 15:16:23 -0800
+Subject: [PATCH] Patched tensorflow/core/example/BUILD to expose tf.Example
+ protos
+
+---
+ tensorflow/core/example/BUILD | 174 ++--------------------------------
+ 1 file changed, 9 insertions(+), 165 deletions(-)
+
+diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
+index 752a3641b09..c23ddcdf01d 100644
+--- tensorflow/core/example/BUILD
++++ tensorflow/core/example/BUILD
+@@ -1,166 +1,10 @@
+-load("//tensorflow:tensorflow.bzl", "filegroup")
+-load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
+-load(
+-    "@io_bazel_rules_closure//closure:defs.bzl",
+-    "closure_proto_library",
+-)
+-load(
+-    "//tensorflow:tensorflow.bzl",
+-    "tf_cc_test",
+-    "tf_copts",
+-)
+-load(
+-    "//tensorflow/core/platform:build_config.bzl",
+-    "tf_proto_library",
+-    "tf_pyclif_proto_library",
+-)
+-
+-package(
+-    default_visibility = [
+-        "//visibility:public",
+-    ],
+-    licenses = ["notice"],  # Apache 2.0
+-)
+-
+-# TODO(bmzhao): Refactor this target to use granular dependencies
+-# after stage 4 of the TF build refactor is complete:
+-# https://github.com/tensorflow/community/pull/179
+-cc_library(
+-    name = "example_parser_configuration",
+-    srcs = ["example_parser_configuration.cc"],
+-    hdrs = ["example_parser_configuration.h"],
+-    copts = tf_copts(),
+-    linkstatic = 1,
+-    deps = [
+-        "//tensorflow/core:core_cpu",
+-        "//tensorflow/core:core_cpu_internal",
+-        "//tensorflow/core:framework",
+-        "//tensorflow/core:lib",
+-        "//tensorflow/core:lib_internal",
+-        "//tensorflow/core:protos_all_cc",
+-    ],
+-    alwayslink = 1,
+-)
+-
+-cc_library(
+-    name = "feature_util",
+-    srcs = ["feature_util.cc"],
+-    hdrs = ["feature_util.h"],
+-    deps = [
+-        ":example_protos_cc",
+-        "//tensorflow/core/platform:protobuf",
+-        "//tensorflow/core/platform:stringpiece",
+-        "//tensorflow/core/platform:types",
+-        "@com_google_absl//absl/base:core_headers",
+-    ],
+-    alwayslink = 1,
+-)
+-
+-# TODO(bmzhao): Refactor this target to use granular dependencies
+-# after stage 4 of the TF build refactor is complete:
+-# https://github.com/tensorflow/community/pull/179
+-tf_cc_test(
+-    name = "example_parser_configuration_test",
+-    size = "small",
+-    srcs = ["example_parser_configuration_test.cc"],
+-    data = [":example_parser_configuration_testdata"],
+-    deps = [
+-        "//tensorflow/cc:cc_ops",
+-        "//tensorflow/core:core_cpu",
+-        "//tensorflow/core:core_cpu_internal",
+-        "//tensorflow/core:example_parser_configuration",
+-        "//tensorflow/core:framework",
+-        "//tensorflow/core:framework_internal",
+-        "//tensorflow/core:lib",
+-        "//tensorflow/core:lib_internal",
+-        "//tensorflow/core:ops",
+-        "//tensorflow/core:protos_all_cc",
+-        "//tensorflow/core:test",
+-        "//tensorflow/core:test_main",
+-        "//tensorflow/core:testlib",
+-        "//tensorflow/core/common_runtime:direct_session_internal",
+-        "//tensorflow/core/kernels:example_parsing_ops",
+-    ],
+-)
+-
+-alias(
+-    name = "example_parser_configuration_testdata",
+-    actual = "//tensorflow/core/example/testdata:example_parser_configuration_testdata",
+-)
+-
+-tf_proto_library(
+-    name = "example_protos",
+-    srcs = [
+-        "example.proto",
+-        "feature.proto",
+-    ],
+-    cc_api_version = 2,
+-    make_default_target_header_only = True,
+-)
+-
+-tf_proto_library(
+-    name = "example_parser_configuration_proto",
+-    srcs = ["example_parser_configuration.proto"],
+-    cc_api_version = 2,
+-    make_default_target_header_only = True,
+-    protodeps = [
+-        "//tensorflow/core/framework:tensor_shape_proto",
+-        "//tensorflow/core/framework:tensor_proto",
+-        "//tensorflow/core/framework:types_proto",
+-    ],
+-)
+-
+-tf_proto_library(
+-    name = "protos_all",
+-    cc_api_version = 2,
+-    make_default_target_header_only = True,
+-    protodeps = [
+-        ":example_protos",
+-        ":example_parser_configuration_proto",
+-    ],
+-    tags = [
+-        "alt_dep=//third_party/tensorflow/core:protos_all",
+-    ],
+-)
+-
+-tf_pyclif_proto_library(
+-    name = "example_pyclif",
+-    proto_lib = "//tensorflow/core:protos_all",
+-    proto_srcfile = "example.proto",
+-)
+-
+-tf_pyclif_proto_library(
+-    name = "feature_pyclif",
+-    proto_lib = "//tensorflow/core:protos_all",
+-    proto_srcfile = "feature.proto",
+-)
+-
+-closure_proto_library(
+-    name = "example_protos_closure",
+-    deps = [":example_protos"],
+-)
+-
+-filegroup(
+-    name = "mobile_srcs_no_runtime",
+-    srcs = [
+-        "feature_util.cc",
+-        "feature_util.h",
+-    ],
+-)
+-
+-# TODO(bmzhao): These files are exported since they are directly referenced
+-# from targets in tensorflow/core/BUILD. Remove these after phase 4 of the
+-# TF refactor: https://github.com/tensorflow/community/pull/179
+-exports_files(
+-    srcs = [
+-        "example.proto",
+-        "example_parser_configuration_test.cc",
+-        "feature.proto",
+-        "feature_util.cc",
+-        "feature_util.h",
+-        "feature_util_test.cc",
+-    ],
+-    visibility = [
+-        "//tensorflow/core:__pkg__",
+-    ],
++load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
++
++cc_proto_library(
++  name = "example_proto",
++  srcs = [
++      "example.proto",
++      "feature.proto",
++  ],
++  visibility = ["//visibility:public"],
+ )
+-- 
+2.30.0.284.gd98b1dd5eaa7-goog
+
