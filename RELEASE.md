@@ -6,6 +6,8 @@
 
 ## Major Features and Improvements
 
+*  `tfx_bsl.public.tfxio.TFGraphRecordDecoder` is now a public API.
+
 ## Bug Fixes and Other Changes
 
 *   Depends on `apache-beam[gcp]>=2.27,<3`.

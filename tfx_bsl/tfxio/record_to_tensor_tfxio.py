@@ -288,7 +288,7 @@ class _DecodeFnWrapper(object):
     self.output_type_specs = decoder.output_type_specs()
     # Store the concrete function to avoid tracing upon calling.
     # TF guarantees its thread-safey.
-    self.decode_fn = decoder.decode_record.get_concrete_function()
+    self.decode_fn = decoder.decode_record
     # Call the concrete function once to force optimization of the graph, as
     # we want that to be attributed as fixed setup cost.
     # Here we assume that an empty string tensor (0 record) can be successfully

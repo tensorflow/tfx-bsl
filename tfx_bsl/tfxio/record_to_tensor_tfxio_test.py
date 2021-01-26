@@ -15,6 +15,7 @@
 
 import os
 import tempfile
+import unittest
 
 from absl import flags
 import apache_beam as beam
@@ -36,10 +37,7 @@ FLAGS = flags.FLAGS
 
 class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
-  def __init__(self):
-    super().__init__("DecoderForTesting")
-
-  def _decode_record_internal(self, record):
+  def decode_record(self, record):
     indices = tf.transpose(
         tf.stack([
             tf.range(tf.size(record), dtype=tf.int64),
@@ -55,9 +53,9 @@ class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
 class _DecoderForTestingWithRecordIndex(_DecoderForTesting):
 
-  def _decode_record_internal(self, record):
+  def decode_record(self, record):
     result = super(
-        _DecoderForTestingWithRecordIndex, self)._decode_record_internal(record)
+        _DecoderForTestingWithRecordIndex, self).decode_record(record)
     result["ragged_record_index"] = tf.RaggedTensor.from_row_splits(
         values=tf.range(tf.size(record), dtype=tf.int64),
         row_splits=tf.range(tf.size(record) + 1, dtype=tf.int64))
@@ -111,6 +109,8 @@ def _write_decoder(decoder=_DecoderForTesting()):
   return result
 
 
+@unittest.skipIf(tf.__version__ < "2",
+                 "RecordToTensorTFXIO does not support TF 1.x")
 class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):
@@ -309,6 +309,4 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
 
 
 if __name__ == "__main__":
-  # Do not run these tests under TF1.x -- not supported.
-  if tf.__version__ >= "2":
-    tf.test.main()
+  tf.test.main()

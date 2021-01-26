@@ -19,6 +19,7 @@ representations. See the RFC for details:
 https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md
 """
 
+from tfx_bsl.coders.tf_graph_record_decoder import TFGraphRecordDecoder
 from tfx_bsl.tfxio.csv_tfxio import BeamRecordCsvTFXIO
 from tfx_bsl.tfxio.csv_tfxio import CsvTFXIO
 from tfx_bsl.tfxio.dataset_options import RecordBatchesOptions

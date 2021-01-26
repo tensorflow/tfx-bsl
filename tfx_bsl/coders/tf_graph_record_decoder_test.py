@@ -14,6 +14,7 @@
 """Tests for tfx_bsl.coders.tf_graph_record_decoder."""
 
 import tempfile
+import unittest
 
 from absl import flags
 import tensorflow as tf
@@ -25,10 +26,7 @@ FLAGS = flags.FLAGS
 
 class _DecoderForTesting(tf_graph_record_decoder.TFGraphRecordDecoder):
 
-  def __init__(self):
-    super().__init__("DecoderForTesting")
-
-  def _decode_record_internal(self, record):
+  def decode_record(self, record):
     indices = tf.transpose(tf.stack([
         tf.range(tf.size(record), dtype=tf.int64),
         tf.zeros(tf.size(record), dtype=tf.int64)
@@ -61,11 +59,25 @@ class _DecoderForTestWithInvalidRecordIndexTensorName(_DecoderForTesting):
     return "does_not_exist"
 
 
+@unittest.skipIf(tf.__version__ < "2",
+                 "TfGraphRecordDecoder does not support TF 1.x")
 class TfGraphRecordDecoderTest(tf.test.TestCase):
 
   def setUp(self):
     super().setUp()
     self._tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
+
+  def _assert_type_specs_equal(self, lhs, rhs):
+    self.assertLen(lhs, len(rhs))
+    for k, spec in lhs.items():
+      self.assertIn(k, rhs)
+      # special handling for tf.TensorSpec to ignore the difference in .name.
+      if isinstance(spec, tf.TensorSpec):
+        self.assertIsInstance(rhs[k], tf.TensorSpec)
+        self.assertEqual(spec.shape.as_list(), rhs[k].shape.as_list())
+        self.assertEqual(spec.dtype, rhs[k].dtype)
+        continue
+      self.assertEqual(spec, rhs[k])
 
   def test_save_load_decode(self):
     decoder = _DecoderForTestWithRecordIndexTensorName()
@@ -85,7 +97,9 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
     loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
     self.assertEqual(loaded.record_index_tensor_name, "record_index")
 
-    self.assertEqual(decoder.output_type_specs(), loaded.output_type_specs())
+    self._assert_type_specs_equal(decoder.output_type_specs(),
+                                  loaded.output_type_specs())
+
     records = [b"abc", b"def"]
     got = loaded.decode_record(records)
     self.assertLen(got, len(loaded.output_type_specs()))
@@ -117,6 +131,8 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
 
     tf_graph_record_decoder.save_decoder(decoder, self._tmp_dir)
     loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
+    self._assert_type_specs_equal(decoder.output_type_specs(),
+                                  loaded.output_type_specs())
     self.assertIsNone(loaded.record_index_tensor_name)
 
     with tf.compat.v1.Graph().as_default():
@@ -131,6 +147,4 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
 
 
 if __name__ == "__main__":
-  # Do not run these tests under TF1.x -- not supported.
-  if tf.__version__ >= "2":
-    tf.test.main()
+  tf.test.main()

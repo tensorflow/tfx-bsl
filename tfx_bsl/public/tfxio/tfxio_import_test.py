@@ -28,6 +28,7 @@ class TfxioImportTest(absltest.TestCase):
     from tfx_bsl.public.tfxio import TensorRepresentations
     from tfx_bsl.public.tfxio import TFExampleBeamRecord
     from tfx_bsl.public.tfxio import TFExampleRecord
+    from tfx_bsl.public.tfxio import TFGraphRecordDecoder
     from tfx_bsl.public.tfxio import TFSequenceExampleBeamRecord
     from tfx_bsl.public.tfxio import TFSequenceExampleRecord
     from tfx_bsl.public.tfxio import TFXIO
