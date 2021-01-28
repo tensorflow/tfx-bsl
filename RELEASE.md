@@ -1,7 +1,5 @@
 <!-- mdlint off(HEADERS_TOO_MANY_H1) -->
 
-# `tfx_bsl` release notes
-
 # Current version (not yet released; still in development)
 
 ## Major Features and Improvements
@@ -11,6 +9,26 @@
 ## Breaking changes
 
 ## Deprecations
+
+# Version 0.27.1
+
+*   This is a bug fix only version, which modified the dependencies.
+
+## Major Features and Improvements
+
+*   N/A
+
+## Bug Fixes and Other Changes
+
+*   Fix in the `tensorflow-serving-api` version constraint.
+
+## Breaking changes
+
+*   N/A
+
+## Deprecations
+
+*   N/A
 
 # Version 0.27.0
 
