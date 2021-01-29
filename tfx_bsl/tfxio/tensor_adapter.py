@@ -226,8 +226,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super().__init__(arrow_schema,
-                                                  tensor_representation)
+    super().__init__(arrow_schema, tensor_representation)
     dense_rep = tensor_representation.dense_tensor
     column_name = dense_rep.column_name
     self._column_index = arrow_schema.get_field_index(column_name)
@@ -255,9 +254,14 @@ class _BaseDenseTensorHandler(_TypeHandler):
     expected_num_elements = batch_size * self._unbatched_flat_len
     if len(values) != expected_num_elements:
       raise ValueError(
-          "Unable to convert ListArray {} to {}: size mismatch. expected {} "
-          "elements but got {}".format(
-              list_array, self.type_spec, expected_num_elements, len(values)))
+          "Unable to convert a {} to a tensor of type spec {}: size mismatch. "
+          "Expected {} elements but got {}. "
+          "If your data type is tf.Example, make sure that the feature "
+          "is always present, and have the same length in all the examples. "
+          "TFX users should make sure there is no data anomaly for the feature."
+          .format(
+              type(list_array), self.type_spec, expected_num_elements,
+              len(values)))
     actual_shape = list(self._shape)
     actual_shape[0] = batch_size
     if self._convert_to_binary_fn is not None:
@@ -478,8 +482,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super().__init__(arrow_schema,
-                                               tensor_representation)
+    super().__init__(arrow_schema, tensor_representation)
     ragged_representation = tensor_representation.ragged_tensor
     self._path = path.ColumnPath.from_proto(ragged_representation.feature_path)
     self._column_index = arrow_schema.get_field_index(self._path.steps()[0])

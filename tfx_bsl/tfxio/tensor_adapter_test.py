@@ -1201,6 +1201,22 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
               pa.schema([pa.field(k, v) for k, v in arrow_schema.items()]),
               {"tensor": tensor_representation}))
 
+  def testRaiseOnDenseTensorSizeMismatch(self):
+    tensor_representation = text_format.Parse("""
+                  dense_tensor {
+                    column_name: "column"
+                    shape {}
+                  }""", schema_pb2.TensorRepresentation())
+    with self.assertRaisesRegex(ValueError, "size mismatch"):
+      ta = tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(
+              pa.schema([pa.field("column", pa.list_(pa.int64()))]),
+              {"tensor": tensor_representation}))
+      ta.ToBatchTensors(
+          pa.RecordBatch.from_arrays(
+              [pa.array([[1], None, [2]], type=pa.list_(pa.int64()))],
+              ["column"]))
+
   def testOriginalTypeSpecs(self):
     arrow_schema = pa.schema([pa.field("column1", pa.list_(pa.int32()))])
     tensor_representations = {
