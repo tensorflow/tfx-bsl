@@ -46,7 +46,7 @@ function setup_environment() {
   export WHEEL_BIN="${PYTHON_DIR}"/bin/wheel
   ${PIP_BIN} install --upgrade pip
   ${PIP_BIN} install wheel --upgrade
-  ${PIP_BIN} install "numpy>=1.16,<2"
+  ${PIP_BIN} install "numpy>=1.16,<1.20"
   pip3 install auditwheel
 }
 
