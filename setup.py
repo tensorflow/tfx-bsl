@@ -164,7 +164,7 @@ setup(
         'absl-py>=0.9,<0.11',
         'apache-beam[gcp]>=2.27,<3',
         'google-api-python-client>=1.7.11,<2',
-        'numpy>=1.16,<2',
+        'numpy>=1.16,<1.20',
         'pandas>=1.0,<2',
         'protobuf>=3.9.2,<4',
         'pyarrow>=1,<3',
