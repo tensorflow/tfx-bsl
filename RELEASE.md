@@ -1,4 +1,4 @@
-# Version 0.27.1
+# Version 0.27.2
 
 ## Major Features and Improvements
 
@@ -6,7 +6,7 @@
 
 ## Bug Fixes and Other Changes
 
-*   Fix in the `tensorflow-serving-api` version constraint.
+*   Depends on `numpy>=1.16,<1.20`.
 
 ## Breaking changes
 
