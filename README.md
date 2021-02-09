@@ -138,3 +138,18 @@ pip install dist/*.whl
   * macOS 10.12.6 (Sierra) or later.
   * Ubuntu 16.04 or later.
   * Windows 7 or later.
+
+
+## Compatible versions
+
+The following table is the `tfx_bsl` package versions that are compatible with
+each other. This is determined by our testing framework, but other *untested*
+combinations may also work.
+
+tfx-bsl                                                                         | apache-beam[gcp] | pyarrow  | tensorflow        | tensorflow-metadata | tensorflow-serving-api |
+------------------------------------------------------------------------------- | -----------------| ---------|-------------------|---------------------|------------------------|
+[GitHub master](https://github.com/tensorflow/tfx-bsl/blob/master/RELEASE.md)   | 2.27.0           | 2.0.0    | nightly (1.x/2.x) | 0.27.0              | 2.4.0                  |
+[0.27.1](https://github.com/tensorflow/tfx-bsl/blob/v0.27.1/RELEASE.md)         | 2.27.0           | 2.0.0    | 1.15 / 2.4        | 0.27.0              | 2.4.0                  |
+[0.27.0](https://github.com/tensorflow/tfx-bsl/blob/v0.27.0/RELEASE.md)         | 2.27.0           | 2.0.0    | 1.15 / 2.4        | 0.27.0              | 2.4.0                  |
+[0.26.1](https://github.com/tensorflow/tfx-bsl/blob/v0.26.1/RELEASE.md)         | 2.25.0           | 0.17.0   | 1.15 / 2.3        | 0.27.0              | 2.3.0                  |
+[0.26.0](https://github.com/tensorflow/tfx-bsl/blob/v0.26.0/RELEASE.md)         | 2.25.0           | 0.17.0   | 1.15 / 2.3        | 0.27.0              | 2.3.0                  |
