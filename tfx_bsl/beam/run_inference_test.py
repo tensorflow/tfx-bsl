@@ -17,10 +17,7 @@ import base64
 from http import client as http_client
 import json
 import os
-try:
-  import unittest.mock as mock
-except ImportError:
-  import mock
+import random
 
 import apache_beam as beam
 from apache_beam.metrics.metric import MetricsFilter
@@ -33,8 +30,17 @@ from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
 
 from google.protobuf import text_format
-
 from tensorflow_serving.apis import prediction_log_pb2
+
+try:
+  # pylint: disable=g-import-not-at-top
+  import unittest.mock as mock
+except ImportError:
+  # pylint: disable=g-import-not-at-top
+  import mock
+
+
+_randbool = lambda: random.randint(0, 1)
 
 
 class RunInferenceFixture(tf.test.TestCase):
@@ -46,6 +52,12 @@ class RunInferenceFixture(tf.test.TestCase):
             """
               features {
                 feature { key: "input1" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example()),
+        text_format.Parse(
+            """
+              features {
+                feature { key: "input1" value { float_list { value: 1 }}}
               }
               """, tf.train.Example()),
     ]
@@ -71,20 +83,6 @@ class RunOfflineInferenceTest(RunInferenceFixture):
 
   def setUp(self):
     super().setUp()
-    self._predict_examples = [
-        text_format.Parse(
-            """
-              features {
-                feature { key: "input1" value { float_list { value: 0 }}}
-              }
-              """, tf.train.Example()),
-        text_format.Parse(
-            """
-              features {
-                feature { key: "input1" value { float_list { value: 1 }}}
-              }
-              """, tf.train.Example()),
-    ]
     self._multihead_examples = [
         text_format.Parse(
             """
@@ -101,7 +99,6 @@ class RunOfflineInferenceTest(RunInferenceFixture):
             }
             """, tf.train.Example()),
     ]
-
 
   def _prepare_multihead_examples(self, example_path):
     with tf.io.TFRecordWriter(example_path) as output_file:
@@ -205,25 +202,39 @@ class RunOfflineInferenceTest(RunInferenceFixture):
   def _run_inference_with_beam(self, example_path, inference_spec_type,
                                prediction_log_path):
     with beam.Pipeline() as pipeline:
+      key = 'TheKey'
+      if _randbool():
+        def verify_key(k, v):
+          if k != key:
+            raise RuntimeError('Wrong Key %s' % k)
+          return v
+        maybe_pair_with_key = beam.Map(lambda x: (key, x))
+        maybe_verify_key = beam.MapTuple(verify_key)
+      else:
+        identity = beam.Map(lambda x: x)
+        maybe_pair_with_key = identity
+        maybe_verify_key = identity
       _ = (
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-          | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-          |
-          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
+          | 'MaybeDecode' >> beam.Map(
+              lambda x: x if _randbool() else tf.train.Example.FromString(x))
+          | 'MaybePairWithKey' >> maybe_pair_with_key
+          | 'RunInference'
+          >> run_inference.RunInferenceImpl(inference_spec_type)
+          | 'MaybeVerifyKey' >> maybe_verify_key
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
 
   def _get_results(self, prediction_log_path):
-    results = []
+    result = []
     for f in tf.io.gfile.glob(prediction_log_path + '-?????-of-?????'):
       record_iterator = tf.compat.v1.io.tf_record_iterator(path=f)
       for record_string in record_iterator:
-        prediction_log = prediction_log_pb2.PredictionLog()
-        prediction_log.MergeFromString(record_string)
-        results.append(prediction_log)
-    return results
+        result.append(
+            prediction_log_pb2.PredictionLog.FromString(record_string))
+    return result
 
   def testModelPathInvalid(self):
     example_path = self._get_output_data_dir('examples')
@@ -250,20 +261,15 @@ class RunOfflineInferenceTest(RunInferenceFixture):
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
-    self.assertEqual(
-        results[0].predict_log.request.inputs[
-            run_inference._DEFAULT_INPUT_KEY].string_val[0],
-        self._predict_examples[0].SerializeToString())
-    self.assertEqual(results[0].predict_log.response.outputs['y'].dtype,
-                     tf.float32)
-    self.assertLen(
-        results[0].predict_log.response.outputs['y'].tensor_shape.dim, 2)
-    self.assertEqual(
-        results[0].predict_log.response.outputs['y'].tensor_shape.dim[0].size,
-        1)
-    self.assertEqual(
-        results[0].predict_log.response.outputs['y'].tensor_shape.dim[1].size,
-        1)
+    inputs = results[0].predict_log.request.inputs['examples']
+    self.assertLen(inputs.string_val, 1)
+    self.assertEqual(inputs.string_val[0],
+                     self._predict_examples[0].SerializeToString())
+    outputs = results[0].predict_log.response.outputs['y']
+    self.assertEqual(outputs.dtype, tf.float32)
+    self.assertLen(outputs.tensor_shape.dim, 2)
+    self.assertEqual(outputs.tensor_shape.dim[0].size, 1)
+    self.assertEqual(outputs.tensor_shape.dim[1].size, 1)
 
   def testClassifyModel(self):
     example_path = self._get_output_data_dir('examples')
@@ -408,8 +414,10 @@ class RunOfflineInferenceTest(RunInferenceFixture):
             model_path=model_path, signature_name=['classify_sum']))
     pipeline = beam.Pipeline()
     _ = (
-        pipeline | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
+        pipeline
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
+        | 'MaybeDecode' >> beam.Map(
+            lambda x: x if _randbool() else tf.train.Example.FromString(x))
         | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
     run_result = pipeline.run()
     run_result.wait_until_finish()
@@ -465,19 +473,37 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     return json.dumps(response_dict)
 
   def _set_up_pipeline(self, inference_spec_type):
+    key = 'TheKey'
+    if _randbool():
+      def verify_key(k, v):
+        if k != key:
+          raise RuntimeError('Wrong Key %s' % k)
+        return v
+      maybe_pair_with_key = beam.Map(lambda x: (key, x))
+      maybe_verify_key = beam.MapTuple(verify_key)
+    else:
+      identity = beam.Map(lambda x: x)
+      maybe_pair_with_key = identity
+      maybe_verify_key = identity
     self.pipeline = beam.Pipeline()
     self.pcoll = (
         self.pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
-        | 'ParseExamples' >> beam.Map(tf.train.Example.FromString)
-        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
+        | 'MaybeDecode' >> beam.Map(
+            lambda x: x if _randbool() else tf.train.Example.FromString(x))
+        | 'MaybePairWithKey' >> maybe_pair_with_key
+        | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
+        | 'MaybeVerifyKey' >> maybe_verify_key)
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()
     self.pipeline_result.wait_until_finish()
 
   def test_model_predict(self):
-    predictions = [{'output_1': [0.901], 'output_2': [0.997]}]
+    predictions = [{
+        'output_1': [0.901],
+        'output_2': [0.997]
+    }] * len(self._predict_examples)
     builder = http.RequestMockBuilder({
         'ml.projects.predict':
             (None, self._make_response_body(predictions, successful=True))
@@ -496,15 +522,22 @@ class RunRemoteInferenceTest(RunInferenceFixture):
               project_id='test-project',
               model_name='test-model',
           ))
-
-      prediction_log = prediction_log_pb2.PredictionLog()
-      prediction_log.predict_log.response.outputs['output_1'].CopyFrom(
-          tf.make_tensor_proto(values=[0.901], dtype=tf.double, shape=(1, 1)))
-      prediction_log.predict_log.response.outputs['output_2'].CopyFrom(
-          tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
+      expected = []
+      for example in self._predict_examples:
+        prediction_log = prediction_log_pb2.PredictionLog()
+        predict_log = prediction_log.predict_log
+        input_tensor_proto = predict_log.request.inputs['inputs']
+        input_tensor_proto.dtype = tf.string.as_datatype_enum
+        input_tensor_proto.tensor_shape.dim.add().size = 1
+        input_tensor_proto.string_val.append(example.SerializeToString())
+        predict_log.response.outputs['output_1'].CopyFrom(
+            tf.make_tensor_proto(values=[0.901], dtype=tf.double, shape=(1, 1)))
+        predict_log.response.outputs['output_2'].CopyFrom(
+            tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
+        expected.append(prediction_log)
 
       self._set_up_pipeline(inference_spec_type)
-      assert_that(self.pcoll, equal_to([prediction_log]))
+      assert_that(self.pcoll, equal_to(expected))
       self._run_inference_with_beam()
 
   def test_exception_raised_when_response_body_contains_error_entry(self):
@@ -547,11 +580,13 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       self._run_inference_with_beam()
 
   def test_can_format_requests(self):
-    # Ensure _RemotePredictDoFn._prepare_instances produces
-    # JSON-serializable objects
+    predictions = [{
+        'output_1': [0.901],
+        'output_2': [0.997]
+    }] * len(self._predict_examples)
     builder = http.RequestMockBuilder({
-        'ml.projects.predict': (None,
-                                self._make_response_body([], successful=True))
+        'ml.projects.predict':
+            (None, self._make_response_body(predictions, successful=True))
     })
     resource = discovery.build(
         'ml',
@@ -581,10 +616,9 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       self.pipeline = beam.Pipeline()
       self.pcoll = (
           self.pipeline
-          | 'ReadExamples' >> beam.Create([example])
-          |
-          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
-
+          | 'CreateExamples' >> beam.Create([example])
+          | 'RunInference'
+          >> run_inference.RunInferenceImpl(inference_spec_type))
       self._run_inference_with_beam()
 
   def test_request_body_with_binary_data(self):
@@ -603,8 +637,10 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             project_id='test_project',
             model_name='test_model',
             version_name='test_version'))
-    remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
-    result = list(remote_predict._prepare_instances([example]))
+    remote_predict = run_inference._BatchRemotePredictDoFn(
+        inference_spec_type, None)
+    result = remote_predict._make_instances(
+        [example], [example.SerializeToString()])
     self.assertEqual(result, [
         {
             'x_bytes': {
@@ -617,14 +653,25 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     ])
 
   def test_request_serialized_example(self):
-    example = text_format.Parse(
-        """
+    examples = [
+        text_format.Parse(
+            """
       features {
         feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
         feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
         feature { key: "y" value { int64_list { value: [1, 2] }}}
       }
-      """, tf.train.Example())
+      """, tf.train.Example()),
+        text_format.Parse(
+            """
+      context {
+        feature { key: "x_bytes" value { bytes_list { value: ["ASa8asdf"] }}}
+        feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
+        feature { key: "y" value { int64_list { value: [1, 2] }}}
+      }
+      """, tf.train.SequenceExample())
+    ]
+    serialized_examples = [e.SerializeToString() for e in examples]
     inference_spec_type = model_spec_pb2.InferenceSpecType(
         ai_platform_prediction_model_spec=model_spec_pb2
         .AIPlatformPredictionModelSpec(
@@ -632,11 +679,12 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             model_name='test_model',
             version_name='test_version',
             use_serialization_config=True))
-    remote_predict = run_inference._RemotePredictDoFn(inference_spec_type, None)
-    result = list(remote_predict._prepare_instances([example]))
-    self.assertEqual(result, [{
-        'b64': base64.b64encode(example.SerializeToString()).decode()
-    }])
+    remote_predict = run_inference._BatchRemotePredictDoFn(
+        inference_spec_type, None)
+    result = remote_predict._make_instances(examples, serialized_examples)
+    self.assertEqual(
+        result,
+        [{'b64': base64.b64encode(se).decode()} for se in serialized_examples])
 
 
 if __name__ == '__main__':
