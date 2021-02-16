@@ -112,7 +112,7 @@ class RunInferenceImpl(beam.PTransform):
       identity = beam.Map(lambda x: x)
       maybe_add_none_key = identity
       maybe_drop_none_key = identity
-    batched_keyd_examples = (
+    batched_keyed_examples = (
         examples
         | 'MaybeAddNoneKey' >> maybe_add_none_key
         | 'BatchExamples' >> beam.BatchElements())
@@ -120,17 +120,17 @@ class RunInferenceImpl(beam.PTransform):
     # pylint: disable=no-value-for-parameter
     operation_type = _get_operation_type(self._inference_spec_type)
     if operation_type == _OperationType.CLASSIFICATION:
-      result = batched_keyd_examples | 'Classify' >> _Classify(
+      result = batched_keyed_examples | 'Classify' >> _Classify(
           self._inference_spec_type)
     elif operation_type == _OperationType.REGRESSION:
-      result = batched_keyd_examples | 'Regress' >> _Regress(
+      result = batched_keyed_examples | 'Regress' >> _Regress(
           self._inference_spec_type)
     elif operation_type == _OperationType.MULTI_INFERENCE:
       result = (
-          batched_keyd_examples
+          batched_keyed_examples
           | 'MultiInference' >> _MultiInference(self._inference_spec_type))
     elif operation_type == _OperationType.PREDICTION:
-      result = batched_keyd_examples | 'Predict' >> _Predict(
+      result = batched_keyed_examples | 'Predict' >> _Predict(
           self._inference_spec_type)
     else:
       raise ValueError('Unsupported operation_type %s' % operation_type)
@@ -341,8 +341,6 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
 
 # TODO(b/151468119): Consider to re-batch with online serving request size
 # limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 class _BatchRemotePredictDoFn(_BaseBatchDoFn):
   """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
 
@@ -495,8 +493,6 @@ class _BatchRemotePredictDoFn(_BaseBatchDoFn):
 
 # TODO(b/143484017): Add batch_size back off in the case there are functional
 # reasons large batch sizes cannot be handled.
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
   """A DoFn that runs in-process batch inference with a model.
 
@@ -602,8 +598,6 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     return result
 
 
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on classification model."""
 
@@ -637,8 +631,6 @@ class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that run inference on regression model."""
 
@@ -671,8 +663,6 @@ class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on multi-head model."""
 
@@ -732,8 +722,6 @@ class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
   """A DoFn that runs inference on predict model."""
 
