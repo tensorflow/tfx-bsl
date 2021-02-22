@@ -557,8 +557,8 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
           tf.string.as_datatype_enum):
         raise ValueError(
             'Input dtype is expected to be %s, got %s' %
-            tf.string.as_datatype_enum,
-            list(signature.signature_def.inputs.values())[0].dtype)
+            (tf.string.as_datatype_enum,
+             list(signature.signature_def.inputs.values())[0].dtype))
       io_tensor_specs.append(_signature_pre_process(signature.signature_def))
     input_tensor_name = ''
     input_tensor_alias = ''
