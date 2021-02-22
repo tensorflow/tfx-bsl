@@ -239,7 +239,9 @@ def AppendRawRecordColumn(
   """
   schema = record_batch.schema
   if record_index_column_name is None:
-    assert record_batch.num_rows == len(raw_records)
+    assert record_batch.num_rows == len(
+        raw_records), "num_rows: {} vs len raw_records: {}".format(
+            record_batch.num_rows, len(raw_records))
   else:
     record_index_column_index = schema.get_field_index(
         record_index_column_name)
