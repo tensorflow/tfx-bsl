@@ -20,6 +20,7 @@
 try:
   from tfx_bsl.cc.tfx_bsl_extension.coders import ExamplesToRecordBatchDecoder
   from tfx_bsl.cc.tfx_bsl_extension.coders import ExampleToNumpyDict
+  from tfx_bsl.cc.tfx_bsl_extension.coders import RecordBatchToExamples
 except ImportError:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.coders. "

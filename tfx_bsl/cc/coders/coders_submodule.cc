@@ -131,9 +131,28 @@ void DefineCodersSubmodule(py::module main_module) {
           if (!s.ok()) {
             throw std::runtime_error(s.ToString());
           }
-          // "steal" does notincrement the refcount of numpy_dict. (which is
+          // "steal" does not increment the refcount of numpy_dict. (which is
           // already 1 after creation.
           return py::reinterpret_steal<py::object>(numpy_dict);
+        });
+
+  m.def("RecordBatchToExamples",
+        [](std::shared_ptr<arrow::RecordBatch> record_batch) -> py::list {
+          std::vector<std::string> serialized_examples;
+          {
+            // Release the GIL during the call to RecordBatchToExamples.
+            py::gil_scoped_release release_gil;
+            Status s =
+                RecordBatchToExamples(*record_batch, &serialized_examples);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+          }
+          py::list bytes_examples;
+          for (auto& example : serialized_examples) {
+            bytes_examples.append(py::bytes(example));
+          }
+          return bytes_examples;
         });
 }
 

@@ -88,8 +88,9 @@ class ExamplesToRecordBatchDecoder {
 
 // Converts a RecordBatch to a list of examples.
 //
-// The fields of the RecordBatch must have types list[int64], list[binary] or
-// list[float32].
+// The fields of the RecordBatch must have types list[dtype] or
+// large_list[dtype], where dtype is one of float32, int64, binary, or
+// large_binary.
 Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
                              std::vector<std::string>* serialized_examples);
 

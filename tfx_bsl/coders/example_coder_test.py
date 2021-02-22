@@ -258,5 +258,101 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     with self.assertRaisesRegex(RuntimeError, "Unable to get the arrow schema"):
       _ = coder.ArrowSchema()
 
+
+_ENCODE_TEST_EXAMPLES = [
+    """
+   features {
+      feature {key: "x" value { bytes_list { value: [ "a", "b" ] } } }
+      feature { key: "y" value { float_list { value: [ 1.0, 2.0 ] } } }
+      feature { key: "z" value { int64_list { value: [ 4, 5 ] } } }
+    }
+    """,
+    """
+    features {
+      feature { key: "x" value { } }
+      feature { key: "y" value { } }
+      feature { key: "z" value { } }
+    }
+    """,
+    """
+    features {
+      feature { key: "x" value { } }
+      feature { key: "y" value { } }
+      feature { key: "z" value { } }
+    }
+        """,
+    """
+    features {
+      feature { key: "x" value { bytes_list { value: [] } } }
+      feature { key: "y" value { float_list { value: [] } } }
+      feature { key: "z" value { int64_list { value: [] } } }
+    }
+        """,
+]
+
+_ENCODE_CASES = [
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[1.0, 2.0], None, None, []], type=pa.list_(pa.float32())),
+            pa.array([[4, 5], None, None, []], type=pa.large_list(pa.int64()))
+        ], ["x", "y", "z"]),
+        examples_text_proto=_ENCODE_TEST_EXAMPLES),
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([None, None, [b"a", b"b"]],
+                     type=pa.large_list(pa.binary())),
+            pa.array([None, None, [1.0, 2.0]], type=pa.large_list(
+                pa.float32())),
+            pa.array([None, None, [4, 5]], type=pa.list_(pa.int64()))
+        ], ["x", "y", "z"]),
+        examples_text_proto=list(reversed(_ENCODE_TEST_EXAMPLES[:-1]))),
+]
+
+_INVALID_ENCODE_TYPE_CASES = [
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([pa.array([1, 2, 3])], ["a"]),
+        error=RuntimeError,
+        error_msg_regex="Expected ListArray or LargeListArray"),
+    dict(
+        record_batch=pa.RecordBatch.from_arrays(
+            [pa.array([[True], [False]], type=pa.large_list(pa.bool_()))],
+            ["a"]),
+        error=RuntimeError,
+        error_msg_regex="Bad field type"),
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[1.0, 2.0], None, None, []],
+                     type=pa.large_list(pa.float32())),
+        ], ["x", "x"]),
+        error=RuntimeError,
+        error_msg_regex="RecordBatch contains duplicate column names")
+]
+
+
+class RecordBatchToExamplesTest(parameterized.TestCase):
+
+  @parameterized.parameters(*_ENCODE_CASES)
+  def test_encode(self, record_batch, examples_text_proto):
+    expected_examples = [
+        text_format.Parse(pbtxt, tf.train.Example())
+        for pbtxt in examples_text_proto
+    ]
+    actual_examples = [
+        tf.train.Example.FromString(encoded)
+        for encoded in example_coder.RecordBatchToExamples(record_batch)
+    ]
+
+    self.assertEqual(actual_examples, expected_examples)
+
+  @parameterized.parameters(*_INVALID_ENCODE_TYPE_CASES)
+  def test_invalid_input(self, record_batch, error, error_msg_regex):
+    with self.assertRaisesRegex(error, error_msg_regex):
+      example_coder.RecordBatchToExamples(record_batch)
+
+
 if __name__ == "__main__":
   absltest.main()

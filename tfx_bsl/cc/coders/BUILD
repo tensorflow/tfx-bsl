@@ -7,7 +7,10 @@ licenses(["notice"])
 
 cc_library(
     name = "example_coder",
-    srcs = ["example_coder.cc"],
+    srcs = [
+        "example_decoder.cc",
+        "example_encoder.cc",
+    ],
     hdrs = ["example_coder.h"],
     deps = [
         "@com_google_protobuf//:protobuf_lite",
@@ -24,20 +27,6 @@ cc_library(
         # //third_party/tensorflow_expose_example_proto.patch
         "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",
         "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
-    ],
-)
-
-cc_test(
-    name = "example_coder_test",
-    srcs = ["example_coder_test.cc"],
-    deps = [
-        ":example_coder",
-        "//tfx_bsl/cc/util:status",
-        "@arrow",
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
-        "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",
     ],
 )
 
