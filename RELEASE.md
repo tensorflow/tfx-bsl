@@ -6,7 +6,7 @@
 
 ## Bug Fixes and Other Changes
 
-*   Depends on `apache-beam[gcp]>=2.27,<3`.
+*   Depends on `apache-beam[gcp]>=2.28,<3`.
 
 ## Breaking Changes
 
