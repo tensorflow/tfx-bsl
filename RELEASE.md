@@ -1,19 +1,12 @@
-# Version 0.28.0
+# Version 0.28.1
 
 ## Major Features and Improvements
 
-*   RunInference can now be applied on serialized tf.train.{Example,
-    SequenceExample} for all methods as well as any other kind of serialized
-    structure for the Predict method.
-*   RunInference can now operate on PCollection[K, V] in a key-forwarding mode
-    (whereby the key is left unchanged while inference is performed on the
-    value).
-*   RunInference is now more performant.
+*   N/A
 
 ## Bug Fixes and Other Changes
 
-*   Depends on `numpy>=1.16,<1.20`.
-*   Depends on `tensorflow-metadata>=0.28,<0.29`.
+*   Depends on `apache-beam[gcp]>=2.28,<3`.
 
 ## Breaking Changes
 
