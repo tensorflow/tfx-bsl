@@ -162,7 +162,7 @@ setup(
     # six, and protobuf) with TF.
     install_requires=[
         'absl-py>=0.9,<0.11',
-        'apache-beam[gcp]>=2.27,<3',
+        'apache-beam[gcp]>=2.28,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<1.20',
         'pandas>=1.0,<2',
