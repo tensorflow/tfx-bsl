@@ -21,21 +21,25 @@ import tensorflow as tf
 from tfx_bsl.arrow import path
 from tensorflow_metadata.proto.v0 import schema_pb2
 
+if tf.__version__ < "2":
+  # TF1 doesn't have tf.io.RaggedFeature.
+  IOFeatures = Union[tf.io.VarLenFeature, tf.io.SparseFeature,
+                     tf.io.FixedLenFeature]
+else:
+  IOFeatures = Union[tf.io.VarLenFeature, tf.io.SparseFeature,
+                     tf.io.FixedLenFeature, tf.io.RaggedFeature]
 
 _DEFAULT_TENSOR_REPRESENTATION_GROUP = ""
 
 _DISQUALIFYING_LIFECYCLE_STAGES = [
-    schema_pb2.DEPRECATED,
-    schema_pb2.PLANNED,
-    schema_pb2.ALPHA,
+    schema_pb2.DEPRECATED, schema_pb2.PLANNED, schema_pb2.ALPHA,
     schema_pb2.DEBUG_ONLY
 ]
 
 # The schema proto may not contain this field, which means the legacy logic
 # does not apply.
-_IS_LEGACY_SCHEMA = (
-    "generate_legacy_feature_spec" in
-    schema_pb2.Schema.DESCRIPTOR.fields_by_name)
+_IS_LEGACY_SCHEMA = ("generate_legacy_feature_spec" in
+                     schema_pb2.Schema.DESCRIPTOR.fields_by_name)
 
 _LEGACY_DEFAULT_VALUE_FOR_FEATURE_TYPE = {
     schema_pb2.BYTES:
@@ -68,6 +72,18 @@ def _GetSparseTensorRepresentationUsedColumns(
   return result
 
 
+def _GetRaggedTensorRepresentationUsedColumns(
+    ragged_tensor_rep: schema_pb2.TensorRepresentation.RaggedTensor
+) -> List[path.ColumnPath]:
+  """Returns a list of ColumnPaths used by the Ragged TensorRepresentation."""
+  value_column_path = path.ColumnPath.from_proto(ragged_tensor_rep.feature_path)
+  result = [value_column_path]
+  for partition in ragged_tensor_rep.partition:
+    if partition.HasField("row_length"):
+      result.append(value_column_path.parent().child(partition.row_length))
+  return result
+
+
 _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER = {
     "dense_tensor":
         lambda tr: [path.ColumnPath(tr.dense_tensor.column_name)],
@@ -76,7 +92,7 @@ _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER = {
     "sparse_tensor":
         lambda tr: _GetSparseTensorRepresentationUsedColumns(tr.sparse_tensor),
     "ragged_tensor":
-        lambda tr: [path.ColumnPath.from_proto(tr.ragged_tensor.feature_path)],
+        lambda tr: _GetRaggedTensorRepresentationUsedColumns(tr.ragged_tensor),
     None:
         lambda _: [],
 }
@@ -97,7 +113,7 @@ def SetTensorRepresentationsInSchema(
     schema: schema_pb2.Schema,
     tensor_representations: Mapping[Text, schema_pb2.TensorRepresentation],
     tensor_representation_group_name: Text = _DEFAULT_TENSOR_REPRESENTATION_GROUP
-    ) -> None:
+) -> None:
   """Sets the TensorRepresentationGroup of the given name to the given value."""
   tensor_representation_map = schema.tensor_representation_group[
       tensor_representation_group_name].tensor_representation
@@ -119,6 +135,7 @@ def GetTensorRepresentationsFromSchema(
     schema: a schema_pb2.Schema.
     tensor_representation_group_name: (optional) the name of the group to look
       for. If not provided, look for the default name.
+
   Returns:
     None if not found. Otherwise a dict with tensor names being keys and
     TensorRepresentation as values.
@@ -144,11 +161,12 @@ def InferTensorRepresentationsFromSchema(
 
 def GetSourceColumnsFromTensorRepresentation(
     tensor_representation: schema_pb2.TensorRepresentation
-    ) -> List[path.ColumnPath]:
+) -> List[path.ColumnPath]:
   """Returns columns required by the given TensorRepresentation."""
 
   return _TENSOR_REPRESENTATION_KIND_TO_COLUMNS_GETTER[
-      tensor_representation.WhichOneof("kind")](tensor_representation)
+      tensor_representation.WhichOneof("kind")](
+          tensor_representation)
 
 
 def GetSourceValueColumnFromTensorRepresentation(
@@ -176,7 +194,8 @@ def GetSourceValueColumnFromTensorRepresentation(
 def CreateTfExampleParserConfig(
     tensor_representation: schema_pb2.TensorRepresentation,
     feature_type: schema_pb2.FeatureType
-) -> Union[tf.io.VarLenFeature, tf.io.SparseFeature, tf.io.FixedLenFeature]:
+) -> ("Union[tf.io.VarLenFeature, tf.io.SparseFeature, tf.io.FixedLenFeature, "
+      "tf.io.RaggedFeature]"):
   """Creates a Feature Configuration that is used for tf.io.parse_example.
 
   Args:
@@ -216,8 +235,42 @@ def CreateTfExampleParserConfig(
         value_key=sparse_tensor_rep.value_column_name,
         dtype=value_dtype,
         size=_GetDimsFromFixedShape(sparse_tensor_rep.dense_shape))
+  elif tensor_representation_kind == "ragged_tensor":
+    if not hasattr(tf.io, "RaggedFeature"):
+      raise NotImplementedError("TF1 does not support parsing ragged tensors.")
+    ragged_tensor_rep = tensor_representation.ragged_tensor
+    if (ragged_tensor_rep.row_partition_dtype ==
+        schema_pb2.TensorRepresentation.RowPartitionDType.INT32):
+      row_splits_dtype = tf.int32
+    else:
+      row_splits_dtype = tf.int64
+
+    partitions = []
+    if len(ragged_tensor_rep.feature_path.step) > 1:
+      raise ValueError(
+          "Parsing spec from a RaggedTensor with multiple steps in "
+          "feature_path is not implemented.")
+    if not ragged_tensor_rep.feature_path.step:
+      raise ValueError("RaggedTensor representation with empty feature_path.")
+    for partition in ragged_tensor_rep.partition:
+      if partition.HasField("uniform_row_length"):
+        partitions.append(
+            tf.io.RaggedFeature.UniformRowLength(  # pytype:disable=attribute-error
+                partition.uniform_row_length))
+      elif partition.HasField("row_length"):
+        partitions.append(
+            tf.io.RaggedFeature.RowLengths(  # pytype:disable=attribute-error
+                partition.row_length))
+      else:
+        raise NotImplementedError(
+            "RaggedTensor partition type not implemented: {}.".format(
+                partition.WhichOneof("kind")))
+    return tf.io.RaggedFeature(
+        dtype=value_dtype,
+        value_key=ragged_tensor_rep.feature_path.step[0],
+        partitions=partitions,
+        row_splits_dtype=row_splits_dtype)
   else:
-    # TODO(b/159939495): Implement support for ragged tensor.
     raise NotImplementedError(
         "TensorRepresentation: {} is not supported.".format(
             tensor_representation_kind))
@@ -250,10 +303,13 @@ def _InferTensorRepresentationFromSchema(
     ValueError: if the feature has a fixed shape but is not always present.
   """
   result = {}
+  columns_remaining = {f.name: f for f in schema.feature}
+
   sparse_tensor_repsentations, columns_remaining = (
-      _InferSparseTensorRepresentationsFromSchema(schema))
+      _InferSparseTensorRepresentationsFromSchema(schema, columns_remaining))
   result.update(sparse_tensor_repsentations)
-  for feature in columns_remaining:
+
+  for feature in columns_remaining.values():
     if not _ShouldIncludeFeature(feature):
       continue
     if feature.HasField("shape"):
@@ -278,17 +334,17 @@ def _InferTensorRepresentationFromSchema(
 
 
 def _InferSparseTensorRepresentationsFromSchema(
-    schema: schema_pb2.Schema
-) -> Tuple[Dict[Text, schema_pb2.TensorRepresentation],
-           List[schema_pb2.Feature]]:
+    schema: schema_pb2.Schema, columns_remaining: Dict[str, schema_pb2.Feature]
+) -> Tuple[Dict[Text, schema_pb2.TensorRepresentation], Dict[
+    str, schema_pb2.Feature]]:
   """Infers SparseTensor TensorRepresentation from the given schema."""
-  columns_remaining = {f.name: f for f in schema.feature}
   sparse_tensor_representations = {}
   for sparse_feature in schema.sparse_feature:
     if not _ShouldIncludeFeature(sparse_feature):
       continue
     index_keys = [
-        index_feature.name for index_feature in sparse_feature.index_feature]
+        index_feature.name for index_feature in sparse_feature.index_feature
+    ]
     index_features = []
     for index_key in index_keys:
       try:
@@ -342,7 +398,7 @@ def _InferSparseTensorRepresentationsFromSchema(
                 index_column_names=index_keys,
                 value_column_name=value_key)))
 
-  return sparse_tensor_representations, list(columns_remaining.values())
+  return sparse_tensor_representations, columns_remaining
 
 
 def _ShouldUseLegacyLogic(schema: schema_pb2.Schema) -> bool:
@@ -406,8 +462,8 @@ def _LegacyInferTensorRepresentationFromSchema(
               feature.name, feature.value_count.max))
 
     # Use heuristics to infer the shape and representation.
-    if (feature.value_count.min == feature.value_count.max
-        and feature.value_count.min == 1):
+    if (feature.value_count.min == feature.value_count.max and
+        feature.value_count.min == 1):
       # Case 1: value_count.min == value_count.max == 1.  Infer a DenseTensor
       # with rank 0 and a default value.
       logging.info(
@@ -419,8 +475,8 @@ def _LegacyInferTensorRepresentationFromSchema(
               shape=schema_pb2.FixedShape(),
               default_value=_LegacyInferDefaultValue(feature)))
 
-    elif (feature.value_count.min == feature.value_count.max
-          and feature.value_count.min > 1):
+    elif (feature.value_count.min == feature.value_count.max and
+          feature.value_count.min > 1):
       # Case 2: value_count.min == value_count.max > 1.  Infer a DenseTensor
       # with rank 1 and a default value.
       shape = schema_pb2.FixedShape(
@@ -430,7 +486,8 @@ def _LegacyInferTensorRepresentationFromSchema(
           "DenseTensor.", feature.name)
       result[feature.name] = schema_pb2.TensorRepresentation(
           dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
-              column_name=feature.name, shape=shape,
+              column_name=feature.name,
+              shape=shape,
               default_value=_LegacyInferDefaultValue(feature)))
 
     else:
@@ -441,9 +498,8 @@ def _LegacyInferTensorRepresentationFromSchema(
           "value_count.min == value_count.max == 0. "
           "Setting to VarLenSparseTensor.", feature.name)
       result[feature.name] = schema_pb2.TensorRepresentation(
-          varlen_sparse_tensor=
-          schema_pb2.TensorRepresentation.VarLenSparseTensor(
-              column_name=feature.name))
+          varlen_sparse_tensor=schema_pb2.TensorRepresentation
+          .VarLenSparseTensor(column_name=feature.name))
 
   return result
 

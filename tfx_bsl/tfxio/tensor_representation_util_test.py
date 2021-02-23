@@ -14,6 +14,7 @@
 """Tests for tfx_bsl.tfxio.tensor_representation_util."""
 
 import sys
+import unittest
 
 import numpy as np
 import tensorflow as tf
@@ -27,11 +28,8 @@ from absl.testing import parameterized
 from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_metadata.proto.v0 import schema_pb2
 
-
-_IS_LEGACY_SCHEMA = (
-    'generate_legacy_feature_spec' in
-    schema_pb2.Schema.DESCRIPTOR.fields_by_name)
-
+_IS_LEGACY_SCHEMA = ('generate_legacy_feature_spec' in
+                     schema_pb2.Schema.DESCRIPTOR.fields_by_name)
 
 _ALL_EXAMPLE_CODER_TYPES = {
     schema_pb2.FeatureType.INT: tf.int64,
@@ -216,12 +214,11 @@ _INFER_TEST_CASES = [
     }
 ]
 
-_LEGACY_INFER_TEST_CASES = [
-    {
-        'testcase_name':
-            'fixed_len_scalar_no_default_legacy',
-        'ascii_proto':
-            """
+_LEGACY_INFER_TEST_CASES = [{
+    'testcase_name':
+        'fixed_len_scalar_no_default_legacy',
+    'ascii_proto':
+        """
           feature: {
             name: "dummy" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
@@ -231,9 +228,9 @@ _LEGACY_INFER_TEST_CASES = [
             presence: {min_fraction: 1}
           }
         """,
-        'expected': {
-            'dummy':
-                """
+    'expected': {
+        'dummy':
+            """
               dense_tensor {
                 column_name: "dummy"
                 shape {
@@ -242,22 +239,21 @@ _LEGACY_INFER_TEST_CASES = [
                   int_value: -1
                 }
               }""",
-            'x':
-                """
+        'x':
+            """
               dense_tensor {
                 column_name: "x"
                 shape {
                 }
               }""",
-        },
-        'generate_legacy_feature_spec':
-            True,
     },
-    {
-        'testcase_name':
-            'fixed_len_vector_no_default_legacy',
-        'ascii_proto':
-            """
+    'generate_legacy_feature_spec':
+        True,
+}, {
+    'testcase_name':
+        'fixed_len_vector_no_default_legacy',
+    'ascii_proto':
+        """
           feature: {
             name: "dummy" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
@@ -267,9 +263,9 @@ _LEGACY_INFER_TEST_CASES = [
             presence: {min_fraction: 1}
           }
         """,
-        'expected': {
-            'dummy':
-                """
+    'expected': {
+        'dummy':
+            """
               dense_tensor {
                 column_name: "dummy"
                 shape {
@@ -278,8 +274,8 @@ _LEGACY_INFER_TEST_CASES = [
                   int_value: -1
                 }
               }""",
-            'x':
-                """
+        'x':
+            """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -288,15 +284,14 @@ _LEGACY_INFER_TEST_CASES = [
                   }
                 }
               }""",
-        },
-        'generate_legacy_feature_spec':
-            True,
     },
-    {
-        'testcase_name':
-            'var_len_legacy',
-        'ascii_proto':
-            """
+    'generate_legacy_feature_spec':
+        True,
+}, {
+    'testcase_name':
+        'var_len_legacy',
+    'ascii_proto':
+        """
           feature: {
             name: "dummy" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
@@ -305,9 +300,9 @@ _LEGACY_INFER_TEST_CASES = [
             name: "x" type: INT
           }
         """,
-        'expected': {
-            'dummy':
-                """
+    'expected': {
+        'dummy':
+            """
               dense_tensor {
                 column_name: "dummy"
                 shape {
@@ -316,29 +311,28 @@ _LEGACY_INFER_TEST_CASES = [
                   int_value: -1
                 }
               }""",
-            'x':
-                """
+        'x':
+            """
               varlen_sparse_tensor {
                 column_name: "x"
               }
             """
-        },
-        'generate_legacy_feature_spec':
-            True,
     },
-    {
-        'testcase_name':
-            'fixed_len_scalar_int_with_default_legacy',
-        'ascii_proto':
-            """
+    'generate_legacy_feature_spec':
+        True,
+}, {
+    'testcase_name':
+        'fixed_len_scalar_int_with_default_legacy',
+    'ascii_proto':
+        """
           feature: {
             name: "x" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
           }
         """,
-        'expected': {
-            'x':
-                """
+    'expected': {
+        'x':
+            """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -348,23 +342,22 @@ _LEGACY_INFER_TEST_CASES = [
                 }
               }
             """
-        },
-        'generate_legacy_feature_spec':
-            True,
     },
-    {
-        'testcase_name':
-            'fixed_len_scalar_string_with_default_legacy',
-        'ascii_proto':
-            """
+    'generate_legacy_feature_spec':
+        True,
+}, {
+    'testcase_name':
+        'fixed_len_scalar_string_with_default_legacy',
+    'ascii_proto':
+        """
           feature: {
             name: "x" type: BYTES value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
           }
         """,
-        'expected': {
-            'x':
-                """
+    'expected': {
+        'x':
+            """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -374,23 +367,22 @@ _LEGACY_INFER_TEST_CASES = [
                 }
               }
             """
-        },
-        'generate_legacy_feature_spec':
-            True,
     },
-    {
-        'testcase_name':
-            'fixed_len_scalar_float_with_default_legacy',
-        'ascii_proto':
-            """
+    'generate_legacy_feature_spec':
+        True,
+}, {
+    'testcase_name':
+        'fixed_len_scalar_float_with_default_legacy',
+    'ascii_proto':
+        """
           feature: {
             name: "x" type: FLOAT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
           }
         """,
-        'expected': {
-            'x':
-                """
+    'expected': {
+        'x':
+            """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -400,19 +392,18 @@ _LEGACY_INFER_TEST_CASES = [
                 }
               }
             """
-        },
-        'generate_legacy_feature_spec':
-            True,
     },
-    {
-        'testcase_name': 'deprecated_feature_legacy',
-        'ascii_proto': '''
+    'generate_legacy_feature_spec':
+        True,
+}, {
+    'testcase_name':
+        'deprecated_feature_legacy',
+    'ascii_proto':
+        """
           feature: {name: "x" type: INT deprecated: true}
-        ''',
-        'expected': {},
-    }
-]
-
+        """,
+    'expected': {},
+}]
 
 _INVALID_SCHEMA_INFER_TEST_CASES = [
     dict(
@@ -568,6 +559,20 @@ _GET_SOURCE_COLUMNS_TEST_CASES = [
         """,
         expected=[['idx1'], ['idx2'], ['value']],
     ),
+    dict(
+        testcase_name='ragged_tensor',
+        pbtxt="""
+          ragged_tensor {
+            feature_path {
+              step: "value"
+            }
+            partition { row_length: "row_length_1" }
+            partition { uniform_row_length: 2 }
+            partition { row_length: "row_length_2" }
+          }
+        """,
+        expected=[['value'], ['row_length_1'], ['row_length_2']],
+    ),
 ]
 
 _GET_SOURCE_VALUE_COLUMNS_TEST_CASES = [
@@ -609,6 +614,7 @@ _GET_SOURCE_VALUE_COLUMNS_TEST_CASES = [
             feature_path {
               step: "my_column"
             }
+            partition { row_length: "row_length" }
           }
         """,
         expected='my_column',
@@ -784,9 +790,77 @@ def _MakeSparseFeatureTestCases():
   return result
 
 
+def _MakeRaggedFeatureTestCases():
+  result = []
+  if tf.__version__ < '2':
+    # Skip the RaggedFeature tests as it wasn't available on TF1.
+    return result
+
+  tensor_representation_textpb = """
+    ragged_tensor {
+      feature_path { step: "value" }
+      partition { row_length: "row_length" }
+      row_partition_dtype: INT32
+    }"""
+  if tf.executing_eagerly():
+    ragged_tensor_factory = tf.RaggedTensor.from_row_splits
+  else:
+    ragged_tensor_factory = tf.compat.v1.ragged.RaggedTensorValue
+  example_textpb = """
+  features {{
+    feature {{
+      key: "value"
+      value {{ {0} }}
+    }}
+    feature {{
+      key: "row_length"
+      value {{ int64_list {{ value: [3, 1] }} }}
+    }}
+  }}
+  """
+  for t, dtype in _ALL_EXAMPLE_CODER_TYPES.items():
+    if t == schema_pb2.FeatureType.FLOAT:
+      value_textpb = """float_list { value: [1.0, 2.0, 3.0, 4.0] }"""
+      expected_parsed_values = np.array([1.0, 2.0, 3.0, 4.0])
+    elif t == schema_pb2.FeatureType.INT:
+      value_textpb = """int64_list { value: [1, 2, 3, 4] }"""
+      expected_parsed_values = np.array([1, 2, 3, 4])
+    elif t == schema_pb2.FeatureType.BYTES:
+      value_textpb = """bytes_list { value: ['one', 'two', 'three', 'four'] }"""
+      expected_parsed_values = np.array([b'one', b'two', b'three', b'four'])
+    expected_parsed_results = ragged_tensor_factory(
+        values=expected_parsed_values,
+        row_splits=np.array([0, 3, 4], dtype=np.int32))
+
+    expected_feature = tf.io.RaggedFeature(
+        value_key='value',
+        dtype=dtype,
+        partitions=(tf.io.RaggedFeature.RowLengths('row_length'),),
+        row_splits_dtype=tf.int32)
+
+    result.append({
+        'testcase_name':
+            'RaggedFeature_{}'.format(schema_pb2.FeatureType.Name(t)),
+        'tensor_representation':
+            tensor_representation_textpb,
+        'feature_type':
+            t,
+        'tf_example':
+            text_format.Parse(
+                example_textpb.format(value_textpb),
+                tf.train.Example()).SerializeToString(),
+        'expected_feature':
+            expected_feature,
+        'expected_parsed_results':
+            expected_parsed_results
+    })
+  return result
+
+
 _PARSE_EXAMPLE_TEST_CASES = _MakeFixedLenFeatureTestCases(
 ) + _MakeFixedLenFeatureNoDefaultTestCases(
-) + _MakeVarLenSparseFeatureTestCases() + _MakeSparseFeatureTestCases()
+) + _MakeVarLenSparseFeatureTestCases() + _MakeSparseFeatureTestCases(
+) + _MakeRaggedFeatureTestCases()
 
 
 class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
@@ -809,8 +883,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
     }
     self.assertEqual(
         expected_protos,
-        tensor_representation_util.InferTensorRepresentationsFromSchema(
-            schema))
+        tensor_representation_util.InferTensorRepresentationsFromSchema(schema))
 
   @parameterized.named_parameters(*_INVALID_SCHEMA_INFER_TEST_CASES)
   def testInferTensorRepresentationsFromSchemaInvalidSchema(
@@ -828,7 +901,8 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
     self.assertIsNone(
         tensor_representation_util.GetTensorRepresentationsFromSchema(
             schema_pb2.Schema()))
-    schema = text_format.Parse("""
+    schema = text_format.Parse(
+        """
       tensor_representation_group {
         key: ""
         value {
@@ -875,8 +949,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
     # Checks that the parser configs can be used with tf.io.parse_example()
     actual_tensors = tf.io.parse_single_example(tf_example, {'feat': feature})
     actual = actual_tensors['feat']
-    if isinstance(actual, tf.SparseTensor) or isinstance(
-        actual, tf.compat.v1.SparseTensorValue):
+    if isinstance(actual, (tf.SparseTensor, tf.compat.v1.SparseTensorValue)):
       self.assertAllEqual(actual.values, expected_parsed_results.values)
       self.assertAllEqual(actual.indices, expected_parsed_results.indices)
       self.assertAllEqual(actual.dense_shape,
@@ -904,17 +977,20 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       tensor_representation_util.CreateTfExampleParserConfig(
           tensor_representation, feature_type)
 
+  @unittest.skipIf(tf.__version__ < '2', 'Skip for TF1.')
   def testCreateTfExampleParserConfigRagged(self):
     feature_type = schema_pb2.INT
     tensor_representation = text_format.Parse(
         """
                 ragged_tensor {
                   feature_path {
+                    step: "foo"
                     step: "ragged_feature"
                   }
                 }""", schema_pb2.TensorRepresentation())
-    with self.assertRaisesRegex(NotImplementedError,
-                                'TensorRepresentation: .* is not supported.'):
+    with self.assertRaisesRegex(
+        ValueError, ('Parsing spec from a RaggedTensor with multiple steps in '
+                     'feature_path is not implemented.')):
       tensor_representation_util.CreateTfExampleParserConfig(
           tensor_representation, feature_type)
 

@@ -46,7 +46,8 @@ class TensorAdapterConfig(object):
   # implementations.
   def __getstate__(self):
     return (self.arrow_schema, {
-        k: v.SerializeToString() for k, v in self.tensor_representations.items()
+        k: v.SerializeToString()
+        for k, v in self.tensor_representations.items()
     }, self.original_type_specs)
 
   def __setstate__(self, t):
@@ -79,14 +80,15 @@ class TensorAdapter(object):
       self.ToBatchedTensors(...)[tensor_name])
   """
 
-  __slots__ = ["_arrow_schema", "_type_handlers", "_type_specs",
-               "_original_type_specs"]
+  __slots__ = [
+      "_arrow_schema", "_type_handlers", "_type_specs", "_original_type_specs"
+  ]
 
   def __init__(self, config: TensorAdapterConfig):
 
     self._arrow_schema = config.arrow_schema
-    self._type_handlers = _BuildTypeHandlers(
-        config.tensor_representations, config.arrow_schema)
+    self._type_handlers = _BuildTypeHandlers(config.tensor_representations,
+                                             config.arrow_schema)
     self._type_specs = {
         tensor_name: handler.type_spec
         for tensor_name, handler in self._type_handlers
@@ -154,8 +156,8 @@ class TensorAdapter(object):
         result[tensor_name] = handler.GetTensor(record_batch,
                                                 produce_eager_tensors)
       except Exception as e:
-        raise ValueError("Error raised when handling tensor {}: {}"
-                         .format(tensor_name, e))
+        raise ValueError("Error raised when handling tensor {}: {}".format(
+            tensor_name, e))
 
     return result
 
@@ -200,8 +202,8 @@ class _TypeHandler(abc.ABC):
     self.type_spec.
 
     Args:
-      record_batch: a RecordBatch that is of the same Schema as what was
-        passed at initialization time.
+      record_batch: a RecordBatch that is of the same Schema as what was passed
+        at initialization time.
       produce_eager_tensors: if True, returns Eager Tensors, otherwise returns
         ndarrays or Tensor value objects.
 
@@ -212,17 +214,18 @@ class _TypeHandler(abc.ABC):
 
   @staticmethod
   @abc.abstractmethod
-  def CanHandle(
-      arrow_schema: pa.Schema,
-      tensor_representation: schema_pb2.TensorRepresentation) -> bool:
+  def CanHandle(arrow_schema: pa.Schema,
+                tensor_representation: schema_pb2.TensorRepresentation) -> bool:
     """Returns true if an instance of the handler can handle the combination."""
 
 
 class _BaseDenseTensorHandler(_TypeHandler):
   """Base class of DenseTensorHandlers."""
 
-  __slots__ = ["_column_index", "_dtype", "_shape", "_unbatched_flat_len",
-               "_convert_to_binary_fn"]
+  __slots__ = [
+      "_column_index", "_dtype", "_shape", "_unbatched_flat_len",
+      "_convert_to_binary_fn"
+  ]
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
@@ -308,8 +311,7 @@ class _DefaultFillingDenseTensorHandler(_BaseDenseTensorHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super().__init__(
-        arrow_schema, tensor_representation)
+    super().__init__(arrow_schema, tensor_representation)
     _, value_type = _GetNestDepthAndValueType(
         arrow_schema,
         path.ColumnPath(tensor_representation.dense_tensor.column_name))
@@ -326,10 +328,9 @@ class _DefaultFillingDenseTensorHandler(_BaseDenseTensorHandler):
   @staticmethod
   def CanHandle(arrow_schema: pa.Schema,
                 tensor_representation: schema_pb2.TensorRepresentation) -> bool:
-    return (
-        _BaseDenseTensorHandler.BaseCanHandle(
-            arrow_schema, tensor_representation)
-        and tensor_representation.dense_tensor.HasField("default_value"))
+    return (_BaseDenseTensorHandler.BaseCanHandle(arrow_schema,
+                                                  tensor_representation) and
+            tensor_representation.dense_tensor.HasField("default_value"))
 
 
 class _VarLenSparseTensorHandler(_TypeHandler):
@@ -339,8 +340,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super().__init__(
-        arrow_schema, tensor_representation)
+    super().__init__(arrow_schema, tensor_representation)
     column_name = tensor_representation.varlen_sparse_tensor.column_name
     self._column_index = arrow_schema.get_field_index(column_name)
     _, value_type = _GetNestDepthAndValueType(arrow_schema,
@@ -350,8 +350,9 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   @property
   def type_spec(self) -> tf.TypeSpec:
-    return typing.cast(tf.TypeSpec, tf.SparseTensorSpec(
-        tf.TensorShape([None, None]), self._dtype))
+    return typing.cast(
+        tf.TypeSpec,
+        tf.SparseTensorSpec(tf.TensorShape([None, None]), self._dtype))
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Any:
@@ -387,13 +388,14 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 class _SparseTensorHandler(_TypeHandler):
   """Handles conversion to SparseTensors."""
 
-  __slots__ = ["_index_column_indices", "_value_column_index", "_shape",
-               "_dtype", "_coo_size", "_convert_to_binary_fn"]
+  __slots__ = [
+      "_index_column_indices", "_value_column_index", "_shape", "_dtype",
+      "_coo_size", "_convert_to_binary_fn"
+  ]
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
-    super().__init__(
-        arrow_schema, tensor_representation)
+    super().__init__(arrow_schema, tensor_representation)
     sparse_representation = tensor_representation.sparse_tensor
     self._index_column_indices = tuple(
         arrow_schema.get_field_index(c)
@@ -402,17 +404,16 @@ class _SparseTensorHandler(_TypeHandler):
         sparse_representation.value_column_name)
     self._shape = [dim.size for dim in sparse_representation.dense_shape.dim]
     _, value_type = _GetNestDepthAndValueType(
-        arrow_schema,
-        path.ColumnPath(sparse_representation.value_column_name))
+        arrow_schema, path.ColumnPath(sparse_representation.value_column_name))
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._coo_size = len(self._shape) + 1
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
   def type_spec(self) -> tf.TypeSpec:
-    return typing.cast(tf.TypeSpec,
-                       tf.SparseTensorSpec(tf.TensorShape([None] + self._shape),
-                                           self._dtype))
+    return typing.cast(
+        tf.TypeSpec,
+        tf.SparseTensorSpec(tf.TensorShape([None] + self._shape), self._dtype))
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Any:
@@ -448,13 +449,12 @@ class _SparseTensorHandler(_TypeHandler):
         indices=coo_np, dense_shape=dense_shape, values=values_np)
 
   @staticmethod
-  def CanHandle(
-      arrow_schema: pa.Schema,
-      tensor_representation: schema_pb2.TensorRepresentation) -> bool:
+  def CanHandle(arrow_schema: pa.Schema,
+                tensor_representation: schema_pb2.TensorRepresentation) -> bool:
     """Returns whether `tensor_representation` can be handled."""
     sparse_representation = tensor_representation.sparse_tensor
-    if (len(sparse_representation.dense_shape.dim) !=
-        len(sparse_representation.index_column_names)):
+    if (len(sparse_representation.dense_shape.dim) != len(
+        sparse_representation.index_column_names)):
       return False
     if any([d.size <= 0 for d in sparse_representation.dense_shape.dim]):
       return False
@@ -467,8 +467,7 @@ class _SparseTensorHandler(_TypeHandler):
         return False
 
     depth, value_type = _GetNestDepthAndValueType(
-        arrow_schema,
-        path.ColumnPath(sparse_representation.value_column_name))
+        arrow_schema, path.ColumnPath(sparse_representation.value_column_name))
     return depth == 1 and _IsSupportedArrowValueType(value_type)
 
 
@@ -476,18 +475,57 @@ class _RaggedTensorHandler(_TypeHandler):
   """Handles conversion to RaggedTensors."""
 
   __slots__ = [
-      "_column_index", "_path", "_ragged_rank", "_dtype",
-      "_row_partition_dtype", "_convert_to_binary_fn"
+      "_column_index",
+      "_value_path",
+      "_dtype",
+      "_row_partition_dtype",
+      "_convert_to_binary_fn",
+      "_inner_fixed_shape",
+      "_values_fixed_shape",
+      "_inferred_dimensions_elements",
+      "_outer_ragged_rank",
+      "_ragged_partitions",
+      "_fixed_dimension_partitions",
   ]
 
   def __init__(self, arrow_schema: pa.Schema,
                tensor_representation: schema_pb2.TensorRepresentation):
     super().__init__(arrow_schema, tensor_representation)
     ragged_representation = tensor_representation.ragged_tensor
-    self._path = path.ColumnPath.from_proto(ragged_representation.feature_path)
-    self._column_index = arrow_schema.get_field_index(self._path.steps()[0])
-    self._ragged_rank, value_type = _GetNestDepthAndValueType(
-        arrow_schema, self._path)
+
+    self._value_path = path.ColumnPath.from_proto(
+        ragged_representation.feature_path)
+    self._column_index = arrow_schema.get_field_index(
+        ragged_representation.feature_path.step[0])
+    self._outer_ragged_rank, value_type = _GetNestDepthAndValueType(
+        arrow_schema, self._value_path)
+
+    # Split partitions to the ones defining Ragged dimensions and the ones
+    # defining the outer dimensions shape (through uniform row length
+    # partitions).
+    fixed_dimension = True
+    ragged_partitions = []
+    fixed_dimension_partitions = []
+    # Reverse through the partitions (from outer partition to inner), in order
+    # to extract the inner fixed shape of the resulting RaggedTensor.
+    for partition in reversed(ragged_representation.partition):
+      if partition.HasField("uniform_row_length") and fixed_dimension:
+        fixed_dimension_partitions.append(partition)
+      else:
+        fixed_dimension = False
+        ragged_partitions.append(partition)
+    self._ragged_partitions = ragged_partitions[::-1]
+    self._fixed_dimension_partitions = fixed_dimension_partitions[::-1]
+
+    inner_fixed_shape = []
+    inferred_dimensions_elements = 1
+    for partition in self._fixed_dimension_partitions:
+      inner_fixed_shape.append(partition.uniform_row_length)
+      inferred_dimensions_elements *= partition.uniform_row_length
+    self._inner_fixed_shape = inner_fixed_shape
+    self._values_fixed_shape = [-1] + inner_fixed_shape
+    self._inferred_dimensions_elements = inferred_dimensions_elements
+
     self._dtype = _ArrowTypeToTfDtype(value_type)
     self._row_partition_dtype = ragged_representation.row_partition_dtype
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
@@ -498,18 +536,18 @@ class _RaggedTensorHandler(_TypeHandler):
     if (self._row_partition_dtype ==
         schema_pb2.TensorRepresentation.RowPartitionDType.INT32):
       row_splits_dtype = tf.int32
+    ragged_rank = self._outer_ragged_rank + len(self._ragged_partitions)
+    shape = [None] * (ragged_rank + 1) + self._inner_fixed_shape
     return typing.cast(
         tf.TypeSpec,
-        tf.RaggedTensorSpec([None for _ in range(self._ragged_rank + 1)],
-                            self._dtype,
-                            ragged_rank=self._ragged_rank,
-                            row_splits_dtype=row_splits_dtype))
+        tf.RaggedTensorSpec(
+            shape,
+            self._dtype,
+            ragged_rank=ragged_rank,
+            row_splits_dtype=row_splits_dtype))
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Union[np.ndarray, tf.Tensor]:
-    column_path = self._path.suffix(1)
-    column = record_batch.column(self._column_index)
-    column_type = column.type
     if (self._row_partition_dtype ==
         schema_pb2.TensorRepresentation.RowPartitionDType.INT32):
       offsets_dtype = np.int32
@@ -518,9 +556,37 @@ class _RaggedTensorHandler(_TypeHandler):
           self._row_partition_dtype ==
           schema_pb2.TensorRepresentation.RowPartitionDType.UNSPECIFIED):
       offsets_dtype = np.int64
-    row_splits = []
+
+    if produce_eager_tensors:
+      factory = tf.RaggedTensor.from_row_splits
+    else:
+      factory = tf.compat.v1.ragged.RaggedTensorValue
+
+    # A RaggedTensor is composed by the following dimensions:
+    # [B, D_0, D_1, ..., D_N, P_0, P_1, ..., P_M, U_0, U_1, ..., U_P]
+    #
+    # These dimensions belong to different categories:
+    # * B: Batch size dimension
+    # * D_n: Dimensions specified by the nested structure from the schema and
+    # the column path to the values. n >= 1.
+    # * P_m: Dimensions specified by the partitions that do not specify a fixed
+    # dimension size. m >= 0.
+    # * U_p: Dimensions specified by the inner uniform row length partitions
+    # that make the inner dimensions fixed. p>=0.
 
     # Get row splits of each level in the record batch.
+    # Store the row splits for the Dn dimensions that store the representation
+    # of the nested structure on the dataset schema.
+    outer_row_splits = []
+
+    column_path = self._value_path.suffix(1)
+    column = record_batch.column(self._column_index)
+    column_type = column.type
+    # Keep track of an accessor for the parent struct, so we can access other
+    # fields required to get future dimensions row splits.
+    parent_field_accessor = lambda field: record_batch.column(  # pylint:disable=g-long-lambda
+        record_batch.schema.get_field_index(field))
+
     while True:
       # TODO(b/156514075): add support for handling slices.
       if column.offset != 0:
@@ -528,31 +594,112 @@ class _RaggedTensorHandler(_TypeHandler):
             "This record batch is sliced. We currently do not handle converting"
             " slices to RaggedTensors.")
       if pa.types.is_struct(column_type):
+        parent_column = column
+        parent_field_accessor = parent_column.field
         column = column.field(column_path.initial_step())
         column_path = column_path.suffix(1)
         column_type = column.type
       elif _IsListLike(column_type):
-        row_splits.append(np.asarray(column.offsets, dtype=offsets_dtype))
+        outer_row_splits.append(np.asarray(column.offsets, dtype=offsets_dtype))
         column = column.flatten()
         column_type = column.type
       else:
         break
 
+    # Now that we have stored the row splits for the Dn dimensions, lets
+    # start the construction of the RaggedTensor from the inner dimensions to
+    # the outermost.
+
+    # Take the values and set the shape for the inner most dimensions (Up)
     values = column
     if self._convert_to_binary_fn is not None:
       values = self._convert_to_binary_fn(values)
     values = np.asarray(values)
+    values = np.reshape(values, self._values_fixed_shape)
 
-    if produce_eager_tensors:
-      factory = tf.RaggedTensor.from_row_splits
-    else:
-      factory = tf.compat.v1.ragged.RaggedTensorValue
+    ragged_tensor = values
 
-    result = values
-    for row_split in reversed(row_splits):
-      result = factory(values=result, row_splits=row_split)
+    # Build the RaggedTensor from the values and the specified partitions.
 
-    return result
+    # Now iterate from inner most partitions to outermost.
+    # But first we need pop the last row split from the outer dimensions (D_n)
+    # and scale it given the number of elements in the inner fixed dimensions.
+    try:
+      outer_last_row_split = _FloorDivide(outer_row_splits.pop(),
+                                          self._inferred_dimensions_elements)
+    except RuntimeError as e:
+      raise ValueError(
+          ("The values features lenghts cannot support "
+           "the claimed fixed shape {}").format(self._inner_fixed_shape)) from e
+
+    # Keep track of the previous dimension to help building row splits when an
+    # uniform row length partition is found.
+    prev_dimension = values.shape[0]
+    for partition in reversed(self._ragged_partitions):
+      if partition.HasField("uniform_row_length"):
+        # If a uniform row length partition is found, we need to scale down the
+        # last outer dimension row split.
+        try:
+          outer_last_row_split = _FloorDivide(outer_last_row_split,
+                                              partition.uniform_row_length)
+        except RuntimeError as e:
+          raise ValueError(("The values features lengths cannnot support the "
+                            "specified uniform row length of size {}").format(
+                                partition.uniform_row_length)) from e
+
+        row_splits = np.arange(
+            0,
+            prev_dimension + 1,
+            partition.uniform_row_length,
+            dtype=offsets_dtype)
+
+        ragged_tensor = factory(ragged_tensor, row_splits=row_splits)
+        try:
+          prev_dimension = _FloorDivide(prev_dimension,
+                                        partition.uniform_row_length)
+        except RuntimeError as e:
+          raise ValueError(
+              ("The previous ragged partitions contained {} elements, "
+               "which are not valid with the specified uniform row length: {}"
+              ).format(prev_dimension, partition.uniform_row_length)) from e
+
+      elif partition.HasField("row_length"):
+        row_length_array = parent_field_accessor(partition.row_length)
+
+        # When the outer most dimension specified by the partitions (P_0) comes
+        # from another array other than values, we need to update the last
+        # dimension row splits defined by the nested structure (D_n) given the
+        # offsets of the array.
+        outer_last_row_split = np.asarray(
+            row_length_array.offsets, dtype=offsets_dtype)
+
+        # Build row splits.
+        row_length = np.asarray(row_length_array.flatten())
+        row_splits = np.zeros(len(row_length) + 1, dtype=offsets_dtype)
+        np.cumsum(row_length, out=row_splits[1:])
+
+        if prev_dimension != row_splits[-1]:
+          raise ValueError(
+              ("The sum of row lengts provided in '{}' do not match "
+               "with previous dimension found {}.").format(
+                   partition.row_length, prev_dimension))
+
+        ragged_tensor = factory(ragged_tensor, row_splits=row_splits)
+        prev_dimension = len(row_length)
+
+      else:
+        raise ValueError("Empty partition found.")
+
+    # Add back the last row split from the outer dimensions (D_n).
+    outer_row_splits.append(outer_last_row_split)
+
+    # Apply the outer ragged dimensions to thre resulting tensor.
+    # Now that the RaggedTensor is build up to the P_0 dimensions, we need to
+    # specify the row splits for the D_n dimensions.
+    for row_split in reversed(outer_row_splits):
+      ragged_tensor = factory(ragged_tensor, row_splits=row_split)
+
+    return ragged_tensor
 
   @staticmethod
   def CanHandle(arrow_schema: pa.Schema,
@@ -563,19 +710,23 @@ class _RaggedTensorHandler(_TypeHandler):
     1. Wrong column name / field name requested.
     2. Non-leaf field is requested (for StructTypes).
     3. There does not exist a ListType along the path.
+    4. Requested partitions paths are not an integer values or doesn't exist.
 
     Args:
       arrow_schema: The pyarrow schema.
       tensor_representation: The TensorRepresentation proto.
     """
+    ragged_tensor = tensor_representation.ragged_tensor
+    if len(ragged_tensor.feature_path.step) < 1:
+      return False
 
+    value_path = path.ColumnPath.from_proto(ragged_tensor.feature_path)
+
+    # Checking the outer dimensions represented by the value feature path.
     contains_list = False
     try:
       arrow_type = None
-      for arrow_type in _EnumerateTypesAlongPath(
-          arrow_schema,
-          path.ColumnPath.from_proto(
-              tensor_representation.ragged_tensor.feature_path)):
+      for arrow_type in _EnumerateTypesAlongPath(arrow_schema, value_path):
         if _IsListLike(arrow_type):
           contains_list = True
       if pa.types.is_struct(arrow_type):
@@ -585,8 +736,39 @@ class _RaggedTensorHandler(_TypeHandler):
     except ValueError:
       # ValueError signifies wrong column name / field name requested.
       return False
+    if not contains_list:
+      return False
 
-    return contains_list
+    # Check the auxiliar features that need to be accessed to form the inner
+    # dimensions partitions.
+    parent_path = value_path.parent()
+
+    # Check the columns exists and have correct depth and type.
+    for partition in ragged_tensor.partition:
+      if partition.HasField("row_length"):
+        try:
+          field_path = parent_path.child(partition.row_length)
+          # To avoid loop undefined variable lint error.
+          partition_type = arrow_schema.field(field_path.initial_step()).type
+          for partition_type in _EnumerateTypesAlongPath(
+              arrow_schema, field_path, stop_at_path_end=True):
+            # Iterate through them all. Only interested on the last type.
+            pass
+          if not _IsListLike(partition_type) or not pa.types.is_integer(
+              partition_type.value_type):
+            return False
+        except ValueError:
+          # ValueError signifies wrong column name / field name requested.
+          return False
+
+      elif partition.HasField("uniform_row_length"):
+        if partition.uniform_row_length <= 0:
+          return False
+      else:
+        return False
+
+    # All checks passed successfully.
+    return True
 
 
 # Mapping from TensorRepresentation's "kind" oneof field name to TypeHandler
@@ -638,7 +820,6 @@ def _GetNestDepthAndValueType(
   Args:
     arrow_schema: The arrow schema to traverse.
     column_path: A path of field names. The path must describe a leaf struct.
-
   Returns: A Tuple of depth and arrow type
   """
   arrow_type = arrow_schema.field(column_path.steps()[0]).type
@@ -652,7 +833,8 @@ def _GetNestDepthAndValueType(
 
 
 def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
-                             column_path: path.ColumnPath) -> pa.DataType:
+                             column_path: path.ColumnPath,
+                             stop_at_path_end: bool = False) -> pa.DataType:
   """Enumerates nested types along a column_path.
 
   A nested type is either a list-like type or a struct type.
@@ -667,6 +849,9 @@ def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
   Args:
     arrow_schema: The arrow schema to traverse.
     column_path: A path of field names.
+    stop_at_path_end: Whether to stop enumerating when all paths in the
+      column_path have been visited. This will avoid keep enumerating on lists
+      nesteness.
 
   Yields:
     The arrow type of each level in the schema.
@@ -684,6 +869,8 @@ def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
   yield arrow_type
 
   while True:
+    if stop_at_path_end and not column_path:
+      break
     if pa.types.is_struct(arrow_type):
       # get the field from the StructType
       if not column_path:
@@ -717,8 +904,7 @@ def _IsBinaryLike(arrow_type: pa.DataType) -> bool:
 
 
 def _IsSupportedArrowValueType(arrow_type: pa.DataType) -> bool:
-  return (pa.types.is_integer(arrow_type) or
-          pa.types.is_floating(arrow_type) or
+  return (pa.types.is_integer(arrow_type) or pa.types.is_floating(arrow_type) or
           _IsBinaryLike(arrow_type))
 
 
@@ -761,9 +947,9 @@ def _GetDefaultFill(
   """Returns an Array full of the default value given in the proto."""
 
   size = int(np.prod(unbatched_shape, initial=1))
-  return pa.array([
-      _GetAllowedDefaultValue(value_type, default_value_proto)] * size,
-                  type=value_type)
+  return pa.array(
+      [_GetAllowedDefaultValue(value_type, default_value_proto)] * size,
+      type=value_type)
 
 
 def _GetConvertToBinaryFn(
@@ -775,3 +961,11 @@ def _GetConvertToBinaryFn(
   if pa.types.is_large_string(array_type):
     return lambda array: array.view(pa.large_binary())
   return None
+
+
+def _FloorDivide(array: np.ndarray, num_elements: int) -> np.ndarray:
+  result, remainder = np.divmod(array, num_elements)
+  if not np.all(remainder == 0):
+    raise RuntimeError(
+        "Remainder found when dividing array with {}.".format(num_elements))
+  return result

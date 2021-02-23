@@ -26,14 +26,21 @@ from absl.testing import parameterized
 from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_metadata.proto.v0 import schema_pb2
 
-
 _ALL_SUPPORTED_INT_VALUE_TYPES = [
-    pa.int8(), pa.int16(), pa.int32(), pa.int64(),
-    pa.uint8(), pa.uint16(), pa.uint32(), pa.uint64(),
+    pa.int8(),
+    pa.int16(),
+    pa.int32(),
+    pa.int64(),
+    pa.uint8(),
+    pa.uint16(),
+    pa.uint32(),
+    pa.uint64(),
 ]
 _ALL_SUPPORTED_FLOATING_VALUE_TYPES = [pa.float32(), pa.float64()]
 _ALL_SUPPORTED_STRING_VALUE_TYPES = [
-    pa.binary(), pa.large_binary(), pa.string(), pa.large_string()]
+    pa.binary(), pa.large_binary(),
+    pa.string(), pa.large_string()
+]
 _ALL_SUPPORTED_VALUE_TYPES = (
     _ALL_SUPPORTED_INT_VALUE_TYPES + _ALL_SUPPORTED_FLOATING_VALUE_TYPES +
     _ALL_SUPPORTED_STRING_VALUE_TYPES)
@@ -85,8 +92,8 @@ def _Make1DSparseTensorTestCases():
   }
   """
   for t in _ALL_SUPPORTED_VALUE_TYPES:
-    for list_type_factory in (("list", pa.list_),
-                              ("large_list", pa.large_list)):
+    for list_type_factory in (("list", pa.list_), ("large_list",
+                                                   pa.large_list)):
       expected_type_spec = tf.SparseTensorSpec([None, 100],
                                                _ARROW_TYPE_TO_TF_TYPE[t])
       if pa.types.is_integer(t):
@@ -144,8 +151,8 @@ def _MakeDenseTensorFromListArrayTestCases():
   }
   """
   for t in _ALL_SUPPORTED_VALUE_TYPES:
-    for list_type_factory in (("list", pa.list_),
-                              ("large_list", pa.large_list)):
+    for list_type_factory in (("list", pa.list_), ("large_list",
+                                                   pa.large_list)):
       expected_type_spec = tf.TensorSpec([None, 4], _ARROW_TYPE_TO_TF_TYPE[t])
 
       if pa.types.is_integer(t):
@@ -196,8 +203,8 @@ def _MakeIntDefaultFilledDenseTensorFromListArrayTestCases():
   """
   result = []
   for t in _ALL_SUPPORTED_INT_VALUE_TYPES:
-    for list_type_factory in (("list", pa.list_),
-                              ("large_list", pa.large_list)):
+    for list_type_factory in (("list", pa.list_), ("large_list",
+                                                   pa.large_list)):
       arrow_array = pa.array([None, [1, 2, 3, 4], None],
                              type=list_type_factory[1](t))
       if tf.executing_eagerly():
@@ -206,17 +213,21 @@ def _MakeIntDefaultFilledDenseTensorFromListArrayTestCases():
             dtype=_ARROW_TYPE_TO_TF_TYPE[t],
             shape=(3, 2, 2))
       else:
-        expected_output = np.array(
-            [2, 2, 2, 2, 1, 2, 3, 4, 2, 2, 2, 2],
-            dtype=_ARROW_TYPE_TO_NP_TYPE[t]).reshape((3, 2, 2))
+        expected_output = np.array([2, 2, 2, 2, 1, 2, 3, 4, 2, 2, 2, 2],
+                                   dtype=_ARROW_TYPE_TO_NP_TYPE[t]).reshape(
+                                       (3, 2, 2))
       result.append({
-          "testcase_name": "default_filled_dense_from_{}_array_{}".format(
-              list_type_factory[0], t),
-          "tensor_representation_textpb": tensor_representation_textpb,
-          "arrow_array": arrow_array,
-          "expected_output": expected_output,
-          "expected_type_spec": tf.TensorSpec([None, 2, 2],
-                                              _ARROW_TYPE_TO_TF_TYPE[t])
+          "testcase_name":
+              "default_filled_dense_from_{}_array_{}".format(
+                  list_type_factory[0], t),
+          "tensor_representation_textpb":
+              tensor_representation_textpb,
+          "arrow_array":
+              arrow_array,
+          "expected_output":
+              expected_output,
+          "expected_type_spec":
+              tf.TensorSpec([None, 2, 2], _ARROW_TYPE_TO_TF_TYPE[t])
       })
   return result
 
@@ -246,16 +257,20 @@ def _MakeFloatingDefaultFilledDenseTensorFromListArrayTestCases():
                                     dtype=_ARROW_TYPE_TO_TF_TYPE[t],
                                     shape=(3, 2, 1))
     else:
-      expected_output = np.array(
-          [-1, -1, 1, 2, -1, -1],
-          dtype=_ARROW_TYPE_TO_NP_TYPE[t]).reshape((3, 2, 1))
+      expected_output = np.array([-1, -1, 1, 2, -1, -1],
+                                 dtype=_ARROW_TYPE_TO_NP_TYPE[t]).reshape(
+                                     (3, 2, 1))
     result.append({
-        "testcase_name": "default_filled_dense_from_list_array_{}".format(t),
-        "tensor_representation_textpb": tensor_representation_textpb,
-        "arrow_array": arrow_array,
-        "expected_output": expected_output,
-        "expected_type_spec": tf.TensorSpec([None, 2, 1],
-                                            dtype=_ARROW_TYPE_TO_TF_TYPE[t])
+        "testcase_name":
+            "default_filled_dense_from_list_array_{}".format(t),
+        "tensor_representation_textpb":
+            tensor_representation_textpb,
+        "arrow_array":
+            arrow_array,
+        "expected_output":
+            expected_output,
+        "expected_type_spec":
+            tf.TensorSpec([None, 2, 1], dtype=_ARROW_TYPE_TO_TF_TYPE[t])
     })
   return result
 
@@ -323,8 +338,8 @@ def _MakeVarLenSparseTensorFromListArrayTestCases():
         "expected_output":
             expected_output,
         "expected_type_spec":
-            tf.SparseTensorSpec(tf.TensorShape([None, None]),
-                                _ARROW_TYPE_TO_TF_TYPE[t])
+            tf.SparseTensorSpec(
+                tf.TensorShape([None, None]), _ARROW_TYPE_TO_TF_TYPE[t])
     })
 
   return result
@@ -335,8 +350,7 @@ _ONE_TENSOR_TEST_CASES = (
     _MakeIntDefaultFilledDenseTensorFromListArrayTestCases() +
     _MakeFloatingDefaultFilledDenseTensorFromListArrayTestCases() +
     _MakeStringDefaultFilledDenseTensorFromListArrayTestCases() +
-    _MakeVarLenSparseTensorFromListArrayTestCases()
-)
+    _MakeVarLenSparseTensorFromListArrayTestCases())
 
 
 def _MakeRaggedTensorDTypesTestCases():
@@ -569,8 +583,10 @@ _RAGGED_TENSOR_TEST_CASES = (
                 }]],
                          pa.list_(
                              pa.struct([("inner_feature_1",
-                                         pa.struct([("inner_feature_2", pa.int64()),
-                                                    ("x2", pa.binary())]))])))
+                                         pa.struct([
+                                             ("inner_feature_2", pa.int64()),
+                                             ("x2", pa.binary()),
+                                         ]))])))
             ], ["ragged_feature"]),
             expected_type_spec=tf.RaggedTensorSpec(
                 tf.TensorShape([None, None]),
@@ -604,6 +620,501 @@ _RAGGED_TENSOR_TEST_CASES = (
                     values=np.asarray([1, 2, 3, 4, 5]),
                     row_splits=np.asarray([0, 1, 2, 4, 5])),
                 row_splits=np.asarray([0, 1, 1, 2, 4, 4]))),
+        dict(
+            testcase_name="RaggedRank1Uniform1D",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path { step: "value" }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1, 2, 3, 4], None, [], [5, 6]],
+                         type=pa.list_(pa.int64()))
+            ], ["value"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, 2]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [1, 2],
+            #    [3, 4],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [5, 6],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([[1, 2], [3, 4], [5, 6]]),
+                row_splits=np.asarray([0, 2, 2, 2, 3])),
+        ),
+        dict(
+            testcase_name="RaggedRank1Uniform2D",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path { step: "value" }
+          partition { uniform_row_length: 2 }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1, 1, 2, 2, 3, 3, 4, 4], None, [], [5, 5, 6, 6]],
+                         type=pa.list_(pa.int64()))
+            ], ["value"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, 2, 2]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [[1, 1], [2, 2]],
+            #    [[3, 3], [4, 4]],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [[5, 5], [6, 6]],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([[[1, 1], [2, 2]], [[3, 3], [4, 4]],
+                                   [[5, 5], [6, 6]]]),
+                row_splits=np.asarray([0, 2, 2, 2, 3])),
+        ),
+        dict(
+            testcase_name="RaggedRank2",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path { step: "value" }
+          partition { row_length: "row_length" }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1, 2, 3, 4, 5, 6], None, [], [5, 6]],
+                         type=pa.list_(pa.int64())),
+                pa.array([[4, 2], None, [], [1, 1]], type=pa.list_(pa.int64())),
+            ], ["value", "row_length"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None]),
+                tf.int64,
+                ragged_rank=2,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [1, 2, 3, 4],
+            #    [5, 6],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [5],
+            #    [6],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=np.asarray([1, 2, 3, 4, 5, 6, 5, 6]),
+                    row_splits=np.asarray([0, 4, 6, 7, 8])),
+                row_splits=np.asarray([0, 2, 2, 2, 4])),
+        ),
+        dict(
+            testcase_name="RaggedRank2Uniform1D",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path { step: "value" }
+          partition { row_length: "row_length" }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1, 2, 3, 4, 5, 6], None, [], [5, 6]],
+                         type=pa.list_(pa.int64())),
+                pa.array([[2, 1], None, [], [1]], type=pa.list_(pa.int64())),
+            ], ["value", "row_length"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None, 2]),
+                tf.int64,
+                ragged_rank=2,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [
+            #      [1, 2],
+            #      [3, 4],
+            #    ],
+            #    [
+            #      [5, 6],
+            #    ],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [
+            #      [5, 6],
+            #    ],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=np.asarray([[1, 2], [3, 4], [5, 6], [5, 6]]),
+                    row_splits=np.asarray([0, 2, 3, 4])),
+                row_splits=np.asarray([0, 2, 2, 2, 3])),
+        ),
+        dict(
+            testcase_name="RaggedRank3UniformRaggedUniform",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path { step: "value" }
+          partition { uniform_row_length: 2 }
+          partition { row_length: "row_length" }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1, 2, 3, 4, 5, 6], None, [], [5, 6, 7, 8]],
+                         type=pa.list_(pa.int64())),
+                pa.array([[2, 1], None, [], [1, 1]], type=pa.list_(pa.int64())),
+            ], ["value", "row_length"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None, None, 2]),
+                tf.int64,
+                ragged_rank=3,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [
+            #      [
+            #        [1, 2],
+            #        [3, 4],
+            #      ],
+            #      [
+            #        [5, 6],
+            #      ],
+            #    ],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [
+            #      [
+            #        [5, 6],
+            #      ],
+            #      [
+            #        [7, 8],
+            #      ],
+            #    ],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=tf.compat.v1.ragged.RaggedTensorValue(
+                        values=np.asarray([[1, 2], [3, 4], [5, 6], [5, 6],
+                                           [7, 8]]),
+                        row_splits=np.asarray([0, 2, 3, 4, 5])),
+                    row_splits=np.asarray([0, 2, 4])),
+                row_splits=np.asarray([0, 1, 1, 1, 2])),
+        ),
+        dict(
+            testcase_name="RaggedRank4RaggedUniformRagged",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path { step: "value" }
+          partition { row_length: "row_length_2" }
+          partition { uniform_row_length: 2 }
+          partition { row_length: "row_length" }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([[1, 2, 3, 4, 5, 6], None, [], [5, 6, 7, 8]],
+                         type=pa.list_(pa.int64())),
+                pa.array([[2, 1], None, [], [1, 1]], type=pa.list_(pa.int64())),
+                pa.array([[1], None, [], [1]], type=pa.list_(pa.int64())),
+            ], ["value", "row_length", "row_length_2"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None, None, None, 2]),
+                tf.int64,
+                ragged_rank=4,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [
+            #      [
+            #        [
+            #          [1, 2],
+            #          [3, 4],
+            #        ],
+            #        [
+            #          [5, 6],
+            #        ],
+            #      ],
+            #    ],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [
+            #      [
+            #        [
+            #          [5, 6],
+            #        ],
+            #        [
+            #          [7, 8],
+            #        ],
+            #      ],
+            #    ],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=tf.compat.v1.ragged.RaggedTensorValue(
+                        values=tf.compat.v1.ragged.RaggedTensorValue(
+                            values=np.asarray([[1, 2], [3, 4], [5, 6], [5, 6],
+                                               [7, 8]]),
+                            row_splits=np.asarray([0, 2, 3, 4, 5])),
+                        row_splits=np.asarray([0, 2, 4])),
+                    row_splits=np.asarray([0, 1, 2])),
+                row_splits=np.asarray([0, 1, 1, 1, 2])),
+        ),
+        dict(
+            testcase_name="Struct_RaggedRank1Uniform1D",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "parent"
+            step: "value"
+          }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.StructArray.from_arrays([
+                    pa.array([[1, 2, 3, 4], None, [], [5, 6]],
+                             type=pa.list_(pa.int64()))
+                ], ["value"])
+            ], ["parent"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, 2]),
+                tf.int64,
+                ragged_rank=1,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [1, 2],
+            #    [3, 4],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [5, 6],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=np.asarray([[1, 2], [3, 4], [5, 6]]),
+                row_splits=np.asarray([0, 2, 2, 2, 3])),
+        ),
+        dict(
+            testcase_name="Struct_RaggedRank2",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "parent"
+            step: "value"
+          }
+          partition { row_length: "row_length" }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.StructArray.from_arrays([
+                    pa.array([[1, 2, 3, 4, 5, 6], None, [], [5, 6]],
+                             type=pa.list_(pa.int64())),
+                    pa.array([[4, 2], None, [], [1, 1]], type=pa.list_(pa.int64())),
+                ], ["value", "row_length"])
+            ], ["parent"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None]),
+                tf.int64,
+                ragged_rank=2,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [1, 2, 3, 4],
+            #    [5, 6],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [5],
+            #    [6],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=np.asarray([1, 2, 3, 4, 5, 6, 5, 6]),
+                    row_splits=np.asarray([0, 4, 6, 7, 8])),
+                row_splits=np.asarray([0, 2, 2, 2, 4])),
+        ),
+        dict(
+            testcase_name="Struct_RaggedRank4RaggedUniformRagged",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "parent"
+            step: "value"
+          }
+          partition { row_length: "row_length_2" }
+          partition { uniform_row_length: 2 }
+          partition { row_length: "row_length" }
+          partition { uniform_row_length: 2 }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.StructArray.from_arrays([
+                    pa.array([[1, 2, 3, 4, 5, 6], None, [], [5, 6, 7, 8]],
+                             type=pa.list_(pa.int64())),
+                    pa.array([[2, 1], None, [], [1, 1]], type=pa.list_(pa.int64())),
+                    pa.array([[1], None, [], [1]], type=pa.list_(pa.int64())),
+                ], ["value", "row_length", "row_length_2"]),
+            ], ["parent"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None, None, None, 2]),
+                tf.int64,
+                ragged_rank=4,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [
+            #      [
+            #        [
+            #          [1, 2],
+            #          [3, 4],
+            #        ],
+            #        [
+            #          [5, 6],
+            #        ],
+            #      ],
+            #    ],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [
+            #      [
+            #        [
+            #          [5, 6],
+            #        ],
+            #        [
+            #          [7, 8],
+            #        ],
+            #      ],
+            #    ],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=tf.compat.v1.ragged.RaggedTensorValue(
+                        values=tf.compat.v1.ragged.RaggedTensorValue(
+                            values=np.asarray([[1, 2], [3, 4], [5, 6], [5, 6],
+                                               [7, 8]]),
+                            row_splits=np.asarray([0, 2, 3, 4, 5])),
+                        row_splits=np.asarray([0, 2, 4])),
+                    row_splits=np.asarray([0, 1, 2])),
+                row_splits=np.asarray([0, 1, 1, 1, 2])),
+        ),
+        dict(
+            testcase_name="ListStruct_RaggedRank1Uniform1D",
+            tensor_representation_textpb="""
+        ragged_tensor {
+          feature_path {
+            step: "parent"
+            step: "struct"
+            step: "value"
+          }
+          partition { row_length: "row_length" }
+          row_partition_dtype: INT64
+        }
+        """,
+            record_batch=pa.RecordBatch.from_arrays([
+                pa.array([
+                    [
+                        {
+                            "struct": {
+                                "value": [1, 2, 3],
+                                "row_length": [2, 1],
+                            }
+                        },
+                        {
+                            "struct": {
+                                "value": [1],
+                                "row_length": [1],
+                            }
+                        },
+                    ],
+                    None,
+                    [],
+                    [
+                        {
+                            "struct": {
+                                "value": [2, 3, 4],
+                                "row_length": [1, 2],
+                            }
+                        },
+                    ],
+                ],
+                         pa.list_(
+                             pa.struct([("struct",
+                                         pa.struct([
+                                             ("value", pa.list_(pa.int64())),
+                                             ("row_length", pa.list_(pa.int64()))
+                                         ]))])))
+            ], ["parent"]),
+            expected_type_spec=tf.RaggedTensorSpec(
+                tf.TensorShape([None, None, None, None]),
+                tf.int64,
+                ragged_rank=3,
+                row_splits_dtype=tf.int64),
+            # expected: [
+            #  [
+            #    [
+            #      [1, 2],
+            #      [3],
+            #    ],
+            #    [
+            #      [1],
+            #    ],
+            #  ],
+            #  [],
+            #  [],
+            #  [
+            #    [
+            #      [2],
+            #      [3, 4],
+            #    ],
+            #  ],
+            # ]
+            expected_ragged_tensor=tf.compat.v1.ragged.RaggedTensorValue(
+                values=tf.compat.v1.ragged.RaggedTensorValue(
+                    values=tf.compat.v1.ragged.RaggedTensorValue(
+                        values=np.asarray([1, 2, 3, 1, 2, 3, 4]),
+                        row_splits=np.asarray([0, 2, 3, 4, 5, 7])),
+                    row_splits=np.asarray([0, 2, 3, 5])),
+                row_splits=np.asarray([0, 2, 2, 2, 3]),
+            ),
+        ),
     ])
 
 _INVALID_DEFAULT_VALUE_TEST_CASES = [
@@ -633,8 +1144,9 @@ _INVALID_DEFAULT_VALUE_TEST_CASES = [
 ]
 
 _INVALID_SPARSE_TENSOR_TEST_CASES = [
-    dict(testcase_name="dense_rank_not_equal_num_index_columns",
-         tensor_representation_textpb="""
+    dict(
+        testcase_name="dense_rank_not_equal_num_index_columns",
+        tensor_representation_textpb="""
          sparse_tensor {
            index_column_names: ["key"]
            value_column_name: "value"
@@ -648,12 +1160,13 @@ _INVALID_SPARSE_TENSOR_TEST_CASES = [
            }
          }
          """,
-         arrow_schema={
-             "key": pa.list_(pa.int64()),
-             "value": pa.list_(pa.int64()),
-         }),
-    dict(testcase_name="invalid_dense_shape_dim_size",
-         tensor_representation_textpb="""
+        arrow_schema={
+            "key": pa.list_(pa.int64()),
+            "value": pa.list_(pa.int64()),
+        }),
+    dict(
+        testcase_name="invalid_dense_shape_dim_size",
+        tensor_representation_textpb="""
          sparse_tensor {
            index_column_names: ["key"]
            value_column_name: "value"
@@ -664,12 +1177,13 @@ _INVALID_SPARSE_TENSOR_TEST_CASES = [
            }
          }
          """,
-         arrow_schema={
-             "key": pa.list_(pa.int64()),
-             "value": pa.list_(pa.int64()),
-         }),
-    dict(testcase_name="invalid_index_column_type",
-         tensor_representation_textpb="""
+        arrow_schema={
+            "key": pa.list_(pa.int64()),
+            "value": pa.list_(pa.int64()),
+        }),
+    dict(
+        testcase_name="invalid_index_column_type",
+        tensor_representation_textpb="""
          sparse_tensor {
            index_column_names: ["key"]
            value_column_name: "value"
@@ -680,10 +1194,10 @@ _INVALID_SPARSE_TENSOR_TEST_CASES = [
            }
          }
          """,
-         arrow_schema={
-             "key": pa.list_(pa.float32()),
-             "value": pa.list_(pa.int64()),
-         }),
+        arrow_schema={
+            "key": pa.list_(pa.float32()),
+            "value": pa.list_(pa.int64()),
+        }),
 ]
 
 
@@ -758,10 +1272,10 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     if tf.executing_eagerly():
       self.assertTrue(
           expected_type_spec.is_compatible_with(actual_output),
-          "{} is not compatible with spec {}".format(
-              actual_output, expected_type_spec))
-    if isinstance(expected_output, (tf.SparseTensor,
-                                    tf.compat.v1.SparseTensorValue)):
+          "{} is not compatible with spec {}".format(actual_output,
+                                                     expected_type_spec))
+    if isinstance(expected_output,
+                  (tf.SparseTensor, tf.compat.v1.SparseTensorValue)):
       self.assertIsInstance(actual_output,
                             (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
       self.assertSparseAllEqual(expected_output, actual_output)
@@ -862,13 +1376,17 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
           }
         }
         """, schema_pb2.TensorRepresentation())
-    record_batch = pa.RecordBatch.from_arrays([
-        pa.array([[1], None, [2], [3, 4, 5], []], type=pa.list_(pa.int64())),
-        # Also test that the index column can be of an integral type other
-        # than int64.
-        pa.array([[9], None, [9], [7, 8, 9], []], type=pa.list_(pa.uint32())),
-        pa.array([[0], None, [0], [0, 1, 2], []], type=pa.list_(pa.int64()))
-    ], ["values", "d0", "d1"])
+    record_batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array([[1], None, [2], [3, 4, 5], []], type=pa.list_(
+                pa.int64())),
+            # Also test that the index column can be of an integral type other
+            # than int64.
+            pa.array([[9], None, [9], [7, 8, 9], []],
+                     type=pa.list_(pa.uint32())),
+            pa.array([[0], None, [0], [0, 1, 2], []], type=pa.list_(pa.int64()))
+        ],
+        ["values", "d0", "d1"])
     adapter = tensor_adapter.TensorAdapter(
         tensor_adapter.TensorAdapterConfig(record_batch.schema,
                                            {"output": tensor_representation}))
@@ -903,11 +1421,14 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     self.assertIsInstance(
         actual_output, (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue))
     if tf.executing_eagerly():
+      self.assertEqual(adapter.TypeSpecs()["output"], expected_type_spec)
       self.assertTrue(
           expected_type_spec.is_compatible_with(actual_output),
           "{} is not compatible with spec {}".format(actual_output,
                                                      expected_type_spec))
 
+    print("actual:", actual_output)
+    print("expected:", expected_ragged_tensor)
     self.assertRaggedAllEqual(actual_output, expected_ragged_tensor)
     self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
@@ -995,6 +1516,71 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
             pa.array([[1, 2, 3]], pa.list_(pa.int64())),
             pa.array([["a", "b", "c"]], pa.list_(pa.binary()))
         ], ["inner_feature", "x2"])
+    ], ["ragged_feature"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorWithoutSamePathForPartition(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "struct"
+            step: "ragged_feature"
+          }
+          partition { row_length: "row_length" }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.StructArray.from_arrays(
+            [pa.array([[1, 2, 3]], pa.list_(pa.int64()))], ["ragged_feature"]),
+        pa.array([[1, 2]], pa.list_(pa.int64()))
+    ], ["struct", "row_length"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorWithNestedRowLengths(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path {
+            step: "ragged_feature"
+          }
+          partition { row_length: "row_length" }
+          row_partition_dtype: INT64
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.array([[[1, 1]], None, [[2]], [[3, 3, 4], [5]], []],
+                 type=pa.list_(pa.large_list(pa.int64()))),
+        pa.array([[[2]], None, [[1]], [[2, 1], [1]], []],
+                 type=pa.list_(pa.large_list(pa.int64()))),
+    ], ["ragged_feature", "row_length"])
+    with self.assertRaisesRegex(ValueError,
+                                ".*Unable to handle tensor output.*"):
+      tensor_adapter.TensorAdapter(
+          tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                             {"output": tensor_representation}))
+
+  @test_util.run_in_graph_and_eager_modes
+  def testRaggedTensorWithEmptyFeaturePath(self):
+    tensor_representation = text_format.Parse(
+        """
+        ragged_tensor {
+          feature_path { }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.array([[[1, 1]], None, [[2]], [[3, 3, 4], [5]], []],
+                 type=pa.list_(pa.large_list(pa.int64()))),
     ], ["ragged_feature"])
     with self.assertRaisesRegex(ValueError,
                                 ".*Unable to handle tensor output.*"):
@@ -1096,8 +1682,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     }
 
     adapter = tensor_adapter.TensorAdapter(
-        tensor_adapter.TensorAdapterConfig(
-            record_batch.schema, tensor_representations))
+        tensor_adapter.TensorAdapterConfig(record_batch.schema,
+                                           tensor_representations))
     type_specs = adapter.TypeSpecs()
     self.assertEqual(
         type_specs, {
@@ -1131,8 +1717,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllEqual(
         tf.constant(
             [[[1.0], [2.0]], [[2.0], [3.0]], [[3.0], [4.0]], [[4.0], [5.0]]],
-            dtype=tf.float32),
-        tensors["float_dense"])
+            dtype=tf.float32), tensors["float_dense"])
     self.assertAllEqual(
         tf.constant([b"w", b"x", b"y", b"z"]), tensors["bytes_dense"])
     self.assertAllEqual(
@@ -1159,8 +1744,9 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
       tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               # nested lists are not supported now.
-              pa.schema([pa.field("unsupported_column",
-                                  pa.list_(pa.list_(pa.int64())))]),
+              pa.schema([
+                  pa.field("unsupported_column", pa.list_(pa.list_(pa.int64())))
+              ]),
               {
                   "tensor":
                       text_format.Parse(
@@ -1175,7 +1761,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
   @parameterized.named_parameters(*_INVALID_DEFAULT_VALUE_TEST_CASES)
   def testRaiseOnInvalidDefaultValue(self, value_type, default_value_pbtxt,
                                      exception_regexp):
-    tensor_representation = text_format.Parse("""
+    tensor_representation = text_format.Parse(
+        """
                   dense_tensor {
                     column_name: "column"
                     shape {}
@@ -1202,7 +1789,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
               {"tensor": tensor_representation}))
 
   def testRaiseOnDenseTensorSizeMismatch(self):
-    tensor_representation = text_format.Parse("""
+    tensor_representation = text_format.Parse(
+        """
                   dense_tensor {
                     column_name: "column"
                     shape {}

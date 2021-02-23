@@ -82,6 +82,14 @@ _EXAMPLES = [
       value { float_list { value: [1.0, 2.0, 3.0, 4.0] } }
     }
     feature { key: "string_feature" value { } }
+    feature {
+      key: "varlen_feature"
+      value { int64_list { value: [1, 2, 3] } }
+    }
+    feature {
+      key: "row_lengths"
+      value { int64_list { value: [2, 1] } }
+    }
   }
 """,
     """
@@ -94,6 +102,14 @@ _EXAMPLES = [
       key: "string_feature"
       value { bytes_list { value: ["foo", "bar"] } }
     }
+    feature {
+      key: "varlen_feature"
+      value { int64_list { value: [4] } }
+    }
+    feature {
+      key: "row_lengths"
+      value { int64_list { value: [1] } }
+    }
   }
 """,
     """
@@ -102,6 +118,14 @@ _EXAMPLES = [
     feature {
       key: "float_feature"
       value { float_list { value: [4.0, 5.0, 6.0, 7.0] } }
+    }
+    feature {
+      key: "varlen_feature"
+      value { int64_list { value: [5, 6] } }
+    }
+    feature {
+      key: "row_lengths"
+      value { int64_list { value: [1, 1] } }
     }
   }
 """,
@@ -463,6 +487,109 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
         self._AssertSparseTensorEqual(
             tensor, _EXAMPLES_AS_TENSORS[i]["string_feature"])
 
+  @unittest.skipIf(tf.__version__ < "2", "Skip for TF2")
+  def testTensorFlowDatasetWithRaggedTensorRepresentation(self):
+    schema = text_format.Parse(
+        """
+      feature {
+        name: "varlen_feature"
+        type: INT
+      }
+      feature {
+        name: "row_lengths"
+        type: INT
+      }
+      tensor_representation_group {
+        key: ""
+        value {
+          tensor_representation {
+            key: "ragged"
+            value {
+              ragged_tensor {
+                feature_path { step: "varlen_feature" }
+                partition { row_length: "row_lengths" }
+              }
+            }
+          }
+        }
+      }
+    """, schema_pb2.Schema())
+    tfxio = self._MakeTFXIO(schema)
+    projected_tfxio = tfxio.Project(["ragged"])
+
+    expected_column_values = {
+        "varlen_feature":
+            pa.array([[1, 2, 3], [4], [5, 6]], type=pa.large_list(pa.int64())),
+        "row_lengths":
+            pa.array([[2, 1], [1], [1, 1]], type=pa.large_list(pa.int64())),
+    }
+
+    def _AssertFn(record_batch_list):
+      self.assertLen(record_batch_list, 1)
+      record_batch = record_batch_list[0]
+
+      self.assertIsInstance(record_batch, pa.RecordBatch)
+      self.assertEqual(record_batch.num_rows, 3)
+      print(record_batch.schema)
+      for i, field in enumerate(record_batch.schema):
+        self.assertTrue(
+            record_batch.column(i).equals(expected_column_values[field.name]),
+            "Column {} did not match ({} vs {}).".format(
+                field.name, record_batch.column(i),
+                expected_column_values[field.name]))
+
+      # self._ValidateRecordBatch(tfxio, record_batch)
+      expected_schema = projected_tfxio.ArrowSchema()
+      self.assertTrue(
+          record_batch.schema.equals(expected_schema),
+          "actual: {}; expected: {}".format(record_batch.schema,
+                                            expected_schema))
+      tensor_adapter = projected_tfxio.TensorAdapter()
+      dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
+      self.assertLen(dict_of_tensors, 1)
+      self.assertIn("ragged", dict_of_tensors)
+
+      if tf.executing_eagerly():
+        ragged_factory = tf.RaggedTensor.from_row_splits
+      else:
+        ragged_factory = tf.compat.v1.ragged.RaggedTensorValue
+      expected_tensor = ragged_factory(
+          values=ragged_factory(
+              values=[1, 2, 3, 4, 5, 6], row_splits=[0, 2, 3, 4, 5, 6]),
+          row_splits=[0, 2, 3, 5])
+      self.assertAllEqual(dict_of_tensors["ragged"], expected_tensor)
+
+    with beam.Pipeline() as p:
+      # Setting the betch_size to make sure only one batch is generated.
+      record_batch_pcoll = p | projected_tfxio.BeamSource(
+          batch_size=len(_EXAMPLES))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+    if tf.executing_eagerly():
+      ragged_factory = tf.RaggedTensor.from_row_splits
+    else:
+      ragged_factory = tf.compat.v1.ragged.RaggedTensorValue
+
+    expected_tensors = [
+        ragged_factory(
+            values=ragged_factory(values=[1, 2, 3], row_splits=[0, 2, 3]),
+            row_splits=[0, 2]),
+        ragged_factory(
+            values=ragged_factory(values=[4], row_splits=[0, 1]),
+            row_splits=[0, 1]),
+        ragged_factory(
+            values=ragged_factory(values=[5, 6], row_splits=[0, 1, 2]),
+            row_splits=[0, 2]),
+    ]
+
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, parsed_examples_dict in enumerate(
+        projected_tfxio.TensorFlowDataset(options)):
+      self.assertLen(parsed_examples_dict, 1)
+      self.assertIn("ragged", parsed_examples_dict)
+      self.assertAllEqual(parsed_examples_dict["ragged"], expected_tensors[i])
+
   @unittest.skipIf(not tf.executing_eagerly(), "Skip in non-eager mode.")
   def testTensorFlowDatasetWithLabelKey(self):
     tfxio = self._MakeTFXIO(_SCHEMA)
@@ -630,7 +757,8 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
                       value_key="val",
                       size=[1],
                       dtype=tf.float32),
-              "val": tf.io.VarLenFeature(dtype=tf.float32)
+              "val":
+                  tf.io.VarLenFeature(dtype=tf.float32)
           },
           expected_rename_dict={
               "_tfx_bsl_sparse_feature_sparse_feature": "sparse_feature",
@@ -644,6 +772,57 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
     tfxio = self._MakeTFXIO(schema)
 
     parser_config, rename_dict = tfxio._GetTfExampleParserConfig()
+
+    self.assertAllEqual(expected_parsing_config, parser_config)
+    self.assertAllEqual(expected_rename_dict, rename_dict)
+
+  @absltest.skipIf(tf.__version__ < "2",
+                     "RaggedFeature not supported on TF1.")
+  def testValidGetTfExampleParserConfigWithRaggedFeature(self):
+    schema_pbtxt = """
+      feature {
+        name: "row_lengths"
+        type: INT
+      }
+      feature {
+        name: "val"
+        type: FLOAT
+      }
+      tensor_representation_group {
+        key: ""
+        value {
+          tensor_representation {
+            key: "ragged_feature"
+            value {
+              ragged_tensor {
+                feature_path { step: "val" }
+                partition { row_length: "row_lengths" }
+                partition { uniform_row_length: 2 }
+                row_partition_dtype: INT32
+              }
+            }
+          }
+        }
+      }
+    """
+    schema = text_format.Parse(schema_pbtxt, schema_pb2.Schema())
+    tfxio = self._MakeTFXIO(schema)
+
+    parser_config, rename_dict = tfxio._GetTfExampleParserConfig()
+
+    expected_parsing_config = {
+        "_tfx_bsl_ragged_feature_ragged_feature":
+            tf.io.RaggedFeature(
+                value_key="val",
+                partitions=[
+                    tf.io.RaggedFeature.RowLengths("row_lengths"),
+                    tf.io.RaggedFeature.UniformRowLength(2),
+                ],
+                dtype=tf.float32),
+    }
+    expected_rename_dict = {
+        "_tfx_bsl_ragged_feature_ragged_feature": "ragged_feature",
+    }
 
     self.assertAllEqual(expected_parsing_config, parser_config)
     self.assertAllEqual(expected_rename_dict, rename_dict)
@@ -733,35 +912,6 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
           """,
           error=ValueError,
           error_string="Unable to create a valid parsing config.*"),
-      dict(
-          testcase_name="ragged_feature",
-          schema_pbtxt="""
-            feature {
-              name: "val"
-              type: FLOAT
-              value_count {
-                min: 1
-                max: 1
-              }
-            }
-            tensor_representation_group {
-              key: ""
-              value {
-                tensor_representation {
-                  key: "ragged_feature"
-                  value {
-                    ragged_tensor {
-                      feature_path {
-                        step: "val"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          """,
-          error=NotImplementedError,
-          error_string="TensorRepresentation: ragged_tensor is not supported"),
       dict(
           testcase_name="no_schema",
           schema_pbtxt="",
