@@ -291,9 +291,10 @@ class _DecodeFnWrapper(object):
     self.decode_fn = decoder.decode_record
     # Call the concrete function once to force optimization of the graph, as
     # we want that to be attributed as fixed setup cost.
-    # Here we assume that an empty string tensor (0 record) can be successfully
-    # decoded.
-    _ = self.decode_fn(tf.convert_to_tensor([""], dtype=tf.string))
+    try:
+      _ = self.decode_fn(tf.constant([], shape=[0], dtype=tf.string))
+    except Exception:  # pylint:disable=broad-except
+      pass
 
 
 @beam.typehints.with_input_types(List[bytes])

@@ -151,6 +151,59 @@ class _TypeHandler(abc.ABC):
     """Returns `True` if the handler can handle the given `tf.TypeSpec`."""
 
 
+class _DenseTensorHandler(_TypeHandler):
+  """Handles Dense Tensors of known shape (except for the batch dim)."""
+
+  __slots__ = ["_values_arrow_type", "_unbatched_shape"]
+
+  def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
+    super().__init__(tensor_name, type_spec)
+    self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
+    self._unbatched_shape = type_spec.shape.as_list()[1:]
+
+  def arrow_fields(self) -> List[pa.Field]:
+    return [
+        pa.field(self._tensor_name,
+                 pa.large_list(_tf_dtype_to_arrow_type(self._type_spec.dtype)))
+    ]
+
+  def tensor_representation(self) -> schema_pb2.TensorRepresentation:
+    result = schema_pb2.TensorRepresentation()
+    result.dense_tensor.column_name = self._tensor_name
+    for d in self._unbatched_shape:
+      result.dense_tensor.shape.dim.add().size = d
+    return result
+
+  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+    assert isinstance(tensor, tf.Tensor)
+    values_np = tensor.numpy()
+    shape = values_np.shape
+    elements_per_list = np.product(shape[1:], dtype=np.int64)
+    offsets = np.arange(
+        0,
+        elements_per_list * shape[0] + 1,
+        elements_per_list,
+        dtype=np.int64)
+    values_np = np.reshape(values_np, -1)
+    return [pa.LargeListArray.from_arrays(offsets, pa.array(
+        values_np, self._values_arrow_type))]
+
+  @staticmethod
+  def can_handle(type_spec: tf.TypeSpec) -> bool:
+    if not isinstance(type_spec, tf.TensorSpec):
+      return False
+    if type_spec.dtype == tf.bool:
+      return False
+    # Can only handle batched tensor (at least 1-D).
+    if type_spec.shape.rank is None or type_spec.shape.rank <= 0:
+      return False
+    shape = type_spec.shape.as_list()
+    # Can only handle batched tensor (the batch size should be flexible).
+    if shape[0] is not None:
+      return False
+    return all(d is not None for d in shape[1:])
+
+
 class _VarLenSparseTensorHandler(_TypeHandler):
   """Handles 2-D var-len (ragged) sparse tensor."""
 
@@ -269,7 +322,9 @@ class _RaggedTensorHandler(_TypeHandler):
     return type_spec._dtype != tf.bool
 
 
-_ALL_HANDLERS_CLS = [_VarLenSparseTensorHandler, _RaggedTensorHandler]
+_ALL_HANDLERS_CLS = [
+    _VarLenSparseTensorHandler, _RaggedTensorHandler, _DenseTensorHandler
+]
 
 
 def _tf_dtype_to_arrow_type(dtype: tf.DType):

@@ -43,6 +43,35 @@ _ROW_PARTITION_DTYPES = {
 }
 
 
+def _make_2d_dense_tensor_test_cases():
+  result = []
+  for tf_type, arrow_type in _TF_TYPE_TO_ARROW_TYPE.items():
+    if tf_type == tf.string:
+      tensor = tf.constant([[b"1", b"2"], [b"3", b"4"]], dtype=tf.string)
+      expected_array = pa.array([[b"1", b"2"], [b"3", b"4"]],
+                                type=pa.large_list(arrow_type))
+    else:
+      tensor = tf.constant([[1, 2], [3, 4]], dtype=tf_type)
+      expected_array = pa.array([[1, 2], [3, 4]],
+                                type=pa.large_list(arrow_type))
+    result.append(
+        dict(
+            testcase_name="2d_dense_tensor_%s" % tf_type.name,
+            type_specs={"dt": tf.TensorSpec([None, 2], tf_type)},
+            expected_schema={"dt": pa.large_list(arrow_type)},
+            expected_tensor_representations={
+                "dt":
+                    """dense_tensor {
+                         column_name: "dt"
+                         shape { dim { size: 2} }
+                       }""",
+            },
+            tensor_input={"dt": tensor},
+            expected_record_batch={"dt": expected_array},
+        ))
+  return result
+
+
 def _make_2d_varlen_sparse_tensor_test_cases():
   result = []
   for tf_type, arrow_type in _TF_TYPE_TO_ARROW_TYPE.items():
@@ -210,8 +239,8 @@ _CONVERT_TEST_CASES = [
             "sp1":
                 pa.array([[1, 5], [], [9]], type=pa.large_list(pa.int32())),
             "sp2":
-                pa.array([[b"x", b"y"], [], [b"z"]], type=pa.large_list(
-                    pa.large_binary())),
+                pa.array([[b"x", b"y"], [], [b"z"]],
+                         type=pa.large_list(pa.large_binary())),
         }),
     dict(
         testcase_name="sparse_tensor_no_value",
@@ -232,11 +261,27 @@ _CONVERT_TEST_CASES = [
                     dense_shape=[2, 0]),
         },
         expected_record_batch={
-            "sp1":
-                pa.array([[], []], type=pa.large_list(pa.int32())),
+            "sp1": pa.array([[], []], type=pa.large_list(pa.int32())),
+        }),
+    dict(
+        testcase_name="1d_dense",
+        type_specs={
+            "dt": tf.TensorSpec([None], tf.int32),
+        },
+        expected_schema={
+            "dt": pa.large_list(pa.int32()),
+        },
+        expected_tensor_representations={
+            "dt": """dense_tensor { column_name: "dt" }""",
+        },
+        tensor_input={
+            "dt": tf.constant([1, 2, 3], dtype=tf.int32),
+        },
+        expected_record_batch={
+            "dt": pa.array([[1], [2], [3]], type=pa.large_list(pa.int32())),
         }),
 ] + _make_2d_varlen_sparse_tensor_test_cases(
-) + _make_3d_ragged_tensor_test_cases()
+) + _make_3d_ragged_tensor_test_cases() + _make_2d_dense_tensor_test_cases()
 
 
 class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
