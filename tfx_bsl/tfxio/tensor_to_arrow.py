@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Utils to convert TF Tensors to Arrow arrays."""
+"""Utils to convert TF Tensors or their values to Arrow arrays."""
 
 import abc
 from typing import Dict, List, Text, Tuple, Union
@@ -28,11 +28,13 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 
 
 if tf.__version__ < "2":
-  logging.warning("tfx_bsl.tfxio.tensor_to_arrow will not work correctly with "
-                  "TF 1.x.")
+  logging.warning("tfx_bsl.tfxio.tensor_to_arrow can only handle evaluated "
+                  "tensors (i.e. ndarays or SparseTensorValues) in TF 1.x.")
 
-
-TensorAlike = Union[tf.Tensor, composite_tensor.CompositeTensor]
+_TensorType = Union[tf.Tensor, tf.SparseTensor,
+                    composite_tensor.CompositeTensor]
+_TensorValueType = Union[np.ndarray, tf.compat.v1.SparseTensorValue]
+TensorAlike = Union[_TensorType, _TensorValueType]
 
 
 class TensorsToRecordBatchConverter(object):
@@ -113,9 +115,22 @@ class _TypeHandler(abc.ABC):
     self._type_spec = type_spec
 
   def convert(self, tensor: TensorAlike) -> List[pa.Array]:
-    if not self._type_spec.is_compatible_with(tensor):
-      raise TypeError("Expected {} but got {}".format(
-          self._type_spec, tf.type_spec_from_value(tensor)))
+    """Converts the given TensorAlike to pa.Arrays after validating its spec."""
+    if tf.__version__ < "2":
+      if isinstance(tensor, np.ndarray):
+        actual_spec = tf.TensorSpec(tensor.shape,
+                                    tf.dtypes.as_dtype(tensor.dtype))
+      elif isinstance(tensor, tf.compat.v1.SparseTensorValue):
+        actual_spec = tf.SparseTensorSpec(tensor.dense_shape,
+                                          tensor.values.dtype)
+      else:
+        raise TypeError("Only ndarrays and SparseTensorValues are supported "
+                        "with TF 1.x, got {}".format(type(tensor)))
+    else:
+      actual_spec = tf.type_spec_from_value(tensor)
+    if not self._type_spec.is_compatible_with(actual_spec):
+      raise TypeError("Expected {} but got {}".format(self._type_spec,
+                                                      actual_spec))
     return self._convert_internal(tensor)
 
   @abc.abstractmethod
@@ -175,8 +190,8 @@ class _DenseTensorHandler(_TypeHandler):
     return result
 
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
-    assert isinstance(tensor, tf.Tensor)
-    values_np = tensor.numpy()
+    assert isinstance(tensor, (tf.Tensor, np.ndarray)), type(tensor)
+    values_np = np.asarray(tensor)
     shape = values_np.shape
     elements_per_list = np.product(shape[1:], dtype=np.int64)
     offsets = np.arange(

@@ -68,7 +68,7 @@ def _make_2d_dense_tensor_test_cases():
             },
             tensor_input={"dt": tensor},
             expected_record_batch={"dt": expected_array},
-        ))
+            test_values_conversion=True))
   return result
 
 
@@ -86,19 +86,20 @@ def _make_2d_varlen_sparse_tensor_test_cases():
     result.append(
         dict(
             testcase_name="2d_varlen_sparse_tensor_%s" % tf_type.name,
-            type_specs={"sp": tf.SparseTensorSpec([None, None], tf_type)},
-            expected_schema={"sp": pa.large_list(arrow_type)},
+            type_specs={"sp1": tf.SparseTensorSpec([None, None], tf_type)},
+            expected_schema={"sp1": pa.large_list(arrow_type)},
             expected_tensor_representations={
-                "sp": """varlen_sparse_tensor { column_name: "sp" }""",
+                "sp1": """varlen_sparse_tensor { column_name: "sp1" }""",
             },
             tensor_input={
-                "sp":
+                "sp1":
                     tf.SparseTensor(
                         values=values,
                         indices=[[0, 0], [2, 0], [2, 1]],
                         dense_shape=[4, 2]),
             },
-            expected_record_batch={"sp": expected_array}))
+            expected_record_batch={"sp1": expected_array},
+            test_values_conversion=True))
   return result
 
 
@@ -126,7 +127,7 @@ def _make_3d_ragged_tensor_test_cases():
               testcase_name="3d_ragged_tensor_%s_row_partition_dtype_%s" %
               (tf_type.name, row_partition_dtype),
               type_specs={
-                  "sp":
+                  "sp1":
                       tf.RaggedTensorSpec(
                           tf.TensorShape([2, None, None]),
                           tf_type,
@@ -134,24 +135,24 @@ def _make_3d_ragged_tensor_test_cases():
                           row_splits_dtype=tf.dtypes.as_dtype(
                               row_partition_numpy_type))
               },
-              expected_schema={"sp": pa.large_list(pa.large_list(arrow_type))},
+              expected_schema={"sp1": pa.large_list(pa.large_list(arrow_type))},
               expected_tensor_representations={
-                  "sp":
+                  "sp1":
                       """ragged_tensor {
                           feature_path {
-                            step: "sp"
+                            step: "sp1"
                           }
                           row_partition_dtype: %s
                         }""" % row_partition_dtype,
               },
               tensor_input={
-                  "sp":
+                  "sp1":
                       tf.RaggedTensor.from_row_splits(
                           values=values,
                           row_splits=np.asarray([0, 3, 4],
                                                 dtype=row_partition_numpy_type))
               },
-              expected_record_batch={"sp": expected_array}))
+              expected_record_batch={"sp1": expected_array}))
   return result
 
 
@@ -188,7 +189,8 @@ _CONVERT_TEST_CASES = [
             "sp2":
                 pa.array([[], [], [b"aa", b"bb"], []],
                          type=pa.large_list(pa.large_binary()))
-        }),
+        },
+        test_values_conversion=True),
     dict(
         testcase_name="ragged_tensors",
         type_specs={
@@ -262,24 +264,26 @@ _CONVERT_TEST_CASES = [
         },
         expected_record_batch={
             "sp1": pa.array([[], []], type=pa.large_list(pa.int32())),
-        }),
+        },
+        test_values_conversion=True),
     dict(
         testcase_name="1d_dense",
         type_specs={
-            "dt": tf.TensorSpec([None], tf.int32),
+            "dt1": tf.TensorSpec([None], tf.int32),
         },
         expected_schema={
-            "dt": pa.large_list(pa.int32()),
+            "dt1": pa.large_list(pa.int32()),
         },
         expected_tensor_representations={
-            "dt": """dense_tensor { column_name: "dt" }""",
+            "dt1": """dense_tensor { column_name: "dt1" }""",
         },
         tensor_input={
-            "dt": tf.constant([1, 2, 3], dtype=tf.int32),
+            "dt1": tf.constant([1, 2, 3], dtype=tf.int32),
         },
         expected_record_batch={
-            "dt": pa.array([[1], [2], [3]], type=pa.large_list(pa.int32())),
-        }),
+            "dt1": pa.array([[1], [2], [3]], type=pa.large_list(pa.int32())),
+        },
+        test_values_conversion=True),
 ] + _make_2d_varlen_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases() + _make_2d_dense_tensor_test_cases()
 
@@ -288,7 +292,7 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
 
   def _assert_tensor_alike_equal(self, left, right):
     self.assertIsInstance(left, type(right))
-    if isinstance(left, tf.SparseTensor):
+    if isinstance(left, (tf.SparseTensor, tf.compat.v1.SparseTensorValue)):
       self.assertAllEqual(left.values, right.values)
       self.assertAllEqual(left.indices, right.indices)
       self.assertAllEqual(left.dense_shape, right.dense_shape)
@@ -296,9 +300,40 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
       self.assertAllEqual(left, right)
 
   @parameterized.named_parameters(*_CONVERT_TEST_CASES)
-  def test_convert(self, type_specs, expected_schema,
-                   expected_tensor_representations, tensor_input,
-                   expected_record_batch):
+  def test_convert(self,
+                   type_specs,
+                   expected_schema,
+                   expected_tensor_representations,
+                   tensor_input,
+                   expected_record_batch,
+                   test_values_conversion=False):
+    if tf.__version__ < "2":
+      if not test_values_conversion:
+        raise absltest.SkipTest("Test case is disabled for TF 1.x: ragged "
+                                  "tensor value support is not implemented. ")
+      names = list(type_specs.keys())
+      with tf.compat.v1.Session(graph=tensor_input[names[0]].graph) as s:
+        # Change tensor entries to tensor value entries.
+        for name in names:
+          tensor_input[name] = s.run(tensor_input[name])
+    else:
+      if test_values_conversion:
+        names = list(type_specs.keys())
+        # Add entries for tensor value.
+        for name in names:
+          type_specs[name + "_value"] = type_specs[name]
+          expected_schema[name + "_value"] = expected_schema[name]
+          expected_tensor_representations[name + "_value"] = (
+              expected_tensor_representations[name].replace(
+                  name, name + "_value"))
+          tensor = tensor_input[name]
+          if isinstance(tensor, tf.SparseTensor):
+            tensor_input[name + "_value"] = tf.compat.v1.SparseTensorValue(
+                tensor.indices, tensor.values, tensor.dense_shape)
+          else:
+            tensor_input[name + "_value"] = tensor.numpy()
+          expected_record_batch[name + "_value"] = expected_record_batch[name]
+
     converter = tensor_to_arrow.TensorsToRecordBatchConverter(type_specs)
 
     expected_schema = pa.schema(
@@ -328,10 +363,12 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
         tensor_adapter.TensorAdapterConfig(
             arrow_schema=converter.arrow_schema(),
             tensor_representations=converter.tensor_representations()))
-    adapter_output = adapter.ToBatchTensors(rb, produce_eager_tensors=True)
+    adapter_output = adapter.ToBatchTensors(
+        rb, produce_eager_tensors=tf.__version__ >= "2")
     self.assertEqual(adapter_output.keys(), tensor_input.keys())
     for k in adapter_output.keys():
-      self._assert_tensor_alike_equal(adapter_output[k], tensor_input[k])
+      if "value" not in k:
+        self._assert_tensor_alike_equal(adapter_output[k], tensor_input[k])
 
   def test_unable_to_handle(self):
     with self.assertRaisesRegex(ValueError, "No handler found"):
@@ -345,10 +382,12 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
   def test_incompatible_type_spec(self):
     converter = tensor_to_arrow.TensorsToRecordBatchConverter(
         {"sp": tf.SparseTensorSpec([None, None], tf.int32)})
+    sp_cls = tf.SparseTensor if tf.__version__ >= "2" else \
+        tf.compat.v1.SparseTensorValue
     with self.assertRaisesRegex(TypeError, "Expected SparseTensorSpec"):
       converter.convert({
           "sp":
-              tf.SparseTensor(
+              sp_cls(
                   indices=[[0, 1]],
                   values=tf.constant([0], dtype=tf.int64),
                   dense_shape=[4, 1])
@@ -383,6 +422,4 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
 
 
 if __name__ == "__main__":
-  # Do not run these tests under TF1.x -- TensorToArrow does not support TF 1.x.
-  if tf.__version__ >= "2":
-    absltest.main()
+  absltest.main()
