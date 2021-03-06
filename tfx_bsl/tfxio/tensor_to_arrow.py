@@ -233,14 +233,19 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     # Assume:
     #   - the COO indices are sorted (partially checked below)
     #   - the SparseTensor is 2-D (checked in can_handle())
-    #   - the SparseTensor is ragged (partially checked below)
+    #   - the SparseTensor is ragged
     # Then the first dim of those COO indices contains "parent indices":
     # parent_index[i] == j means i-th value belong to j-th sub list.
     # Then we have a C++ util to convert parent indices + values to a ListArray.
+    #
+    # Note that the resulting ListArray doesn't explicitly store the second
+    # dense dimension. When it is converted back to SparseTensor with
+    # tensor_adapter the second dense dimension is recovered as an upper bound
+    # for second indices + 1. Therefore, if SparseTensor's second dense
+    # dimension is not tight, then the composition
+    # TensorAdapter(TensorsToRecordBatchConverter()) is not an identity.
     dense_shape = np.asarray(tensor.dense_shape)
     indices = np.asarray(tensor.indices)
-    assert indices.size == 0 or dense_shape[1] == np.max(indices, 0)[1] + 1, (
-        "SparseTensor is not 2-D ragged")
     parent_indices = indices[:, 0]
     assert np.min(np.diff(parent_indices), initial=0) >= 0, (
         "The sparse indices must be sorted")

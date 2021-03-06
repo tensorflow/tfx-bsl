@@ -370,6 +370,28 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
       if "value" not in k:
         self._assert_tensor_alike_equal(adapter_output[k], tensor_input[k])
 
+  def test_relaxed_varlen_sparse_tensor(self):
+    # Demonstrates that TensorAdapter(TensorsToRecordBatchConverter()) is not
+    # an identity if the second dense dimension of SparseTensor is not tight.
+    type_specs = {"sp": tf.SparseTensorSpec([None, None], tf.int32)}
+    sp = tf.compat.v1.SparseTensorValue(
+        values=np.array([1, 2], np.int32),
+        indices=[[0, 0], [2, 0]],
+        dense_shape=[4, 2])
+    if tf.__version__ >= "2":
+      sp = tf.SparseTensor.from_value(sp)
+    converter = tensor_to_arrow.TensorsToRecordBatchConverter(type_specs)
+    rb = converter.convert({"sp": sp})
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(
+            arrow_schema=converter.arrow_schema(),
+            tensor_representations=converter.tensor_representations()))
+    adapter_output = adapter.ToBatchTensors(
+        rb, produce_eager_tensors=tf.__version__ >= "2")
+    self.assertAllEqual(sp.values, adapter_output["sp"].values)
+    self.assertAllEqual(sp.indices, adapter_output["sp"].indices)
+    self.assertAllEqual(adapter_output["sp"].dense_shape, [4, 1])
+
   def test_unable_to_handle(self):
     with self.assertRaisesRegex(ValueError, "No handler found"):
       tensor_to_arrow.TensorsToRecordBatchConverter(
