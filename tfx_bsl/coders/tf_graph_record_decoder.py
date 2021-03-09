@@ -17,6 +17,7 @@ import abc
 from typing import Dict, Optional, Text, Union
 
 import tensorflow as tf
+from tfx_bsl.types import common_types
 
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
 
@@ -36,7 +37,7 @@ class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
   interfaces listed in this base class available.
   """
 
-  def output_type_specs(self) -> Dict[Text, tf.TypeSpec]:
+  def output_type_specs(self) -> Dict[Text, common_types.TensorTypeSpec]:
     """Returns the tf.TypeSpecs of the decoded tensors.
 
     Returns:

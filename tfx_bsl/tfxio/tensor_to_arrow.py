@@ -21,6 +21,7 @@ import numpy as np
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.arrow import array_util
+from tfx_bsl.types import common_types
 
 # CompositeTensor is not public yet.
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
@@ -42,7 +43,7 @@ class TensorsToRecordBatchConverter(object):
 
   __slots__ = ["_handlers", "_arrow_schema"]
 
-  def __init__(self, type_specs: Dict[Text, tf.TypeSpec]):
+  def __init__(self, type_specs: Dict[Text, common_types.TensorTypeSpec]):
     """Initializer.
 
     Args:
@@ -110,7 +111,7 @@ class _TypeHandler(abc.ABC):
 
   __slots__ = ["_tensor_name", "_type_spec"]
 
-  def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
     self._tensor_name = tensor_name
     self._type_spec = type_spec
 
@@ -162,7 +163,7 @@ class _TypeHandler(abc.ABC):
 
   @staticmethod
   @abc.abstractmethod
-  def can_handle(type_spec: tf.TypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
     """Returns `True` if the handler can handle the given `tf.TypeSpec`."""
 
 
@@ -171,7 +172,7 @@ class _DenseTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type", "_unbatched_shape"]
 
-  def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
     super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
     self._unbatched_shape = type_spec.shape.as_list()[1:]
@@ -204,7 +205,7 @@ class _DenseTensorHandler(_TypeHandler):
         values_np, self._values_arrow_type))]
 
   @staticmethod
-  def can_handle(type_spec: tf.TypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
     if not isinstance(type_spec, tf.TensorSpec):
       return False
     if type_spec.dtype == tf.bool:
@@ -224,7 +225,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type"]
 
-  def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
     super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
 
@@ -269,7 +270,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: tf.TypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
     if not isinstance(type_spec, tf.SparseTensorSpec):
       return False
     return (
@@ -282,7 +283,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type", "_row_partition_dtype"]
 
-  def __init__(self, tensor_name: Text, type_spec: tf.TypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
     super().__init__(tensor_name, type_spec)
 
     # TODO(b/159717195): clean up protected-access
@@ -326,7 +327,7 @@ class _RaggedTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: tf.TypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
     if not isinstance(type_spec, tf.RaggedTensorSpec):
       return False
     # TODO(b/159717195): clean up protected-access
@@ -358,13 +359,14 @@ def _tf_dtype_to_arrow_type(dtype: tf.DType):
 
 
 def _make_handlers(
-    type_specs: Dict[Text, tf.TypeSpec]) -> List[Tuple[Text, _TypeHandler]]:
+    type_specs: Dict[Text, common_types.TensorTypeSpec]
+) -> List[Tuple[Text, _TypeHandler]]:
   return [(tensor_name, _get_handler(tensor_name, type_spec))
           for tensor_name, type_spec in sorted(type_specs.items())]
 
 
-def _get_handler(
-    tensor_name: Text, type_spec: tf.TypeSpec) -> _TypeHandler:
+def _get_handler(tensor_name: Text,
+                 type_spec: common_types.TensorTypeSpec) -> _TypeHandler:
   """Returns a TypeHandler that can handle `type_spec`."""
   for handler_cls in _ALL_HANDLERS_CLS:
     if handler_cls.can_handle(type_spec):

@@ -22,6 +22,7 @@ import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.arrow import array_util
 from tfx_bsl.arrow import path
+from tfx_bsl.types import common_types
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -34,10 +35,12 @@ class TensorAdapterConfig(object):
   Contains all the information needed to create a TensorAdapter.
   """
 
-  def __init__(self,
-               arrow_schema: pa.Schema,
-               tensor_representations: TensorRepresentations,
-               original_type_specs: Optional[Dict[Text, tf.TypeSpec]] = None):
+  def __init__(
+      self,
+      arrow_schema: pa.Schema,
+      tensor_representations: TensorRepresentations,
+      original_type_specs: Optional[Dict[Text,
+                                         common_types.TensorTypeSpec]] = None):
     self.arrow_schema = arrow_schema
     self.tensor_representations = tensor_representations
     self.original_type_specs = original_type_specs
@@ -106,7 +109,7 @@ class TensorAdapter(object):
             "TensorRepresentations. But for tensor {}, got {} vs {}".format(
                 tensor_name, original_type_spec, type_spec))
 
-  def OriginalTypeSpecs(self) -> Dict[Text, tf.TypeSpec]:
+  def OriginalTypeSpecs(self) -> Dict[Text, common_types.TensorTypeSpec]:
     """Returns the origin's type specs.
 
     A TFXIO 'Y' may be a result of projection of another TFXIO 'X', in which
@@ -119,7 +122,7 @@ class TensorAdapter(object):
     """
     return self._original_type_specs
 
-  def TypeSpecs(self) -> Dict[Text, tf.TypeSpec]:
+  def TypeSpecs(self) -> Dict[Text, common_types.TensorTypeSpec]:
     """Returns the TypeSpec for each tensor."""
     return self._type_specs
 
@@ -190,7 +193,7 @@ class _TypeHandler(abc.ABC):
     """
 
   @abc.abstractproperty
-  def type_spec(self) -> tf.TypeSpec:
+  def type_spec(self) -> common_types.TensorTypeSpec:
     """Returns the TypeSpec of the converted Tensor or CompositeTensor."""
 
   @abc.abstractmethod
@@ -244,7 +247,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
     self._unbatched_flat_len = int(np.prod(unbatched_shape, initial=1))
 
   @property
-  def type_spec(self) -> tf.TypeSpec:
+  def type_spec(self) -> common_types.TensorTypeSpec:
     # TF's type stub is not correct about TypeSpec and its sub-classes.
     return typing.cast(tf.TypeSpec, tf.TensorSpec(self._shape, self._dtype))
 
@@ -349,7 +352,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
-  def type_spec(self) -> tf.TypeSpec:
+  def type_spec(self) -> common_types.TensorTypeSpec:
     return typing.cast(
         tf.TypeSpec,
         tf.SparseTensorSpec(tf.TensorShape([None, None]), self._dtype))
@@ -410,7 +413,7 @@ class _SparseTensorHandler(_TypeHandler):
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
-  def type_spec(self) -> tf.TypeSpec:
+  def type_spec(self) -> common_types.TensorTypeSpec:
     return typing.cast(
         tf.TypeSpec,
         tf.SparseTensorSpec(tf.TensorShape([None] + self._shape), self._dtype))
@@ -531,7 +534,7 @@ class _RaggedTensorHandler(_TypeHandler):
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
-  def type_spec(self) -> tf.TypeSpec:
+  def type_spec(self) -> common_types.TensorTypeSpec:
     row_splits_dtype = tf.int64
     if (self._row_partition_dtype ==
         schema_pb2.TensorRepresentation.RowPartitionDType.INT32):
