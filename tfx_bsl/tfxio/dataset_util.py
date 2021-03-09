@@ -15,11 +15,7 @@
 
 from typing import List, Optional, Text
 
-from absl import logging
 import tensorflow as tf
-
-if tf.__version__ < "2":
-  logging.warning("tfx_bsl.tfxio.dataset_util will not work with TF 1.x.")
 
 
 def detect_compression_type(file_patterns: tf.Tensor) -> tf.Tensor:

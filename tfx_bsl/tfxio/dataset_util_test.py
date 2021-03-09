@@ -15,10 +15,12 @@
 
 import os
 import tempfile
+
 from absl import flags
+from absl.testing import parameterized
 import tensorflow as tf
 from tfx_bsl.tfxio import dataset_util
-from absl.testing import parameterized
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 
 FLAGS = flags.FLAGS
 
@@ -66,8 +68,12 @@ class DatasetUtilTest(tf.test.TestCase, parameterized.TestCase):
           num_epochs=4,
           expected_data=[[b'aaa', b'bbb', b'aaa'], [b'bbb', b'aaa', b'bbb']])
   ])
+  @test_util.run_in_graph_and_eager_modes
   def test_make_tf_record_dataset(self, batch_size, drop_final_batch,
                                   num_epochs, expected_data):
+    if tf.executing_eagerly() and tf.__version__ < '2':
+      # It doesn't make sense to test eager execution if we are on tf v1.x
+      return
     dataset = dataset_util.make_tf_record_dataset(
         self._example_file,
         batch_size,
@@ -76,9 +82,10 @@ class DatasetUtilTest(tf.test.TestCase, parameterized.TestCase):
         shuffle=False,
         shuffle_buffer_size=10000,
         shuffle_seed=None)
-    data = list(dataset.as_numpy_iterator())
+    data = _dataset_elements(dataset)
     self.assertAllEqual(data, expected_data)
 
+  @test_util.run_in_graph_and_eager_modes
   def test_detect_compression_type(self):
     tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
 
@@ -91,26 +98,41 @@ class DatasetUtilTest(tf.test.TestCase, parameterized.TestCase):
     _touch_file(os.path.join(tmp_dir, 'dataset-b-0'))
     _touch_file(os.path.join(tmp_dir, 'dataset-b-1'))
 
-    self.assertEqual(
+    self.assertAllEqual(
         dataset_util.detect_compression_type(
             [os.path.join(tmp_dir, 'dataset-a*')]), b'GZIP')
 
-    self.assertEqual(
+    self.assertAllEqual(
         dataset_util.detect_compression_type(
             [os.path.join(tmp_dir, 'dataset-b*')]), b'')
 
-    self.assertEqual(
+    self.assertAllEqual(
         dataset_util.detect_compression_type([
             os.path.join(tmp_dir, 'dataset-b*'),
             os.path.join(tmp_dir, 'dataset-a*')
         ]), b'INVALID_MIXED_COMPRESSION_TYPES')
 
-    self.assertEqual(
+    self.assertAllEqual(
         dataset_util.detect_compression_type(
             [os.path.join(tmp_dir, 'invalid*')]), b'')
 
 
+def _dataset_elements(dataset):
+  """Returns elements from the `tf.data.Dataset` object as a list."""
+  results = []
+  if tf.executing_eagerly() and tf.__version__ >= '2.1':
+    # tensorflow v2.1 introduces `as_numpy_iterator()`.
+    return list(dataset.as_numpy_iterator())
+  else:
+    iterator = tf.compat.v1.data.make_one_shot_iterator(dataset)
+    next_elem = iterator.get_next()
+    with tf.compat.v1.Session() as sess:
+      while True:
+        try:
+          results.append(sess.run(next_elem))
+        except tf.errors.OutOfRangeError:
+          break
+    return results
+
 if __name__ == '__main__':
-  # Do not run these tests under TF1.x -- dataset_util does not support TF 1.x.
-  if tf.__version__ >= '2':
-    tf.test.main()
+  tf.test.main()
