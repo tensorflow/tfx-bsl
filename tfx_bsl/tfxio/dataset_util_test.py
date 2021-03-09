@@ -71,9 +71,6 @@ class DatasetUtilTest(tf.test.TestCase, parameterized.TestCase):
   @test_util.run_in_graph_and_eager_modes
   def test_make_tf_record_dataset(self, batch_size, drop_final_batch,
                                   num_epochs, expected_data):
-    if tf.executing_eagerly() and tf.__version__ < '2':
-      # It doesn't make sense to test eager execution if we are on tf v1.x
-      return
     dataset = dataset_util.make_tf_record_dataset(
         self._example_file,
         batch_size,
@@ -120,9 +117,9 @@ class DatasetUtilTest(tf.test.TestCase, parameterized.TestCase):
 def _dataset_elements(dataset):
   """Returns elements from the `tf.data.Dataset` object as a list."""
   results = []
-  if tf.executing_eagerly() and tf.__version__ >= '2.1':
-    # tensorflow v2.1 introduces `as_numpy_iterator()`.
-    return list(dataset.as_numpy_iterator())
+  if tf.executing_eagerly():
+    for elem in dataset:
+      results.append(elem.numpy())
   else:
     iterator = tf.compat.v1.data.make_one_shot_iterator(dataset)
     next_elem = iterator.get_next()
@@ -132,7 +129,7 @@ def _dataset_elements(dataset):
           results.append(sess.run(next_elem))
         except tf.errors.OutOfRangeError:
           break
-    return results
+  return results
 
 if __name__ == '__main__':
   tf.test.main()
