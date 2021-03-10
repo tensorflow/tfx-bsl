@@ -13,7 +13,7 @@
 # limitations under the License.
 """Dataset options for tfxio."""
 
-from typing import Optional, NamedTuple, Text
+from typing import NamedTuple, Optional
 import tensorflow as tf
 
 
@@ -25,9 +25,11 @@ class TensorFlowDatasetOptions(
         ('shuffle', bool),
         ('shuffle_buffer_size', int),
         ('shuffle_seed', Optional[int]),
+        ('prefetch_buffer_size', int),
         ('reader_num_threads', int),
+        ('parser_num_threads', int),
         ('sloppy_ordering', bool),
-        ('label_key', Optional[Text]),
+        ('label_key', Optional[str]),
     ])):
   """Options for TFXIO's TensorFlowDataset.
 
@@ -42,9 +44,11 @@ class TensorFlowDatasetOptions(
               shuffle: bool = True,
               shuffle_buffer_size: int = 10000,
               shuffle_seed: Optional[int] = None,
+              prefetch_buffer_size: int = tf.data.experimental.AUTOTUNE,
               reader_num_threads: int = tf.data.experimental.AUTOTUNE,
+              parser_num_threads: int = tf.data.experimental.AUTOTUNE,
               sloppy_ordering: bool = False,
-              label_key: Optional[Text] = None):
+              label_key: Optional[str] = None):
     """Returns a dataset options object.
 
     Args:
@@ -64,21 +68,28 @@ class TensorFlowDatasetOptions(
         buffers). A large capacity ensures better shuffling but would increase
         memory usage and startup time.
       shuffle_seed: Randomization seed to use for shuffling.
+      prefetch_buffer_size: Number of feature batches to prefetch in order to
+        improve performance. Recommended value is the number of batches consumed
+        per training step. Defaults to auto-tune.
       reader_num_threads: Number of threads used to read records. If >1, the
         results will be interleaved. Defaults to tf.data.experimental.AUTOTUNE.
+      parser_num_threads: Number of threads to use for parsing `Example` tensors
+        into a dictionary of `Feature` tensors (if applicable). Defaults to
+        auto-tune.
       sloppy_ordering: If `True`, reading performance will be improved at the
         cost of non-deterministic ordering. If `False`, the order of elements
         produced is deterministic prior to shuffling (elements are still
         randomized if `shuffle=True`. Note that if the seed is set, then order
         of elements after shuffling is deterministic). Defaults to False.
       label_key: name of the label tensor. If provided, the returned dataset
-        will yield Tuple[Dict[Text, Tensor], Tensor], where the second term in
+        will yield Tuple[Dict[str, Tensor], Tensor], where the second term in
         the tuple is the label tensor and the dict (the first term) will not
         contain the label feature.
     """
     return super().__new__(cls, batch_size, drop_final_batch, num_epochs,
                            shuffle, shuffle_buffer_size, shuffle_seed,
-                           reader_num_threads, sloppy_ordering, label_key)
+                           prefetch_buffer_size, reader_num_threads,
+                           parser_num_threads, sloppy_ordering, label_key)
 
 
 class RecordBatchesOptions(

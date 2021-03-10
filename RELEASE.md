@@ -4,6 +4,8 @@
 
 ## Major Features and Improvements
 
+*   Add RawRecordTensorFlowDataset interface to record based tfxios.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

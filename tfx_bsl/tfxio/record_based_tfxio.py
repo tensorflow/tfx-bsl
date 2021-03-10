@@ -205,6 +205,57 @@ class RecordBasedTFXIO(tfxio.TFXIO):
           "names: {}.".format(label_key, self.TensorRepresentations().keys()))
     return dataset.map(lambda x: (x, x.pop(label_key)))
 
+  def RawRecordTensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
+    """Returns a Dataset that contains nested Datasets of raw records.
+
+    May not be implemented for some TFXIOs.
+
+    This should be used when RawTfRecordTFXIO.TensorFlowDataset does not
+    suffice. Namely, if there is some logical grouping of files which we need
+    to perform operations on, without applying the operation to each individual
+    group (i.e. shuffle).
+
+    The returned Dataset object is a dataset of datasets, where each nested
+    dataset is a dataset of serialized records. When shuffle=False (default),
+    the nested datasets are deterministically ordered. Each nested dataset can
+    represent multiple files. The files are merged into one dataset if the files
+    have the same format. For example:
+
+    ```
+    file_patterns = ['file_1', 'file_2', 'dir_1/*']
+    file_formats = ['recordio', 'recordio', 'sstable']
+    tfxio = SomeTFXIO(file_patterns, file_formats)
+    datasets = tfxio.RawRecordTensorFlowDataset(options)
+    ```
+    `datasets` would result in the following dataset: `[ds1, ds2]`. Where ds1
+    iterates over records from 'file_1' and 'file_2', and ds2 iterates over
+    records from files matched by 'dir_1/*'.
+
+    Example usage:
+    ```
+    tfxio = SomeTFXIO(file_patterns, file_formats)
+    ds = tfxio.RawRecordTensorFlowDataset(options=options)
+    ds = ds.flat_map(lambda x: x)
+    records = list(ds.as_numpy_iterator())
+    # iterating over `records` yields records from the each file in
+    # `file_patterns`. See `tf.data.Dataset.list_files` for more information
+    # about the order of files when expanding globs.
+    ```
+    Note that we need a flat_map, because `RawRecordTensorFlowDataset` returns
+    a dataset of datasets.
+
+    When shuffle=True, then the datasets not deterministically ordered,
+    but the contents of each nested dataset are deterministcally ordered.
+    For example, we may potentially have [ds2, ds1, ds3], where the
+    contents of ds1, ds2, and ds3 are all deterministcally ordered.
+
+    Args:
+      options: A TensorFlowDatasetOptions object. Not all options will apply.
+    """
+    raise NotImplementedError
+
 
 def CreateRawRecordColumn(
     raw_records: Union[np.ndarray, List[bytes]]) -> pa.Array:
