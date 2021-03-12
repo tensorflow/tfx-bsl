@@ -2,9 +2,7 @@
 load("//tfx_bsl:build_macros.bzl", "tfx_bsl_proto_library", "tfx_bsl_py_proto_library")
 
 package(default_visibility = [
-    "//learning/tfx/pipeline:__subpackages__",
-    "//tfx_bsl:__subpackages__",
-    "//third_party/py/tfx:__subpackages__",
+    "//visibility:public",
 ])
 
 licenses(["notice"])  # Apache 2.0
