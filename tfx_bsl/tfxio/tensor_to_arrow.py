@@ -43,15 +43,41 @@ class TensorsToRecordBatchConverter(object):
 
   __slots__ = ["_handlers", "_arrow_schema"]
 
-  def __init__(self, type_specs: Dict[Text, common_types.TensorTypeSpec]):
+  class Options(object):
+    """Options to TensorsToRecordBatchConverter."""
+
+    def __init__(
+        self,
+        sparse_tensor_value_column_name_template: Text = "{tensor_name}$values",
+        sparse_tensor_index_column_name_template:
+        Text = "{tensor_name}$index{index}"):
+      """Initialzier.
+
+      Args:
+        sparse_tensor_value_column_name_template: a `str.format()` template
+          for the column name for the values component of a generic
+          SparseTensor. This template should contain a "{tensor_name}" token.
+        sparse_tensor_index_column_name_template: a `str.format()` template
+          for the column name for the sparse index components of a generic
+          SparseTensor. This template should contain a "{tensor_name}" token
+          and an "{index}" token.
+      """
+      self.sparse_tensor_value_column_name_template = (
+          sparse_tensor_value_column_name_template)
+      self.sparse_tensor_index_column_name_template = (
+          sparse_tensor_index_column_name_template)
+
+  def __init__(self, type_specs: Dict[Text, common_types.TensorTypeSpec],
+               options: Options = Options()):
     """Initializer.
 
     Args:
       type_specs: a mapping from names of tensors to their TypeSpecs. When
         calling convert(), the dict of tensors passed in must contain the
         same names, and each TensorAlike must be compatible to their TypeSpecs.
+      options: options.
     """
-    self._handlers = _make_handlers(type_specs)
+    self._handlers = _make_handlers(type_specs, options)
     all_fields = []
     seen_column_names = set()
     for tensor_name, handler in self._handlers:
@@ -163,7 +189,8 @@ class _TypeHandler(abc.ABC):
 
   @staticmethod
   @abc.abstractmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec,
+                 options: TensorsToRecordBatchConverter.Options) -> bool:
     """Returns `True` if the handler can handle the given `tf.TypeSpec`."""
 
 
@@ -172,7 +199,9 @@ class _DenseTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type", "_unbatched_shape"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+               options: TensorsToRecordBatchConverter.Options):
+    del options
     super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
     self._unbatched_shape = type_spec.shape.as_list()[1:]
@@ -205,7 +234,9 @@ class _DenseTensorHandler(_TypeHandler):
         values_np, self._values_arrow_type))]
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec,
+                 options: TensorsToRecordBatchConverter.Options) -> bool:
+    del options
     if not isinstance(type_spec, tf.TensorSpec):
       return False
     if type_spec.dtype == tf.bool:
@@ -225,7 +256,9 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+               options: TensorsToRecordBatchConverter.Options):
+    del options
     super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
 
@@ -270,7 +303,9 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec,
+                 options: TensorsToRecordBatchConverter.Options) -> bool:
+    del options
     if not isinstance(type_spec, tf.SparseTensorSpec):
       return False
     return (
@@ -283,7 +318,9 @@ class _RaggedTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type", "_row_partition_dtype"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+               options: TensorsToRecordBatchConverter.Options):
+    del options
     super().__init__(tensor_name, type_spec)
 
     # TODO(b/159717195): clean up protected-access
@@ -327,7 +364,9 @@ class _RaggedTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec) -> bool:
+  def can_handle(type_spec: common_types.TensorTypeSpec,
+                 options: TensorsToRecordBatchConverter.Options) -> bool:
+    del options
     if not isinstance(type_spec, tf.RaggedTensorSpec):
       return False
     # TODO(b/159717195): clean up protected-access
@@ -343,8 +382,94 @@ class _RaggedTensorHandler(_TypeHandler):
     return type_spec._dtype != tf.bool
 
 
+class _SparseTensorHandler(_TypeHandler):
+  """Handles generic SparseTensor.
+
+  Note that this handler does not handle any 2-D / 1-D SparseTensor
+  (they are handled by _VarLenSparseTensorHandler). However, not all 2-D
+  SparseTensors are VarLenSparseTensors.
+  """
+
+  __slots__ = ["_values_arrow_type", "_unbatched_shape",
+               "_value_column_name", "_index_column_names"]
+
+  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+               options: TensorsToRecordBatchConverter.Options):
+    super().__init__(tensor_name, type_spec)
+    assert isinstance(type_spec, tf.SparseTensorSpec)
+    self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
+    self._unbatched_shape = type_spec.shape.as_list()[1:]
+    self._value_column_name = (
+        options.sparse_tensor_value_column_name_template.format(
+            tensor_name=tensor_name))
+    self._index_column_names = [
+        options.sparse_tensor_index_column_name_template.format(
+            tensor_name=tensor_name, index=i)
+        for i in range(len(self._unbatched_shape))
+    ]
+
+  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+    # Transpose the indices array (and materialize the result in C-order)
+    # because later we will use individual columns of the original indices.
+    indices_np = (
+        np.ascontiguousarray(
+            np.transpose(np.asarray(tensor.indices)), dtype=np.int64))
+
+    # the first column of indices identifies which row each sparse value belongs
+    # to.
+    parent_indices = pa.array(indices_np[0, :], type=pa.int64())
+    num_rows = int(np.asarray(tensor.dense_shape)[0])
+
+    result = [
+        array_util.MakeListArrayFromParentIndicesAndValues(
+            num_rows,
+            parent_indices,
+            pa.array(np.asarray(tensor.values), type=self._values_arrow_type),
+            empty_list_as_null=False)
+    ]
+
+    for i in range(len(self._index_column_names)):
+      result.append(
+          array_util.MakeListArrayFromParentIndicesAndValues(
+              num_rows,
+              parent_indices,
+              pa.array(indices_np[i + 1, :], type=pa.int64()),
+              empty_list_as_null=False))
+
+    return result
+
+  def arrow_fields(self) -> List[pa.Field]:
+    return ([
+        pa.field(self._value_column_name, pa.large_list(
+            self._values_arrow_type))
+    ] + [
+        pa.field(n, pa.large_list(pa.int64())) for n in self._index_column_names
+    ])
+
+  def tensor_representation(self) -> schema_pb2.TensorRepresentation:
+    result = schema_pb2.TensorRepresentation()
+    for d in self._unbatched_shape:
+      result.sparse_tensor.dense_shape.dim.add().size = d
+    result.sparse_tensor.value_column_name = self._value_column_name
+    result.sparse_tensor.index_column_names.extend(self._index_column_names)
+    return result
+
+  @staticmethod
+  def can_handle(type_spec: common_types.TensorTypeSpec,
+                 options: TensorsToRecordBatchConverter.Options) -> bool:
+    del options
+    if not isinstance(type_spec, tf.SparseTensorSpec):
+      return False
+    if type_spec.shape.rank is None or type_spec.shape.rank <= 2:
+      return False
+    if any(d is None for d in type_spec.shape.as_list()[1:]):
+      return False
+    return True
+
+
 _ALL_HANDLERS_CLS = [
-    _VarLenSparseTensorHandler, _RaggedTensorHandler, _DenseTensorHandler
+    _VarLenSparseTensorHandler, _RaggedTensorHandler, _DenseTensorHandler,
+    _SparseTensorHandler,
 ]
 
 
@@ -359,18 +484,20 @@ def _tf_dtype_to_arrow_type(dtype: tf.DType):
 
 
 def _make_handlers(
-    type_specs: Dict[Text, common_types.TensorTypeSpec]
+    type_specs: Dict[Text, common_types.TensorTypeSpec],
+    options: TensorsToRecordBatchConverter.Options
 ) -> List[Tuple[Text, _TypeHandler]]:
-  return [(tensor_name, _get_handler(tensor_name, type_spec))
+  return [(tensor_name, _get_handler(tensor_name, type_spec, options))
           for tensor_name, type_spec in sorted(type_specs.items())]
 
 
-def _get_handler(tensor_name: Text,
-                 type_spec: common_types.TensorTypeSpec) -> _TypeHandler:
+def _get_handler(
+    tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+    options: TensorsToRecordBatchConverter.Options) -> _TypeHandler:
   """Returns a TypeHandler that can handle `type_spec`."""
   for handler_cls in _ALL_HANDLERS_CLS:
-    if handler_cls.can_handle(type_spec):
-      return handler_cls(tensor_name, type_spec)
+    if handler_cls.can_handle(type_spec, options):
+      return handler_cls(tensor_name, type_spec, options)
   # We don't support tf.bool now because:
   #   - if converted to pa.bool(), TFDV does not know how to handle it.
   #   - if converted to pa.uint8() (or other integral types), we don't have

@@ -5,6 +5,7 @@
 ## Major Features and Improvements
 
 *   Add RawRecordTensorFlowDataset interface to record based tfxios.
+*   TensorToArrowConverter now can handle generic SparseTensors (>=3-d).
 
 ## Bug Fixes and Other Changes
 
