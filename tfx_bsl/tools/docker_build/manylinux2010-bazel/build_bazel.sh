@@ -15,6 +15,10 @@
 #!/bin/bash
 set +x
 (unzip bazel.zip && rm -f bazel.zip) || exit 1
+# Fix for https://github.com/bazelbuild/bazel/issues/12327 is not included in
+# 4.0.0 yet.
+wget https://github.com/bazelbuild/bazel/commit/f8606e5e76579442a1c6563e718ea54c673f1a04.patch -O issue12327.patch || exit 1
+patch --strip 1 < issue12327.patch || exit 1
 
 # Force using python 3.7 (system default may be 2.6 which is not supported).
 PATH=/opt/python/cp37-cp37m/bin:$PATH \

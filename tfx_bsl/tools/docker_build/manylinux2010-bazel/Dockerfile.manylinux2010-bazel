@@ -13,21 +13,19 @@
 # limitations under the License.
 
 # A docker image that contains the PyPA manylinux2010 toolchain and
-# bazel 3.0.0.
+# bazel 4.0.0.
 # docker build -f Dockerfile.manylinux2010-bazel \
-#   --tag us.gcr.io/tfx-oss-testing/manylinux2010-bazel
-# docker push us.gcr.io/tfx-oss-testing/manylinux2010-bazel
+#   --tag gcr.io/tfx-oss-public/manylinux2010-bazel
+# docker push gcr.io/tfx-oss-public/manylinux2010-bazel
 
 FROM quay.io/pypa/manylinux2010_x86_64 as bazel_build
 
-RUN yum install -y java-1.8.0-openjdk-devel zip
+RUN yum install -y java-1.8.0-openjdk-devel zip wget
 WORKDIR /tmp/bazel_build
-# ADD https://github.com/bazelbuild/bazel/releases/download/0.26.1/bazel-0.26.1-dist.zip bazel.zip
-ADD https://github.com/bazelbuild/bazel/releases/download/3.0.0/bazel-3.0.0-dist.zip bazel.zip
+ADD https://github.com/bazelbuild/bazel/releases/download/4.0.0/bazel-4.0.0-dist.zip bazel.zip
 ADD ./build_bazel.sh build_bazel.sh
 RUN /bin/bash build_bazel.sh
 
 FROM quay.io/pypa/manylinux2010_x86_64
 COPY --from=bazel_build /tmp/bazel_build/output/bazel /bin
-ADD ./bazel.bazelrc /etc/bazel.bazelrc
-RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel zip rh-python36
+RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel zip rh-python36 rsync
