@@ -6,6 +6,7 @@
 
 *   Add RawRecordTensorFlowDataset interface to record based tfxios.
 *   TensorToArrowConverter now can handle generic SparseTensors (>=3-d).
+*   Bumped the mininum bazel version required to build `tfx_bsl` to 3.7.2.
 
 ## Bug Fixes and Other Changes
 

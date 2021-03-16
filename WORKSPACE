@@ -104,4 +104,4 @@ http_archive(
 )
 # Specify the minimum required bazel version.
 load("@org_tensorflow_no_deps//tensorflow:version_check.bzl", "check_bazel_version_at_least")
-check_bazel_version_at_least("3.0.0")
+check_bazel_version_at_least("3.7.2")
