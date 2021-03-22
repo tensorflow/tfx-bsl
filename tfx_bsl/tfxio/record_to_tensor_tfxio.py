@@ -15,7 +15,7 @@
 
 import copy
 import datetime
-from typing import List, Iterator, Optional, Text, Union
+from typing import Any, Callable, Dict, List, Iterator, Optional, Text, Union
 
 import apache_beam as beam
 from apache_beam.utils import shared
@@ -32,7 +32,7 @@ from tfx_bsl.tfxio import tensor_to_arrow
 from tfx_bsl.tfxio import tfxio
 
 
-class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
+class RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
   """Base class for TFXIO implementations that uses TFGraphRecordDecoder."""
 
   def __init__(self,
@@ -84,6 +84,16 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     return self._tensor_representations
 
+  def DecodeFunction(self) -> Callable[[tf.Tensor], Dict[Text, Any]]:
+    """Returns the decode function provided by the decoder.
+
+    Returns:
+      A TF function that takes a 1-D string tensor and returns a dict from
+      strings to (composite) tensors.
+    """
+    decoder = tf_graph_record_decoder.load_decoder(self._saved_decoder_path)
+    return decoder.decode_record
+
   def _RawRecordToRecordBatchInternal(
       self, batch_size: Optional[int]) -> beam.PTransform:
 
@@ -130,7 +140,7 @@ class _RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
     return dataset.map(_ParseFn)
 
 
-class BeamRecordToTensorTFXIO(_RecordToTensorTFXIO):
+class BeamRecordToTensorTFXIO(RecordToTensorTFXIO):
   """TFXIO implementation that decodes records in pcoll[bytes] with TF Graph."""
 
   def __init__(self,
@@ -175,7 +185,7 @@ class BeamRecordToTensorTFXIO(_RecordToTensorTFXIO):
     raise NotImplementedError
 
 
-class TFRecordToTensorTFXIO(_RecordToTensorTFXIO):
+class TFRecordToTensorTFXIO(RecordToTensorTFXIO):
   """Uses a TfGraphRecordDecoder to decode records on TFRecord files.
 
   This TFXIO assumes the data records are stored in TFRecord and takes a user

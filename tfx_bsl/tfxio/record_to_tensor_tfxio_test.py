@@ -307,6 +307,19 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
     with self.assertRaisesRegex(ValueError, "The `label_key` provided.*"):
       tfxio.TensorFlowDataset(options=options)
 
+  def test_get_decode_function(self):
+    decoder_path = _write_decoder()
+    tfxio = record_to_tensor_tfxio.TFRecordToTensorTFXIO(
+        self._input_path, decoder_path, ["some", "component"])
+    decode_fn = tfxio.DecodeFunction()
+    decoded = decode_fn(tf.constant(_RECORDS))
+    for tensor_name in ("st1", "st2"):
+      self.assertIn(tensor_name, decoded)
+      st = decoded[tensor_name]
+      self.assertAllEqual(st.values, _RECORDS)
+      self.assertAllEqual(st.indices, [[0, 0], [1, 0]])
+      self.assertAllEqual(st.dense_shape, [2, 1])
+
 
 if __name__ == "__main__":
   tf.test.main()
