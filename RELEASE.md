@@ -4,6 +4,16 @@
 
 ## Major Features and Improvements
 
+## Bug Fixes and Other Changes
+
+## Breaking Changes
+
+## Deprecations
+
+# Version 0.29.0
+
+## Major Features and Improvements
+
 *   Add RawRecordTensorFlowDataset interface to record based tfxios.
 *   TensorToArrowConverter now can handle generic SparseTensors (>=3-d).
 *   Added `RecordToTensorTFXIO.DecodeFunction()` to get the decoder as a TF
@@ -12,11 +22,16 @@
 ## Bug Fixes and Other Changes
 
 *   Depends on `absl-py>=0.9,<0.13`.
+*   Depends on `tensorflow-metadata>=0.29,<0.30`.
 *   Bumped the mininum bazel version required to build `tfx_bsl` to 3.7.2.
 
 ## Breaking Changes
 
+*   N/A
+
 ## Deprecations
+
+*   N/A
 
 # Version 0.28.1
 
