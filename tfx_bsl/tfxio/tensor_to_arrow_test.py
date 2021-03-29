@@ -339,6 +339,22 @@ _CONVERT_TEST_CASES = [
             "dt1": pa.array([[1], [2], [3]], type=pa.large_list(pa.int32())),
         },
         test_values_conversion=True),
+    dict(
+        testcase_name="empty_2d_dense",
+        type_specs={"dt": tf.TensorSpec([None, 0], tf.float32)},
+        expected_schema={"dt": pa.large_list(pa.float32())},
+        expected_tensor_representations={
+            "dt":
+                """dense_tensor {
+                         column_name: "dt"
+                         shape { dim { size: 0} }
+                       }""",
+        },
+        tensor_input={"dt": tf.constant(np.empty((2, 0), dtype=np.float32))},
+        expected_record_batch={
+            "dt": pa.array([[], []], type=pa.large_list(pa.float32()))
+        },
+        test_values_conversion=True),
 ] + _make_2d_varlen_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases() + _make_2d_dense_tensor_test_cases(
 ) + _make_3d_sparse_tensor_test_cases()

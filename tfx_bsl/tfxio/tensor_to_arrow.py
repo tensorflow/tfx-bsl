@@ -224,11 +224,14 @@ class _DenseTensorHandler(_TypeHandler):
     values_np = np.asarray(tensor)
     shape = values_np.shape
     elements_per_list = np.product(shape[1:], dtype=np.int64)
-    offsets = np.arange(
-        0,
-        elements_per_list * shape[0] + 1,
-        elements_per_list,
-        dtype=np.int64)
+    if elements_per_list == 0:
+      offsets = np.zeros(shape[0] + 1, dtype=np.int64)
+    else:
+      offsets = np.arange(
+          0,
+          elements_per_list * shape[0] + 1,
+          elements_per_list,
+          dtype=np.int64)
     values_np = np.reshape(values_np, -1)
     return [pa.LargeListArray.from_arrays(offsets, pa.array(
         values_np, self._values_arrow_type))]
