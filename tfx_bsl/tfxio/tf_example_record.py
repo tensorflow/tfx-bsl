@@ -84,7 +84,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
   def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
     schema = self._GetSchemaForDecoding()
     if schema is None:
-      raise ValueError("TFMD schema not provided. Unable to derive an"
+      raise ValueError("TFMD schema not provided. Unable to derive an "
                        "Arrow schema")
     return example_coder.ExamplesToRecordBatchDecoder(
         schema.SerializeToString()).ArrowSchema()
