@@ -153,8 +153,7 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
 
 
 @beam.typehints.with_input_types(CSVLine)
-@beam.typehints.with_output_types(
-    beam.typehints.Tuple[beam.typehints.List[CSVCell], CSVLine])
+@beam.typehints.with_output_types(Tuple[List[CSVCell], CSVLine])
 class ParseCSVLine(beam.DoFn):
   """A beam.DoFn to parse CSVLines into Tuple(List[CSVCell], CSVLine).
 
@@ -168,13 +167,14 @@ class ParseCSVLine(beam.DoFn):
   def setup(self):
     self._reader = _CSVRecordReader(self._delimiter)
 
-  def process(self, csv_line: CSVLine):
+  def process(self,
+              csv_line: CSVLine) -> Iterable[Tuple[List[CSVCell], CSVLine]]:
     line = self._reader.ReadLine(csv_line)
     yield (line, csv_line)
 
 
-@beam.typehints.with_input_types(beam.typehints.List[CSVCell])
-@beam.typehints.with_output_types(beam.typehints.List[ColumnInfo])
+@beam.typehints.with_input_types(List[CSVCell])
+@beam.typehints.with_output_types(List[ColumnInfo])
 class ColumnTypeInferrer(beam.CombineFn):
   """A beam.CombineFn to infer CSV Column types.
 
@@ -276,9 +276,8 @@ class ColumnTypeInferrer(beam.CombineFn):
 
 
 @beam.typehints.with_input_types(
-    beam.typehints.List[beam.typehints.Tuple[beam.typehints.List[CSVCell],
-                                             CSVLine]],
-    beam.typehints.List[ColumnInfo])
+    List[Tuple[List[CSVCell], CSVLine]],
+    List[ColumnInfo])
 @beam.typehints.with_output_types(pa.RecordBatch)
 class BatchedCSVRowsToRecordBatch(beam.DoFn):
   """DoFn to convert a batch of csv rows to a RecordBatch."""
