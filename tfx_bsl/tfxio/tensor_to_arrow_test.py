@@ -103,6 +103,57 @@ def _make_2d_varlen_sparse_tensor_test_cases():
   return result
 
 
+def _make_2d_generic_sparse_tensor_test_cases():
+  result = []
+  for tf_type, arrow_type in _TF_TYPE_TO_ARROW_TYPE.items():
+    if tf_type == tf.string:
+      values = tf.constant([b"1", b"2", b"3", b"4"], dtype=tf.string)
+      expected_value_array = pa.array([[b"1", b"2", b"3"], [], [b"4"], []],
+                                      type=pa.large_list(arrow_type))
+    else:
+      values = tf.constant([1, 2, 3, 4], dtype=tf_type)
+      expected_value_array = pa.array([[1, 2, 3], [], [4], []],
+                                      type=pa.large_list(arrow_type))
+    result.append(
+        dict(
+            testcase_name="2d_generic_sparse_tensor_%s" % tf_type.name,
+            type_specs={"sp1": tf.SparseTensorSpec([None, 5], tf_type)},
+            expected_schema={
+                "sp1$values": pa.large_list(arrow_type),
+                "sp1$index0": pa.large_list(pa.int64()),
+            },
+            expected_tensor_representations={
+                "sp1":
+                    """sparse_tensor {
+                dense_shape {
+                  dim {
+                    size: 5
+                  }
+                }
+                value_column_name: "sp1$values"
+                index_column_names: "sp1$index0"
+                }""",
+            },
+            tensor_input={
+                "sp1":
+                    tf.SparseTensor(
+                        values=values,
+                        indices=[[0, 0], [0, 2], [0, 4], [2, 1]],
+                        dense_shape=[4, 5]),
+            },
+            expected_record_batch={
+                "sp1$values":
+                    expected_value_array,
+                "sp1$index0":
+                    pa.array([[0, 2, 4], [], [1], []],
+                             type=pa.large_list(pa.int64())),
+            },
+            test_values_conversion=True,
+            options=tensor_to_arrow.TensorsToRecordBatchConverter.Options(
+                generic_sparse_tensor_names=frozenset({"sp1"}))))
+  return result
+
+
 def _make_3d_ragged_tensor_test_cases():
   result = []
   for row_partition_dtype in _ROW_PARTITION_DTYPES:
@@ -356,6 +407,7 @@ _CONVERT_TEST_CASES = [
         },
         test_values_conversion=True),
 ] + _make_2d_varlen_sparse_tensor_test_cases(
+) + _make_2d_generic_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases() + _make_2d_dense_tensor_test_cases(
 ) + _make_3d_sparse_tensor_test_cases()
 
@@ -372,15 +424,19 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
       self.assertAllEqual(left, right)
 
   @parameterized.named_parameters(*_CONVERT_TEST_CASES)
-  def test_convert(self,
-                   type_specs,
-                   expected_schema,
-                   expected_tensor_representations,
-                   tensor_input,
-                   expected_record_batch,
-                   test_values_conversion=False):
+  def test_convert(
+      self,
+      type_specs,
+      expected_schema,
+      expected_tensor_representations,
+      tensor_input,
+      expected_record_batch,
+      test_values_conversion=False,
+      options=tensor_to_arrow.TensorsToRecordBatchConverter.Options()):
+
     def convert_and_check(tensors, test_values_conversion):
-      converter = tensor_to_arrow.TensorsToRecordBatchConverter(type_specs)
+      converter = tensor_to_arrow.TensorsToRecordBatchConverter(
+          type_specs, options)
 
       self.assertEqual({f.name: f.type for f in converter.arrow_schema()},
                        expected_schema,

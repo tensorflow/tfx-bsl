@@ -14,7 +14,7 @@
 """Utils to convert TF Tensors or their values to Arrow arrays."""
 
 import abc
-from typing import Dict, List, Text, Tuple, Union
+from typing import Dict, List, Text, Tuple, Union, FrozenSet
 
 from absl import logging
 import numpy as np
@@ -50,7 +50,8 @@ class TensorsToRecordBatchConverter(object):
         self,
         sparse_tensor_value_column_name_template: Text = "{tensor_name}$values",
         sparse_tensor_index_column_name_template:
-        Text = "{tensor_name}$index{index}"):
+        Text = "{tensor_name}$index{index}",
+        generic_sparse_tensor_names: FrozenSet[str] = frozenset()):
       """Initialzier.
 
       Args:
@@ -61,11 +62,17 @@ class TensorsToRecordBatchConverter(object):
           for the column name for the sparse index components of a generic
           SparseTensor. This template should contain a "{tensor_name}" token
           and an "{index}" token.
+        generic_sparse_tensor_names: a set of SparseTensor names that must be
+          converted as generic SparseTensors. Its purpose is to disambiguate
+          2-D varlen and 2-D generic SparseTensors. It is not necessary to
+          include names of >2-D SparseTensors since they can only be handled as
+          generic SparseTensors.
       """
       self.sparse_tensor_value_column_name_template = (
           sparse_tensor_value_column_name_template)
       self.sparse_tensor_index_column_name_template = (
           sparse_tensor_index_column_name_template)
+      self.generic_sparse_tensor_names = generic_sparse_tensor_names
 
   def __init__(self, type_specs: Dict[Text, common_types.TensorTypeSpec],
                options: Options = Options()):
@@ -189,7 +196,7 @@ class _TypeHandler(abc.ABC):
 
   @staticmethod
   @abc.abstractmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
     """Returns `True` if the handler can handle the given `tf.TypeSpec`."""
 
@@ -237,8 +244,9 @@ class _DenseTensorHandler(_TypeHandler):
         values_np, self._values_arrow_type))]
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
+    del tensor_name
     del options
     if not isinstance(type_spec, tf.TensorSpec):
       return False
@@ -306,14 +314,13 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
-    del options
     if not isinstance(type_spec, tf.SparseTensorSpec):
       return False
-    return (
-        type_spec.shape.is_compatible_with([None, None]) and
-        type_spec.dtype != tf.bool)
+    return (type_spec.shape.is_compatible_with([None, None]) and
+            type_spec.dtype != tf.bool and
+            tensor_name not in options.generic_sparse_tensor_names)
 
 
 class _RaggedTensorHandler(_TypeHandler):
@@ -367,8 +374,9 @@ class _RaggedTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
+    del tensor_name
     del options
     if not isinstance(type_spec, tf.RaggedTensorSpec):
       return False
@@ -389,8 +397,10 @@ class _SparseTensorHandler(_TypeHandler):
   """Handles generic SparseTensor.
 
   Note that this handler does not handle any 2-D / 1-D SparseTensor
-  (they are handled by _VarLenSparseTensorHandler). However, not all 2-D
-  SparseTensors are VarLenSparseTensors.
+  by default (they are handled by _VarLenSparseTensorHandler). However, not all
+  2-D SparseTensors are VarLenSparseTensors, if you want to handle specific 2-D
+  SparseTensor as a generic SparseTensor, add its name to
+  options.generic_sparse_tensor_names.
   """
 
   __slots__ = ["_values_arrow_type", "_unbatched_shape",
@@ -458,12 +468,14 @@ class _SparseTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
-    del options
     if not isinstance(type_spec, tf.SparseTensorSpec):
       return False
-    if type_spec.shape.rank is None or type_spec.shape.rank <= 2:
+    if type_spec.shape.rank is None or type_spec.shape.rank <= 1:
+      return False
+    if (type_spec.shape.rank == 2 and
+        tensor_name not in options.generic_sparse_tensor_names):
       return False
     if any(d is None for d in type_spec.shape.as_list()[1:]):
       return False
@@ -499,7 +511,7 @@ def _get_handler(
     options: TensorsToRecordBatchConverter.Options) -> _TypeHandler:
   """Returns a TypeHandler that can handle `type_spec`."""
   for handler_cls in _ALL_HANDLERS_CLS:
-    if handler_cls.can_handle(type_spec, options):
+    if handler_cls.can_handle(tensor_name, type_spec, options):
       return handler_cls(tensor_name, type_spec, options)
   # We don't support tf.bool now because:
   #   - if converted to pa.bool(), TFDV does not know how to handle it.
