@@ -81,17 +81,25 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
 
   def test_save_load_decode(self):
     decoder = _DecoderForTestWithRecordIndexTensorName()
-    self.assertEqual(decoder.output_type_specs(), {
-        "sparse_tensor":
-            tf.SparseTensorSpec(shape=[None, None], dtype=tf.string),
-        "ragged_tensor":
-            tf.RaggedTensorSpec(
-                shape=[None, None], dtype=tf.string, ragged_rank=1),
-        "record_index":
-            tf.RaggedTensorSpec(
-                shape=[None, None], dtype=tf.int64, ragged_rank=1),
-        "dense_tensor": tf.TensorSpec(shape=[None], dtype=tf.string)
-    })
+    actual_type_specs = decoder.output_type_specs()
+    actual_sparse_tensor_spec = actual_type_specs.pop("sparse_tensor")
+    # The expected shape is [None, 1], but due to a TensorFlow bug, it could
+    # be [None, None] in older TF versions.
+    self.assertTrue(actual_sparse_tensor_spec ==
+                    tf.SparseTensorSpec(shape=[None, None], dtype=tf.string) or
+                    actual_sparse_tensor_spec == tf.SparseTensorSpec(
+                        shape=[None, 1], dtype=tf.string))
+    self.assertEqual(
+        actual_type_specs, {
+            "ragged_tensor":
+                tf.RaggedTensorSpec(
+                    shape=[None, None], dtype=tf.string, ragged_rank=1),
+            "record_index":
+                tf.RaggedTensorSpec(
+                    shape=[None, None], dtype=tf.int64, ragged_rank=1),
+            "dense_tensor":
+                tf.TensorSpec(shape=[None], dtype=tf.string)
+        })
     self.assertEqual(decoder.record_index_tensor_name, "record_index")
     tf_graph_record_decoder.save_decoder(decoder, self._tmp_dir)
     loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
