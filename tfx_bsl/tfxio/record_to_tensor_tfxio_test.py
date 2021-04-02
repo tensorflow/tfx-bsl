@@ -204,10 +204,8 @@ class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
         tfxio.TensorRepresentations(), expected_tensor_representations)
 
     tensor_adapter = tfxio.TensorAdapter()
-    tensor_adapter_type_specs = tensor_adapter.TypeSpecs()
-    for tensor_name, type_spec in decoder.output_type_specs().items():
-      self.assertTrue(
-          tensor_adapter_type_specs[tensor_name].is_compatible_with(type_spec))
+    self.assertEqual(tensor_adapter.TypeSpecs(),
+                     decoder.output_type_specs())
 
     def _assert_fn(list_of_rb):
       self.assertLen(list_of_rb, 1)
