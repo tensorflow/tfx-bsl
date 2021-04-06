@@ -409,7 +409,6 @@ class _SparseTensorHandler(_TypeHandler):
   def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
                options: TensorsToRecordBatchConverter.Options):
     super().__init__(tensor_name, type_spec)
-    assert isinstance(type_spec, tf.SparseTensorSpec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
     self._unbatched_shape = type_spec.shape.as_list()[1:]
     self._value_column_name = (
