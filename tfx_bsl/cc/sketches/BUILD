@@ -48,6 +48,7 @@ cc_library(
         ":sketches_proto",
         "//tfx_bsl/cc/util:status",
         "//tfx_bsl/cc/util:status_util",
+        "//tfx_bsl/cc/util:utf8",
         "@arrow",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",

@@ -116,6 +116,95 @@ class MisraGriesSketchTest(parameterized.TestCase):
     with self.assertRaisesRegex(RuntimeError, "Unimplemented: bool"):
       sketch.AddValues(values)
 
+  def test_replace_invalid_utf8(self):
+    values1 = pa.array([
+        b"a",
+        b"\x80",  # invalid
+        b"\xC1",  # invalid
+    ])
+    values2 = pa.array([
+        b"\xc0\x80",  # invalid
+        b"a"])
+    sketch1 = sketches.MisraGriesSketch(
+        _NUM_BUCKETS,
+        invalid_utf8_placeholder=b"<BYTES>")
+    sketch1.AddValues(values1)
+
+    sketch2 = sketches.MisraGriesSketch(
+        _NUM_BUCKETS,
+        invalid_utf8_placeholder=b"<BYTES>")
+    sketch2.AddValues(values2)
+
+    serialized1 = sketch1.Serialize()
+    serialized2 = sketch2.Serialize()
+
+    sketch1 = sketches.MisraGriesSketch.Deserialize(serialized1)
+    sketch2 = sketches.MisraGriesSketch.Deserialize(serialized2)
+    sketch1.AddValues(values2)
+    sketch1.Merge(sketch2)
+
+    actual = sketch1.Estimate()
+    actual.validate(full=True)
+    self.assertEqual(actual.to_pylist(), [
+        {"values": b"<BYTES>", "counts": 4.0},
+        {"values": b"a", "counts": 3.0},
+    ])
+
+  def test_no_replace_invalid_utf8(self):
+    sketch = sketches.MisraGriesSketch(
+        _NUM_BUCKETS)
+    sketch.AddValues(pa.array([b"\x80"]))
+    actual = sketch.Estimate()
+    self.assertEqual(actual.to_pylist(), [
+        {"values": b"\x80", "counts": 1.0},
+    ])
+
+  def test_large_string_threshold(self):
+    values1 = pa.array(["a", "bbb", "c", "d", "eeff"])
+    values2 = pa.array(["a", "gghh"])
+    sketch1 = sketches.MisraGriesSketch(
+        _NUM_BUCKETS,
+        large_string_threshold=2,
+        large_string_placeholder=b"<LARGE>")
+    sketch1.AddValues(values1)
+
+    sketch2 = sketches.MisraGriesSketch(
+        _NUM_BUCKETS,
+        large_string_threshold=2,
+        large_string_placeholder=b"<LARGE>")
+    sketch2.AddValues(values2)
+
+    serialized1 = sketch1.Serialize()
+    serialized2 = sketch2.Serialize()
+
+    sketch1 = sketches.MisraGriesSketch.Deserialize(serialized1)
+    sketch2 = sketches.MisraGriesSketch.Deserialize(serialized2)
+    sketch1.AddValues(values2)
+    sketch1.Merge(sketch2)
+
+    actual = sketch1.Estimate()
+    actual.validate(full=True)
+    self.assertEqual(actual.to_pylist(), [
+        {"values": b"<LARGE>", "counts": 4.0},
+        {"values": b"a", "counts": 3.0},
+        {"values": b"c", "counts": 1.0},
+        {"values": b"d", "counts": 1.0},
+    ])
+
+  def test_invalid_large_string_replacing_config(self):
+    with self.assertRaisesRegex(
+        RuntimeError,
+        "Must provide both or neither large_string_threshold and "
+        "large_string_placeholder"):
+      _ = sketches.MisraGriesSketch(_NUM_BUCKETS, large_string_threshold=1024)
+
+    with self.assertRaisesRegex(
+        RuntimeError,
+        "Must provide both or neither large_string_threshold and "
+        "large_string_placeholder"):
+      _ = sketches.MisraGriesSketch(
+          _NUM_BUCKETS, large_string_placeholder=b"<L>")
+
   def test_merge(self):
     sketch1 = _create_basic_sketch(pa.array(["a", "b", "c", "a"]))
     sketch2 = _create_basic_sketch(pa.array(["d", "a"]))

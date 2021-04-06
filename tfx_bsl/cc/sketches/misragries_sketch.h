@@ -22,9 +22,10 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
+#include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
 #include "tfx_bsl/cc/util/status.h"
-#include "arrow/api.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -62,7 +63,19 @@ namespace sketches {
 
 class MisraGriesSketch {
  public:
-  MisraGriesSketch(int num_buckets);
+  // invalid_utf8_placeholder: if provided, when AddValues() gets a
+  //   BinaryArray it will treat elements that are not valid utf-8 sequences in
+  //   that array as if they had the value of the placeholder.
+  // large_string_threshold: if provided, when AddValues() gets a BinaryArray
+  //   it will treat all the elements longer than the threshold as if they
+  //   had the value of `large_string_placeholder`. This is useful to limit
+  //   the memory usage of the sketch.
+  // Note that `large_string_threshold` and `large_string_placeholder` must
+  // be both specified or nullopt.
+  MisraGriesSketch(int num_buckets,
+                   absl::optional<std::string> invalid_utf8_placeholder,
+                   absl::optional<int> large_string_threshold,
+                   absl::optional<std::string> large_string_placeholder);
   // This class is copyable and movable.
   ~MisraGriesSketch() = default;
   // Adds an array of items.
@@ -95,6 +108,10 @@ class MisraGriesSketch {
   double delta_;
   // Dictionary containing lower bound estimates of the item counts.
   absl::flat_hash_map<std::string, double> item_counts_;
+
+  absl::optional<std::string> invalid_utf8_placeholder_;
+  absl::optional<int> large_string_threshold_;
+  absl::optional<std::string> large_string_placeholder_;
 };
 
 }  // namespace sketches

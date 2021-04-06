@@ -18,7 +18,9 @@
 
 #include "pybind11/cast.h"
 #include "pybind11/pybind11.h"
+#include "pybind11/stl.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 
 namespace pybind11 {
 namespace detail {
@@ -43,6 +45,19 @@ template <>
 struct type_caster<absl::string_view> : string_caster<absl::string_view, true> {
 };
 
+#endif
+
+// Convert between absl::optional and python.
+//
+// pybind11 supports std::optional, and absl::optional is meant to be a
+// drop-in replacement for std::optional, so we can just use the built in
+// implementation.
+#ifndef ABSL_USES_STD_OPTIONAL
+template <typename T>
+struct type_caster<absl::optional<T>>
+    : public optional_caster<absl::optional<T>> {};
+template <>
+struct type_caster<absl::nullopt_t> : public void_caster<absl::nullopt_t> {};
 #endif
 
 }  // namespace detail

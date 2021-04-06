@@ -4,6 +4,10 @@
 
 ## Major Features and Improvements
 
+*  Misra-Gries sketch: added support for replacing large string blobs with
+   a configurable placeholder, and replacing invalid utf-8 sequences with
+   a configurable placeholder.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

@@ -27,3 +27,23 @@ cc_library(
         "@com_google_absl//absl/status",
     ],
 )
+
+cc_library(
+    name = "utf8",
+    srcs = ["utf8.cc"],
+    hdrs = ["utf8.h"],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "utf8_test",
+    srcs = ["utf8_test.cc"],
+    deps = [
+        ":utf8",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

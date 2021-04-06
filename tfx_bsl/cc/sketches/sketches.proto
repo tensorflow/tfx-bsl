@@ -36,6 +36,15 @@ message MisraGries {
   repeated double weights = 3 [packed=true];
   // The quantity decremented from the stored weights.
   double delta = 4;
+
+  // If true, the sketch will replace invalid utf8 values added to it with
+  // `invalid_utf8_placeholder`.
+  bool replace_invalid_utf8_values = 5;
+  string invalid_utf8_placeholder = 6;
+  // If non-negative, the sketch will replace string values longer than
+  // the given threshold with `large_string_placeholder`.
+  int32 large_string_threshold = 7;
+  string large_string_placeholder = 8;
 }
 
 // Specifies how the Quantiles Sketch is formatted for serialization.

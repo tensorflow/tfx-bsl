@@ -44,6 +44,7 @@ cc_library(
     features = PYBIND_FEATURES,
     deps = [
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:optional",
         "@pybind11",
     ],
 )

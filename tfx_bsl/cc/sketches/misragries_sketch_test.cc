@@ -36,6 +36,11 @@ using arrow::Array;
 
 const int kNumBuckets = 128;
 
+MisraGriesSketch MakeSketch(int num_buckets) {
+  return MisraGriesSketch(num_buckets, absl::nullopt, absl::nullopt,
+                          absl::nullopt);
+}
+
 void CreateArrowBinaryArrayFromVector(
     const std::vector<std::string> values,
     std::shared_ptr<Array>* array) {
@@ -74,7 +79,7 @@ absl::flat_hash_map<std::string, double> CreateCountsMap(
 
 
 TEST(MisraGriesSketchTest, AddSimpleBinary) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
   std::vector<std::string> values{ "foo", "foo", "bar" };
   std::shared_ptr<arrow::Array> array;
   CreateArrowBinaryArrayFromVector(values, &array);
@@ -88,7 +93,7 @@ TEST(MisraGriesSketchTest, AddSimpleBinary) {
 
 
 TEST(MisraGriesSketchTest, AddSimpleInt64) {
-  MisraGriesSketch mg(3);
+  MisraGriesSketch mg = MakeSketch(3);
   std::vector<int> values{ 1, 1, 1, 1, 2, 3 };
   std::shared_ptr<arrow::Array> array;
   CreateArrowIntArrayFromVector(values, &array);
@@ -103,7 +108,7 @@ TEST(MisraGriesSketchTest, AddSimpleInt64) {
 }
 
 TEST(MisraGriesSketchTest, AddSimpleBinaryWithWeights) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
 
   std::vector<std::string> values{ "foo", "foo", "bar" };
   std::shared_ptr<arrow::Array> array;
@@ -123,7 +128,7 @@ TEST(MisraGriesSketchTest, AddSimpleBinaryWithWeights) {
 }
 
 TEST(MisraGriesSketchTest, AddSimpleBinaryWithIntWeights) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
 
   std::vector<std::string> values{ "foo", "foo", "bar" };
   std::shared_ptr<arrow::Array> array;
@@ -143,9 +148,9 @@ TEST(MisraGriesSketchTest, MergeSimple) {
   std::shared_ptr<arrow::Array> array;
   CreateArrowBinaryArrayFromVector(values, &array);
 
-  MisraGriesSketch mg1(kNumBuckets);
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
   ASSERT_TRUE(mg1.AddValues(*array).ok());
-  MisraGriesSketch mg2(kNumBuckets);
+  MisraGriesSketch mg2 = MakeSketch(kNumBuckets);
   ASSERT_TRUE(mg2.AddValues(*array).ok());
   Status status = mg1.Merge(mg2);
   ASSERT_TRUE(status.ok());
@@ -171,7 +176,7 @@ TEST(MisraGriesSketchTest, AddWithFewBuckets) {
   std::shared_ptr<arrow::Array> array;
   CreateArrowIntArrayFromVector(values, &array);
 
-  MisraGriesSketch mg(2);
+  MisraGriesSketch mg = MakeSketch(2);
   ASSERT_TRUE(mg.AddValues(*array).ok());
 
   absl::flat_hash_map<std::string, double> counts =
@@ -183,7 +188,7 @@ TEST(MisraGriesSketchTest, AddWithFewBuckets) {
 }
 
 TEST(MisraGriesSketchTest, MergeWithFewBuckets) {
-  MisraGriesSketch old_mg(10);
+  MisraGriesSketch old_mg = MakeSketch(10);
   // For i = 1, ... 10, construct a vector containing
   //   k elements equal to i
   //   k elements equal to integers i * 10000 to i * 10000 + k - 1
@@ -206,7 +211,7 @@ TEST(MisraGriesSketchTest, MergeWithFewBuckets) {
       true_counts[absl::StrCat(i * 1000 + j)] = k/10;
     }
     // Add to new sketch object and merge with original.
-    MisraGriesSketch new_mg(10);
+    MisraGriesSketch new_mg = MakeSketch(10);
     std::random_shuffle(values.begin(), values.end());
     std::shared_ptr<arrow::Array> array;
     CreateArrowIntArrayFromVector(values, &array);
@@ -231,7 +236,7 @@ TEST(MisraGriesSketchTest, Estimate) {
   std::shared_ptr<arrow::Array> array;
   CreateArrowBinaryArrayFromVector(values, &array);
 
-  MisraGriesSketch mg1(kNumBuckets);
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
   ASSERT_TRUE(mg1.AddValues(*array).ok());
 
   std::shared_ptr<arrow::Array> values_and_counts_array;
@@ -256,7 +261,7 @@ TEST(MisraGriesSketchTest, Estimate) {
 }
 
 TEST(MisraGriesSketchTest, AddUnweightedLinearDistribution) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
   // For i =  1, 2,... k, create vector of strings such that such that
   // frequency of str(i) is equal to i. Vector contains k * (k + 1) / 2 =
   // elements total.
@@ -329,7 +334,7 @@ std::vector<std::string> CreateZipfVector(
 }
 
 TEST(MisraGriesSketchTest, AddUnweightedZipfDistribution) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
   int k = 200;
   int N = 1000000;
   std::vector<float>zipf_frequencies = GetZipfDistribution(k);
@@ -355,7 +360,7 @@ TEST(MisraGriesSketchTest, AddUnweightedZipfDistribution) {
 }
 
 TEST(MisraGriesSketchTest, AddWeightedZipfDistribution) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
 
   int num_elements = 1000;
   std::vector<float> zipf_frequencies = GetZipfDistribution(num_elements);
@@ -396,7 +401,7 @@ TEST(MisraGriesSketchTest, AddWeightedZipfDistribution) {
 }
 
 TEST(MisraGriesSketchTest, MergeManyValuesUnweightedZipfDistribution) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
   int num_elements = 500;
   int N = 1000000;
   std::vector<float>zipf_frequencies = GetZipfDistribution(num_elements);
@@ -409,7 +414,7 @@ TEST(MisraGriesSketchTest, MergeManyValuesUnweightedZipfDistribution) {
     std::shared_ptr<arrow::Array> array;
     CreateArrowBinaryArrayFromVector(items, &array);
 
-    MisraGriesSketch new_mg(kNumBuckets);
+    MisraGriesSketch new_mg = MakeSketch(kNumBuckets);
     ASSERT_TRUE(new_mg.AddValues(*array).ok());
     ASSERT_TRUE(mg.Merge(new_mg).ok());
     double global_weight = items.size() * trial;
@@ -429,7 +434,7 @@ TEST(MisraGriesSketchTest, MergeManyValuesUnweightedZipfDistribution) {
 
 
 TEST(MisraGriesSketchTest, ZipfSerializationPreservesAccuracy) {
-  MisraGriesSketch mg(kNumBuckets);
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
   int num_elements = 1000;
   std::vector<float> zipf_frequencies = GetZipfDistribution(num_elements);
   float total_weight = std::accumulate(

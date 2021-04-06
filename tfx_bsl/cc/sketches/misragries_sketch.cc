@@ -21,6 +21,7 @@
 #include "absl/strings/str_format.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
+#include "tfx_bsl/cc/util/utf8.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -40,16 +41,22 @@ bool LessThanOrEqualToZero(double value) {
 // as parameters.
 class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
  public:
-    UpdateItemCountsVisitor(
-        int num_buckets,
-        const arrow::FloatArray* weights,
-        double& delta,
-        absl::flat_hash_map<std::string, double>& item_counts)
-        : num_buckets_(num_buckets), weights_(weights), delta_(delta),
-          item_counts_(item_counts) {}
+  UpdateItemCountsVisitor(
+      const absl::optional<std::string>& invalid_utf8_placeholder,
+      const absl::optional<int>& large_string_threshold,
+      const absl::optional<std::string>& large_string_placeholder,
+      int num_buckets, const arrow::FloatArray* weights, double& delta,
+      absl::flat_hash_map<std::string, double>& item_counts)
+      : invalid_utf8_placeholder_(invalid_utf8_placeholder),
+        large_string_threshold_(large_string_threshold),
+        large_string_placeholder_(large_string_placeholder),
+        num_buckets_(num_buckets),
+        weights_(weights),
+        delta_(delta),
+        item_counts_(item_counts) {}
 
-    arrow::Status Visit(const arrow::BinaryArray& array) override {
-      return VisitInternal(array);
+  arrow::Status Visit(const arrow::BinaryArray& array) override {
+    return VisitInternal(array);
     }
     arrow::Status Visit(const arrow::LargeBinaryArray& array) override {
       return VisitInternal(array);
@@ -105,8 +112,22 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
           continue;
         }
         const auto value = array.GetView(i);
-        const auto item = absl::string_view(value.data(), value.size());
-        InsertItem(item);
+        absl::string_view value_sv(value.data(), value.size());
+
+        if (invalid_utf8_placeholder_) {
+          if (!IsValidUtf8(value_sv)) {
+            InsertItem(*invalid_utf8_placeholder_);
+            continue;
+          }
+        }
+
+        if (large_string_threshold_ &&
+            value_sv.size() > *large_string_threshold_) {
+          InsertItem(*large_string_placeholder_);
+          continue;
+        }
+
+        InsertItem(value_sv);
       }
     }
 
@@ -210,6 +231,10 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
       }
       delta_ += value;
     }
+
+    const absl::optional<std::string>& invalid_utf8_placeholder_;
+    const absl::optional<int>& large_string_threshold_;
+    const absl::optional<std::string>& large_string_placeholder_;
     const int num_buckets_;
     const arrow::FloatArray* weights_;
     double& delta_;
@@ -218,13 +243,22 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
 
 }  // namespace
 
-MisraGriesSketch::MisraGriesSketch(int num_buckets)
-    : num_buckets_(num_buckets), delta_(0.0) {
+MisraGriesSketch::MisraGriesSketch(
+    int num_buckets, absl::optional<std::string> invalid_utf8_placeholder,
+    absl::optional<int> large_string_threshold,
+    absl::optional<std::string> large_string_placeholder)
+    : num_buckets_(num_buckets),
+      delta_(0.0),
+      invalid_utf8_placeholder_(std::move(invalid_utf8_placeholder)),
+      large_string_threshold_(std::move(large_string_threshold)),
+      large_string_placeholder_(std::move(large_string_placeholder)) {
   item_counts_.reserve(num_buckets);
 }
 
 Status MisraGriesSketch::AddValues(const arrow::Array& items) {
-  UpdateItemCountsVisitor v(num_buckets_, nullptr, delta_, item_counts_);
+  UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
+                            large_string_placeholder_, num_buckets_, nullptr,
+                            delta_, item_counts_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
   return Status::OK();
 }
@@ -240,7 +274,9 @@ Status MisraGriesSketch::AddValues(
     return errors::InvalidArgument("Weight array must be float type.");
   }
   const auto& weight_array = static_cast<const arrow::FloatArray&>(weights);
-  UpdateItemCountsVisitor v(num_buckets_, &weight_array, delta_, item_counts_);
+  UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
+                            large_string_placeholder_, num_buckets_,
+                            &weight_array, delta_, item_counts_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
   return Status::OK();
 }
@@ -250,6 +286,18 @@ Status MisraGriesSketch::Merge(MisraGriesSketch& other) {
     return errors::InvalidArgument(
         "Both sketches must have the same number of buckets: ",
          num_buckets_, " v.s. ", other.num_buckets_);
+  }
+  if (other.large_string_threshold_ != large_string_threshold_) {
+    return errors::InvalidArgument(
+        "Both sketches must have the same large_string_threshold.");
+  }
+  if (other.large_string_placeholder_ != large_string_placeholder_) {
+    return errors::InvalidArgument(
+        "Both sketches must have the same large_string_placeholder.");
+  }
+  if (other.invalid_utf8_placeholder_ != invalid_utf8_placeholder_) {
+    return errors::InvalidArgument(
+        "Both sketches must have the same invalid_utf8_placeholder.");
   }
   for (const auto& item : other.item_counts_) {
     auto insertion_pair = item_counts_.insert(item);
@@ -355,13 +403,36 @@ std::string MisraGriesSketch::Serialize() const{
     mg_proto.add_items(it.first);
     mg_proto.add_weights(it.second);
   }
+  if (invalid_utf8_placeholder_) {
+    mg_proto.set_replace_invalid_utf8_values(true);
+    mg_proto.set_invalid_utf8_placeholder(*invalid_utf8_placeholder_);
+  }
+  if (large_string_threshold_) {
+    mg_proto.set_large_string_threshold(*large_string_threshold_);
+    mg_proto.set_large_string_placeholder(*large_string_placeholder_);
+  } else {
+    mg_proto.set_large_string_threshold(-1);
+  }
+
   return mg_proto.SerializeAsString();
 }
 
 MisraGriesSketch MisraGriesSketch::Deserialize(absl::string_view encoded) {
   MisraGries mg_proto;
   mg_proto.ParseFromArray(encoded.data(), encoded.size());
-  MisraGriesSketch mg_sketch{mg_proto.num_buckets()};
+  absl::optional<std::string> invalid_utf8_placeholder;
+  if (mg_proto.replace_invalid_utf8_values()) {
+    invalid_utf8_placeholder = mg_proto.invalid_utf8_placeholder();
+  }
+  absl::optional<std::string> large_string_placeholder;
+  absl::optional<int> large_string_threshold;
+  if (mg_proto.large_string_threshold() >= 0) {
+    large_string_threshold = mg_proto.large_string_threshold();
+    large_string_placeholder = mg_proto.large_string_placeholder();
+  }
+  MisraGriesSketch mg_sketch(
+      mg_proto.num_buckets(), std::move(invalid_utf8_placeholder),
+      std::move(large_string_threshold), std::move(large_string_placeholder));
   if (mg_proto.delta() > 0.) {
     mg_sketch.delta_ = mg_proto.delta();
   }
