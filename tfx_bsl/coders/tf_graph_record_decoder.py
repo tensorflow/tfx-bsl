@@ -105,6 +105,19 @@ class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
             autograph=False)
         .get_concrete_function())
 
+  def save(self, path: Text) -> None:
+    """Saves this TFGraphRecordDecoder to a SavedModel at `path`.
+
+    This functions the same as `tf_graph_record_decoder.save_decoder()`. This is
+    provided purely for convenience, and should not impact the actual saved
+    model, since only the `tf.function` from `_make_concrete_decode_function` is
+    saved.
+
+    Args:
+      path: The path to where the saved_model is saved.
+    """
+    save_decoder(self, path)
+
 
 class LoadedDecoder(object):
   """A decoder recovered from a SavedModel.

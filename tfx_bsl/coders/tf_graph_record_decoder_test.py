@@ -13,6 +13,7 @@
 # limitations under the License.
 """Tests for tfx_bsl.coders.tf_graph_record_decoder."""
 
+import os
 import tempfile
 import unittest
 
@@ -124,6 +125,12 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
       self.assertFalse(tf.executing_eagerly())
       loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
       self.assertEqual(loaded.record_index_tensor_name, "record_index")
+
+    # Also test that the decoder's class method `save_decoder` works.
+    new_decoder_path = (os.path.join(self._tmp_dir, "decoder_2"))
+    decoder.save(new_decoder_path)
+    loaded = tf_graph_record_decoder.load_decoder(new_decoder_path)
+    self.assertEqual(loaded.record_index_tensor_name, "record_index")
 
   def test_no_record_index_tensor_name(self):
     decoder = _DecoderForTesting()
