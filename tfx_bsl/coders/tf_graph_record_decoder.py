@@ -25,6 +25,9 @@ from tensorflow.python.framework import composite_tensor  # pylint: disable=g-di
 TensorAlike = Union[tf.Tensor, composite_tensor.CompositeTensor]
 
 
+_RECORD_INDEX_TENSOR_NAME_SIGNATURE_PREFIX = "__record_index_tensor_name__:"
+
+
 class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
   """Base class for decoders that turns a list of bytes to (composite) tensors.
 
@@ -128,19 +131,16 @@ class LoadedDecoder(object):
   def __init__(self, loaded_module: tf.Module):
     self._decode_fun = loaded_module.decode_fun
     self._record_index_tensor_name = None
-    if hasattr(loaded_module, "record_index_tensor_name_fun"):
-      if tf.executing_eagerly():
-        record_index_tensor_name = (
-            loaded_module.record_index_tensor_name_fun().numpy()
-            .decode())
-      else:
-        # We need to evaluate .record_index_tensor_name_fun(). We do that
-        # in a new graph to avoid polluting the current default graph.
-        with tf.compat.v1.Graph().as_default():
-          record_index_tensor_name = (
-              loaded_module.record_index_tensor_name_fun().eval(
-                  session=tf.compat.v1.Session()).decode())
-      self._record_index_tensor_name = record_index_tensor_name
+
+    if hasattr(loaded_module, "signatures"):
+      for signature_name in loaded_module.signatures.keys():
+        if signature_name.startswith(
+            _RECORD_INDEX_TENSOR_NAME_SIGNATURE_PREFIX):
+          record_index_tensor_name = signature_name[
+              len(_RECORD_INDEX_TENSOR_NAME_SIGNATURE_PREFIX):]
+          assert record_index_tensor_name, (
+              "Invalid (empty) record_index_tensor_name")
+          self._record_index_tensor_name = record_index_tensor_name
 
     assert isinstance(self._decode_fun.structured_outputs, dict)
     # Note that a loaded concrete function's structured_outputs are already
@@ -163,7 +163,10 @@ def save_decoder(decoder: TFGraphRecordDecoder, path: Text) -> None:
   m = tf.Module()
   m.decode_fun = decoder._make_concrete_decode_function()  # pylint:disable=protected-access
 
+  signatures = dict()
   if decoder.record_index_tensor_name is not None:
+    assert decoder.record_index_tensor_name, (
+        "Invalid (empty) record_index_tensor_name")
     assert decoder.record_index_tensor_name in decoder.output_type_specs(), (
         "Invalid decoder: record_index_tensor_name: {} not in output "
         "tensors: {}".format(decoder.record_index_tensor_name,
@@ -172,10 +175,16 @@ def save_decoder(decoder: TFGraphRecordDecoder, path: Text) -> None:
     @tf.function(input_signature=[])
     def record_index_tensor_name_fun():
       return decoder.record_index_tensor_name
-    m.record_index_tensor_name_fun = (
-        record_index_tensor_name_fun.get_concrete_function())
+    # We also encode the record index tensor name in the name of a signature.
+    # This way, we do not need to evaluate a tensor or a TF Function in order
+    # to know the name when loading a decoder back.
+    signatures = {
+        "%s%s" % (_RECORD_INDEX_TENSOR_NAME_SIGNATURE_PREFIX,
+                  decoder.record_index_tensor_name):
+            record_index_tensor_name_fun.get_concrete_function()
+    }
 
-  tf.saved_model.save(m, path)
+  tf.saved_model.save(m, path, signatures=signatures)
 
 
 def load_decoder(path: Text) -> LoadedDecoder:
