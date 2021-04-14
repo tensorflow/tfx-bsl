@@ -17,9 +17,11 @@
 #include <memory>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "tfx_bsl/cc/util/status.h"
+#include "tensorflow/core/example/example.pb.h"
 
 namespace arrow {
 class Field;
@@ -46,6 +48,7 @@ namespace tfx_bsl {
 
 class FeatureDecoder;
 class FeatureListDecoder;
+class UnknownTypeFeatureListDecoder;
 class ExamplesToRecordBatchDecoder {
  public:
   static Status Make(
@@ -86,13 +89,37 @@ class ExamplesToRecordBatchDecoder {
       feature_decoders_;
 };
 
-// Converts a RecordBatch to a list of examples.
-//
-// The fields of the RecordBatch must have types list[dtype] or
-// large_list[dtype], where dtype is one of float32, int64, binary, or
-// large_binary.
-Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
-                             std::vector<std::string>* serialized_examples);
+// A tf.Example -> RecordBatch decoder that does not require a schema and can
+// take one tf.Example at a time.
+// It behaves the same as ExamplesToRecordBatchDecoder without a schema.
+// Usage:
+// SchemalessIncrementalExamplesDecoder incremental_decoder_;
+// for (const Example& e: examples) {
+//   CHECK(incremental_decoder_.Add(e).ok());
+// }
+// std::shared_ptr<RecordBatch> result;
+// CHECK(incremental_decoder_.Finish(&result).ok());
+class SchemalessIncrementalExamplesDecoder {
+ public:
+  SchemalessIncrementalExamplesDecoder();
+  ~SchemalessIncrementalExamplesDecoder();
+  Status Add(const tensorflow::Example& example);
+
+  // Reset() will be called.
+  Status Finish(std::shared_ptr<arrow::RecordBatch>* result);
+
+  void Reset();
+
+ private:
+  absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>
+      feature_decoders_;
+  // all features which have been observed.  `feature_decoders` will only
+  // contain features for which a values list was observed, otherwise the
+  // feature type cannot be inferred and so the feature decoder cannot be
+  // created.
+  absl::flat_hash_set<std::string> all_features_;
+  int64_t num_examples_processed_ = 0;
+};
 
 // SequenceExamplesToRecordBatchDecoder converts a vector of SequenceExample
 // protos to an Arrow RecordBatch.
@@ -189,6 +216,56 @@ class SequenceExamplesToRecordBatchDecoder {
       std::string, std::unique_ptr<FeatureListDecoder>>>
       sequence_feature_decoders_;
 };
+
+
+// A tf.SequenceExample -> RecordBatch decoder that does not require a schema
+// and can take one tf.SequenceExample at a time.
+// It behaves the same as SequenceExamplesToRecordBatchDecoder without a schema.
+class SchemalessIncrementalSequenceExamplesDecoder {
+ public:
+  SchemalessIncrementalSequenceExamplesDecoder(
+      const std::string& sequence_feature_column_name);
+  ~SchemalessIncrementalSequenceExamplesDecoder();
+  Status Add(const tensorflow::SequenceExample& example);
+
+  // Reset() will be called.
+  Status Finish(std::shared_ptr<arrow::RecordBatch>* result);
+
+  void Reset();
+
+ private:
+  const std::string sequence_feature_column_name_;
+  absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>
+      context_feature_decoders_;
+  std::map<std::string,
+           absl::variant<std::unique_ptr<FeatureListDecoder>,
+                         std::unique_ptr<UnknownTypeFeatureListDecoder>>>
+      sequence_feature_decoders_;
+  // All context features that have been observed.
+  // `context_feature_decoders` will contain only features for which a values
+  // list was observed (otherwise the feature type cannot be inferred and so the
+  // feature decoder cannot be created).
+  absl::flat_hash_set<std::string> all_context_features_;
+  // If SequenceExamples that include feature_lists have been observed but none
+  // of those examples include any sequence feature names, then this decoder
+  // will add a sequence feature column to the resulting record batch that
+  // contains a StructArray with no child arrays. This tracks whether
+  // feature_lists have been observed.
+  bool feature_lists_observed_ = false;
+
+  int64_t num_examples_processed_ = 0;
+};
+
+// Encoders
+//
+// Converts a RecordBatch to a list of examples.
+//
+// The fields of the RecordBatch must have types list[dtype] or
+// large_list[dtype], where dtype is one of float32, int64, binary, or
+// large_binary.
+Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
+                             std::vector<std::string>* serialized_examples);
+
 }  // namespace tfx_bsl
 
 #endif  // TFX_BSL_CC_CODERS_EXAMPLE_CODER_H_

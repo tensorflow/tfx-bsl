@@ -797,30 +797,45 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
 Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
-  absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>
-      feature_decoders;
-  // all features which have been observed.  `feature_decoders` will only
-  // contain features for which a values list was observed, otherwise the
-  // feature type cannot be inferred and so the feature decoder cannot be
-  // created.
-  absl::flat_hash_set<std::string> all_features;
+  SchemalessIncrementalExamplesDecoder incremental_decoder;
 
   google::protobuf::Arena arena;
-  for (int i = 0; i < serialized_examples.size(); ++i) {
+  for (auto serialized_example : serialized_examples) {
     auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
-    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
-    TFX_BSL_RETURN_IF_ERROR(
-        DecodeTopLevelFeatures(example->features().feature(), all_features,
-                               i, feature_decoders));
+    TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_example, example));
+    TFX_BSL_RETURN_IF_ERROR(incremental_decoder.Add(*example));
   }
+  return incremental_decoder.Finish(record_batch);
+}
+
+
+SchemalessIncrementalExamplesDecoder::SchemalessIncrementalExamplesDecoder() {}
+SchemalessIncrementalExamplesDecoder::~SchemalessIncrementalExamplesDecoder() {}
+
+Status SchemalessIncrementalExamplesDecoder::Add(
+    const tensorflow::Example& example) {
+  return DecodeTopLevelFeatures(example.features().feature(), all_features_,
+                                num_examples_processed_++, feature_decoders_);
+}
+
+void SchemalessIncrementalExamplesDecoder::Reset() {
+  feature_decoders_.clear();
+  all_features_.clear();
+  num_examples_processed_ = 0;
+}
+
+Status SchemalessIncrementalExamplesDecoder::Finish(
+    std::shared_ptr<arrow::RecordBatch>* result) {
   std::vector<std::shared_ptr<arrow::Array>> arrays;
   std::vector<std::shared_ptr<arrow::Field>> fields;
-  TFX_BSL_RETURN_IF_ERROR(FinishTopLevelFeatures(all_features, feature_decoders,
-                                                 serialized_examples.size(),
-                                                 &arrays, &fields));
+  TFX_BSL_RETURN_IF_ERROR(
+      FinishTopLevelFeatures(all_features_, feature_decoders_,
+                             num_examples_processed_, &arrays, &fields));
 
-  *record_batch = arrow::RecordBatch::Make(arrow::schema(fields),
-                                           serialized_examples.size(), arrays);
+  *result = arrow::RecordBatch::Make(arrow::schema(fields),
+                                     num_examples_processed_, arrays);
+
+  Reset();
   return Status::OK();
 }
 
@@ -1052,179 +1067,181 @@ Status
 SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
     const std::vector<absl::string_view>& serialized_sequence_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
-  absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>
-      context_feature_decoders;
-  std::map<std::string,
-           absl::variant<std::unique_ptr<FeatureListDecoder>,
-                         std::unique_ptr<UnknownTypeFeatureListDecoder>>>
-      sequence_feature_decoders;
-  // All context features that have been observed.
-  // `context_feature_decoders` will contain only features for which a values
-  // list was observed (otherwise the feature type cannot be inferred and so the
-  // feature decoder cannot be created).
-  absl::flat_hash_set<std::string> all_context_features;
-  // If SequenceExamples that include feature_lists have been observed but none
-  // of those examples include any sequence feature names, then this decoder
-  // will add a sequence feature column to the resulting record batch that
-  // contains a StructArray with no child arrays. This tracks whether
-  // feature_lists have been observed.
-  bool feature_lists_observed = false;
-
+  SchemalessIncrementalSequenceExamplesDecoder incremental_decoder(
+      sequence_feature_column_name_);
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
     auto* sequence_example =
         google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
         serialized_sequence_examples[i], sequence_example));
-    TFX_BSL_RETURN_IF_ERROR(DecodeTopLevelFeatures(
-        sequence_example->context().feature(), all_context_features,
-        i, context_feature_decoders));
-    if (sequence_example->has_feature_lists()) {
-      feature_lists_observed = true;
+    TFX_BSL_RETURN_IF_ERROR(incremental_decoder.Add(*sequence_example));
+  }
+  TFX_BSL_RETURN_IF_ERROR(incremental_decoder.Finish(record_batch));
+
+  return Status::OK();
+}
+
+SchemalessIncrementalSequenceExamplesDecoder::
+    SchemalessIncrementalSequenceExamplesDecoder(
+        const std::string& sequence_feature_column_name)
+    : sequence_feature_column_name_(sequence_feature_column_name) {}
+SchemalessIncrementalSequenceExamplesDecoder::
+    ~SchemalessIncrementalSequenceExamplesDecoder() {}
+
+Status SchemalessIncrementalSequenceExamplesDecoder::Add(
+    const tensorflow::SequenceExample& sequence_example) {
+  TFX_BSL_RETURN_IF_ERROR(DecodeTopLevelFeatures(
+      sequence_example.context().feature(), all_context_features_,
+      num_examples_processed_, context_feature_decoders_));
+  if (sequence_example.has_feature_lists()) {
+    feature_lists_observed_ = true;
+  }
+  for (const auto& p : sequence_example.feature_lists().feature_list()) {
+    const std::string& sequence_feature_name = p.first;
+    const tensorflow::FeatureList& sequence_feature_list = p.second;
+    FeatureListDecoder* sequence_feature_decoder = nullptr;
+    UnknownTypeFeatureListDecoder* unknown_type_sequence_feature_decoder =
+        nullptr;
+    // Determine if there is an existing decoder for this sequence feature.
+    const auto it = sequence_feature_decoders_.find(sequence_feature_name);
+    if (it != sequence_feature_decoders_.end()) {
+      if (absl::holds_alternative<std::unique_ptr<FeatureListDecoder>>(
+              it->second)) {
+        sequence_feature_decoder =
+            absl::get<std::unique_ptr<FeatureListDecoder>>(it->second).get();
+      } else {
+        unknown_type_sequence_feature_decoder =
+            absl::get<std::unique_ptr<UnknownTypeFeatureListDecoder>>(
+                it->second)
+                .get();
+      }
     }
-    for (const auto& p : sequence_example->feature_lists().feature_list()) {
-      const std::string& sequence_feature_name = p.first;
-      const tensorflow::FeatureList& sequence_feature_list = p.second;
-      FeatureListDecoder* sequence_feature_decoder = nullptr;
-      UnknownTypeFeatureListDecoder* unknown_type_sequence_feature_decoder =
-          nullptr;
-      // Determine if there is an existing decoder for this sequence feature.
-      const auto it = sequence_feature_decoders.find(sequence_feature_name);
-      if (it != sequence_feature_decoders.end()) {
-        if (absl::holds_alternative<std::unique_ptr<FeatureListDecoder>>(
-                it->second)) {
-          sequence_feature_decoder =
-              absl::get<std::unique_ptr<FeatureListDecoder>>(it->second).get();
-        } else {
-          unknown_type_sequence_feature_decoder =
-              absl::get<std::unique_ptr<UnknownTypeFeatureListDecoder>>(
-                  it->second)
-                  .get();
+    // If there was an unknown type decoder for this sequence feature,
+    // determine if its type can be determined from the current sequence
+    // example. If so, convert it to a feature list decoder of the
+    // appropriate type.
+    if (unknown_type_sequence_feature_decoder) {
+      for (const auto& feature : sequence_feature_list.feature()) {
+        if (feature.kind_case() != tensorflow::Feature::KIND_NOT_SET) {
+          TFX_BSL_RETURN_IF_ERROR(
+              unknown_type_sequence_feature_decoder->ConvertToTypedListDecoder(
+                  feature.kind_case(), &sequence_feature_decoder));
+          sequence_feature_decoders_[sequence_feature_name] =
+              absl::WrapUnique(sequence_feature_decoder);
+          unknown_type_sequence_feature_decoder = nullptr;
+          break;
         }
       }
-      // If there was an unknown type decoder for this sequence feature,
-      // determine if its type can be determined from the current sequence
-      // example. If so, convert it to a feature list decoder of the
-      // appropriate type.
-      if (unknown_type_sequence_feature_decoder) {
+    }
+    if (sequence_feature_decoder == nullptr &&
+        unknown_type_sequence_feature_decoder == nullptr) {
+      // If there is no existing decoder for this sequence feature, create
+      // one.
+      if (sequence_feature_list.feature_size() == 0) {
+        unknown_type_sequence_feature_decoder =
+            UnknownTypeFeatureListDecoder::Make();
+      } else {
+        // Determine if the type can be identified from any of the features
+        // in the feature list. Use the first type found. If there is a type
+        // inconsistency, it will be found and addressed in the decoder.
+        tensorflow::Feature::KindCase feature_kind_case =
+            tensorflow::Feature::KIND_NOT_SET;
         for (const auto& feature : sequence_feature_list.feature()) {
           if (feature.kind_case() != tensorflow::Feature::KIND_NOT_SET) {
-            TFX_BSL_RETURN_IF_ERROR(
-                unknown_type_sequence_feature_decoder
-                    ->ConvertToTypedListDecoder(feature.kind_case(),
-                                                &sequence_feature_decoder));
-            sequence_feature_decoders[sequence_feature_name] =
-                absl::WrapUnique(sequence_feature_decoder);
-            unknown_type_sequence_feature_decoder = nullptr;
+            feature_kind_case = feature.kind_case();
             break;
           }
         }
-      }
-      if (sequence_feature_decoder == nullptr &&
-          unknown_type_sequence_feature_decoder == nullptr) {
-        // If there is no existing decoder for this sequence feature, create
-        // one.
-        if (sequence_feature_list.feature_size() == 0) {
-          unknown_type_sequence_feature_decoder =
-              UnknownTypeFeatureListDecoder::Make();
-        } else {
-          // Determine if the type can be identified from any of the features
-          // in the feature list. Use the first type found. If there is a type
-          // inconsistency, it will be found and addressed in the decoder.
-          tensorflow::Feature::KindCase feature_kind_case =
-              tensorflow::Feature::KIND_NOT_SET;
-          for (const auto& feature : sequence_feature_list.feature()) {
-            if (feature.kind_case() != tensorflow::Feature::KIND_NOT_SET) {
-              feature_kind_case = feature.kind_case();
-              break;
-            }
-          }
-          switch (feature_kind_case) {
-            case tensorflow::Feature::kInt64List:
-              sequence_feature_decoder = IntListDecoder::Make();
-              break;
-            case tensorflow::Feature::kFloatList:
-              sequence_feature_decoder =
-                  FloatListDecoder::Make();
-              break;
-            case tensorflow::Feature::kBytesList:
-              sequence_feature_decoder =
-                  BytesListDecoder::Make();
-              break;
-            case tensorflow::Feature::KIND_NOT_SET:
-              unknown_type_sequence_feature_decoder =
-                  UnknownTypeFeatureListDecoder::Make();
-              break;
-          }
-        }  // end clause processing a feature list with > 0 features.
-        if (unknown_type_sequence_feature_decoder) {
-          // Handle the situation in which we see a sequence feature of
-          // unknown type for the first time after already having processed
-          // some sequence examples. In that case, append a null for each
-          // sequence example that has already been processed (in which this
-          // sequence feature was not seen), excluding the current sequence
-          // example.
-          for (int j = 0; j < i; ++j) {
-            unknown_type_sequence_feature_decoder->AppendNull();
-          }
-          sequence_feature_decoders[sequence_feature_name] =
-              absl::WrapUnique(unknown_type_sequence_feature_decoder);
-        } else if (sequence_feature_decoder) {
-          // Similarly handle the situation in which we see a sequence feature
-          // of a known type for the first time after already having processed
-          // some sequence examples.
-          for (int j = 0; j < i; ++j) {
-            TFX_BSL_RETURN_IF_ERROR(sequence_feature_decoder->AppendNull());
-          }
-          sequence_feature_decoders[sequence_feature_name] =
-              absl::WrapUnique(sequence_feature_decoder);
+        switch (feature_kind_case) {
+          case tensorflow::Feature::kInt64List:
+            sequence_feature_decoder = IntListDecoder::Make();
+            break;
+          case tensorflow::Feature::kFloatList:
+            sequence_feature_decoder = FloatListDecoder::Make();
+            break;
+          case tensorflow::Feature::kBytesList:
+            sequence_feature_decoder = BytesListDecoder::Make();
+            break;
+          case tensorflow::Feature::KIND_NOT_SET:
+            unknown_type_sequence_feature_decoder =
+                UnknownTypeFeatureListDecoder::Make();
+            break;
         }
-      }  // End adding new decoder.
-      // Decode the current feature list using the appropriate feature
-      // decoder.
-      Status status;
-      if (sequence_feature_decoder) {
-        status =
-            sequence_feature_decoder->DecodeFeatureList(sequence_feature_list);
-      } else if (unknown_type_sequence_feature_decoder) {
-        status = unknown_type_sequence_feature_decoder->DecodeFeatureList(
-            sequence_feature_list);
+      }  // end clause processing a feature list with > 0 features.
+      if (unknown_type_sequence_feature_decoder) {
+        // Handle the situation in which we see a sequence feature of
+        // unknown type for the first time after already having processed
+        // some sequence examples. In that case, append a null for each
+        // sequence example that has already been processed (in which this
+        // sequence feature was not seen), excluding the current sequence
+        // example.
+        for (int i = 0; i < num_examples_processed_; ++i) {
+          unknown_type_sequence_feature_decoder->AppendNull();
+        }
+        sequence_feature_decoders_[sequence_feature_name] =
+            absl::WrapUnique(unknown_type_sequence_feature_decoder);
+      } else if (sequence_feature_decoder) {
+        // Similarly handle the situation in which we see a sequence feature
+        // of a known type for the first time after already having processed
+        // some sequence examples.
+        for (int i = 0; i < num_examples_processed_; ++i) {
+          TFX_BSL_RETURN_IF_ERROR(sequence_feature_decoder->AppendNull());
+        }
+        sequence_feature_decoders_[sequence_feature_name] =
+            absl::WrapUnique(sequence_feature_decoder);
       }
-      if (!status.ok()) {
-        return Status(status.code(), absl::StrCat(status.error_message(),
-                                                  " for sequence feature \"",
-                                                  sequence_feature_name, "\""));
-      }
-    }  // End processing the current feature list.
-
-    // Calling FinishFeatureList ensures that a Null is appended for a given
-    // feature if it was not decoded (e.g., because it was not seen) in the
-    // current SequenceExample.
-    for (const auto& p : sequence_feature_decoders) {
-      if (absl::holds_alternative<std::unique_ptr<FeatureListDecoder>>(
-              p.second)) {
-        TFX_BSL_RETURN_IF_ERROR(
-            absl::get<std::unique_ptr<FeatureListDecoder>>(p.second)
-                .get()
-                ->FinishFeatureList());
-      } else {
-        TFX_BSL_RETURN_IF_ERROR(
-            absl::get<std::unique_ptr<UnknownTypeFeatureListDecoder>>(p.second)
-                .get()
-                ->FinishFeatureList());
-      }
+    }  // End adding new decoder.
+    // Decode the current feature list using the appropriate feature
+    // decoder.
+    Status status;
+    if (sequence_feature_decoder) {
+      status =
+          sequence_feature_decoder->DecodeFeatureList(sequence_feature_list);
+    } else if (unknown_type_sequence_feature_decoder) {
+      status = unknown_type_sequence_feature_decoder->DecodeFeatureList(
+          sequence_feature_list);
     }
-  }  // End iterating through all sequence examples.
+    if (!status.ok()) {
+      return Status(status.code(), absl::StrCat(status.error_message(),
+                                                " for sequence feature \"",
+                                                sequence_feature_name, "\""));
+    }
+  }  // End processing the current feature list.
 
+  // Calling FinishFeatureList ensures that a Null is appended for a given
+  // feature if it was not decoded (e.g., because it was not seen) in the
+  // current SequenceExample.
+  for (const auto& p : sequence_feature_decoders_) {
+    if (absl::holds_alternative<std::unique_ptr<FeatureListDecoder>>(
+            p.second)) {
+      TFX_BSL_RETURN_IF_ERROR(
+          absl::get<std::unique_ptr<FeatureListDecoder>>(p.second)
+              .get()
+              ->FinishFeatureList());
+    } else {
+      TFX_BSL_RETURN_IF_ERROR(
+          absl::get<std::unique_ptr<UnknownTypeFeatureListDecoder>>(p.second)
+              .get()
+              ->FinishFeatureList());
+    }
+  }
+  ++num_examples_processed_;
+
+  return Status::OK();
+}
+
+Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
+    std::shared_ptr<arrow::RecordBatch>* result) {
   std::vector<std::shared_ptr<arrow::Array>> arrays;
   std::vector<std::shared_ptr<arrow::Field>> fields;
   TFX_BSL_RETURN_IF_ERROR(FinishTopLevelFeatures(
-      all_context_features, context_feature_decoders,
-      serialized_sequence_examples.size(), &arrays, &fields));
+      all_context_features_, context_feature_decoders_,
+      num_examples_processed_, &arrays, &fields));
 
   std::vector<std::shared_ptr<arrow::Array>> sequence_feature_arrays;
   std::vector<std::shared_ptr<arrow::Field>> sequence_feature_fields;
-  for (const auto& sequence_feature_decoder : sequence_feature_decoders) {
+  for (const auto& sequence_feature_decoder : sequence_feature_decoders_) {
     sequence_feature_arrays.emplace_back();
     if (absl::holds_alternative<std::unique_ptr<FeatureListDecoder>>(
             sequence_feature_decoder.second)) {
@@ -1259,20 +1276,30 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
     arrays.push_back(result_or_sequence_feature_array.ValueOrDie());
     fields.push_back(
         arrow::field(sequence_feature_column_name_, arrays.back()->type()));
-  } else if (feature_lists_observed) {
+  } else if (feature_lists_observed_) {
     // If feature lists but no sequence features have been observed, still
     // add a sequence feature column containing a StructArray, but do not
     // include any child arrays in it.
     arrays.push_back(std::make_shared<arrow::StructArray>(
         std::make_shared<arrow::StructType>(sequence_feature_fields),
-        serialized_sequence_examples.size(), sequence_feature_arrays));
+        num_examples_processed_, sequence_feature_arrays));
     fields.push_back(
         arrow::field(sequence_feature_column_name_, arrays.back()->type()));
   }
 
-  *record_batch = arrow::RecordBatch::Make(
-      arrow::schema(fields), serialized_sequence_examples.size(), arrays);
+  *result = arrow::RecordBatch::Make(
+      arrow::schema(fields), num_examples_processed_, arrays);
+
+  Reset();
   return Status::OK();
+}
+
+void SchemalessIncrementalSequenceExamplesDecoder::Reset() {
+  context_feature_decoders_.clear();
+  sequence_feature_decoders_.clear();
+  all_context_features_.clear();
+  feature_lists_observed_ = false;
+  num_examples_processed_ = 0;
 }
 
 }  // namespace tfx_bsl
