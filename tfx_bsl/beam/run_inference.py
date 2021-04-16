@@ -26,12 +26,12 @@ import apache_beam as beam
 from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.utils import retry
+from apache_beam.utils import shared
 import googleapiclient
 from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
 import tensorflow as tf
-from tfx_bsl.beam import shared
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 

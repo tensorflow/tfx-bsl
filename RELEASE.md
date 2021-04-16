@@ -12,6 +12,9 @@
 
 ## Breaking Changes
 
+*  Removed `tfx_bsl.beam.shared`. It is now available in Apache Beam.
+   Use `apache_beam.utils.shared` instead.
+
 ## Deprecations
 
 # Version 0.29.0
