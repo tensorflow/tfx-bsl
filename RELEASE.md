@@ -4,11 +4,23 @@
 
 ## Major Features and Improvements
 
+## Bug Fixes and Other Changes
+
+## Breaking Changes
+
+## Deprecations
+
+# Version 0.30.0
+
+## Major Features and Improvements
+
 *  Misra-Gries sketch: added support for replacing large string blobs with
    a configurable placeholder, and replacing invalid utf-8 sequences with
    a configurable placeholder.
 
 ## Bug Fixes and Other Changes
+
+*   Depends on `tensorflow-metadata>=0.30,<0.31`.
 
 ## Breaking Changes
 
@@ -16,6 +28,8 @@
    Use `apache_beam.utils.shared` instead.
 
 ## Deprecations
+
+*   N/A
 
 # Version 0.29.0
 
