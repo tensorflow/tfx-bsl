@@ -18,6 +18,7 @@ from http import client as http_client
 import json
 import os
 import random
+from unittest import mock
 
 import apache_beam as beam
 from apache_beam.metrics.metric import MetricsFilter
@@ -31,13 +32,6 @@ from tfx_bsl.public.proto import model_spec_pb2
 
 from google.protobuf import text_format
 from tensorflow_serving.apis import prediction_log_pb2
-
-try:
-  # pylint: disable=g-import-not-at-top
-  import unittest.mock as mock
-except ImportError:
-  # pylint: disable=g-import-not-at-top
-  import mock
 
 
 _randbool = lambda: random.randint(0, 1)
