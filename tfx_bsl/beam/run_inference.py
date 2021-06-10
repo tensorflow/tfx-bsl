@@ -525,6 +525,12 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
             tf.saved_model.TPU in self._tags)
 
+  def _maybe_register_addon_ops(self):
+      try:
+          import tensorflow_text as _  # pylint: disable=g-import-not-at-top
+      except (ImportError, tf.errors.NotFoundError):
+          pass
+
   def _load_model(self):
     """Load a saved model into memory.
 
@@ -534,6 +540,7 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     def load():
       """Function for constructing shared LoadedModel."""
       # TODO(b/143484017): Do warmup and other heavy model construction here.
+      self._maybe_register_addon_ops()
       result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
       memory_before = _get_current_process_memory_in_bytes()
       start_time = self._clock.get_current_time_in_microseconds()
