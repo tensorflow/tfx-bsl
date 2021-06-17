@@ -10,7 +10,7 @@ config_setting(
 )
 
 cc_library(
-    name = "farmhash",
+    name = "farmhash_fingerprint",
     srcs = ["src/farmhash.cc"],
     hdrs = ["src/farmhash.h"],
     # Disable __builtin_expect support on Windows
@@ -18,6 +18,8 @@ cc_library(
         ":windows": ["/DFARMHASH_OPTIONAL_BUILTIN_EXPECT"],
         "//conditions:default": [],
     }),
+    # Required by ZetaSQL.
+    defines = ["NAMESPACE_FOR_HASH_FUNCTIONS=farmhash"],
     includes = ["src/."],
     visibility = ["//visibility:public"],
 )

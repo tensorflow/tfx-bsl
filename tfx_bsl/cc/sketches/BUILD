@@ -17,7 +17,7 @@ cc_library(
         "@arrow",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@farmhash_archive//:farmhash",
+        "@com_google_farmhash//:farmhash_fingerprint",
     ],
 )
 

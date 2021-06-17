@@ -14,7 +14,7 @@
 #ifndef TFX_BSL_CC_CODERS_CODERS_SUBMODULE_H_
 #define TFX_BSL_CC_CODERS_CODERS_SUBMODULE_H_
 
-#include "include/pybind11/pybind11.h"
+#include "pybind11/pybind11.h"
 
 namespace tfx_bsl {
 void DefineCodersSubmodule(pybind11::module main_module);

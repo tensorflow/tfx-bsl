@@ -80,7 +80,7 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
     for (int i = 0; i < numeric_array.length(); i++) {
       if (!numeric_array.IsNull(i)) {
         auto value = numeric_array.Value(i);
-        result_.push_back(::util::Fingerprint64(absl::StrCat(value)));
+        result_.push_back(farmhash::Fingerprint64(absl::StrCat(value)));
       }
     }
     return arrow::Status::OK();
@@ -93,7 +93,7 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
       if (!binary_array.IsNull(i)) {
         auto string_view = binary_array.GetView(i);
         result_.push_back(
-            ::util::Fingerprint64(string_view.data(), string_view.size()));
+            farmhash::Fingerprint64(string_view.data(), string_view.size()));
       }
     }
     return arrow::Status::OK();

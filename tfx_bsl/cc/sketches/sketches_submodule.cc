@@ -21,8 +21,8 @@
 #include "tfx_bsl/cc/sketches/kmv_sketch.h"
 #include "tfx_bsl/cc/sketches/misragries_sketch.h"
 #include "tfx_bsl/cc/sketches/quantiles_sketch.h"
-#include "include/pybind11/pytypes.h"
-#include "include/pybind11/stl.h"
+#include "pybind11/pytypes.h"
+#include "pybind11/stl.h"
 
 namespace tfx_bsl {
 namespace {

@@ -84,7 +84,8 @@ class _BazelBuildCommand(setuptools.Command):
           'installation instruction.')
     self._additional_build_options = []
     if platform.system() == 'Darwin':
-      self._additional_build_options = ['--macos_minimum_os=10.9']
+      # This flag determines the platform qualifier of the macos wheel.
+      self._additional_build_options = ['--macos_minimum_os=10.14']
 
   def run(self):
     subprocess.check_call(
@@ -166,7 +167,7 @@ setup(
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<1.20',
         'pandas>=1.0,<2',
-        'protobuf>=3.9.2,<4',
+        'protobuf>=3.13,<4',
         'pyarrow>=1,<3',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
         'tensorflow-metadata' + select_constraint(

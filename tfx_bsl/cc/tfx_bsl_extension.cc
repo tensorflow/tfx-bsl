@@ -24,7 +24,7 @@
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 #include "tfx_bsl/cc/coders/coders_submodule.h"
 #include "tfx_bsl/cc/sketches/sketches_submodule.h"
-#include "include/pybind11/pybind11.h"
+#include "pybind11/pybind11.h"
 
 #ifndef TFX_BSL_USE_ARROW_C_ABI
 #include "arrow/python/pyarrow.h"

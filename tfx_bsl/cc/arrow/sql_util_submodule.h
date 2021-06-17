@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2021 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,13 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef TFX_BSL_CC_SKETCHES_SKETCHES_SUBMODULE_H_
-#define TFX_BSL_CC_SKETCHES_SKETCHES_SUBMODULE_H_
+
+#ifndef THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_SQL_UTIL_DEFINITION_H_
+#define THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_SQL_UTIL_DEFINITION_H_
 
 #include "pybind11/pybind11.h"
 
 namespace tfx_bsl {
-void DefineSketchesSubmodule(pybind11::module main_module);
+
+void DefineSqlUtilSubmodule(pybind11::module arrow_module);
+
 }  // namespace tfx_bsl
 
-#endif  // TFX_BSL_CC_SKETCHES_SKETCHES_SUBMODULE_H_
+#endif  // THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_SQL_UTIL_DEFINITION_H_

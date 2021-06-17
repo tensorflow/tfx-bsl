@@ -21,8 +21,8 @@
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
 #include "tfx_bsl/cc/util/status.h"
-#include "include/pybind11/pytypes.h"
-#include "include/pybind11/stl.h"
+#include "pybind11/pytypes.h"
+#include "pybind11/stl.h"
 
 namespace tfx_bsl {
 namespace py = pybind11;

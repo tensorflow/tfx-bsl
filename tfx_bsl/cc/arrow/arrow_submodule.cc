@@ -15,9 +15,10 @@
 
 #include "arrow/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
+#include "tfx_bsl/cc/arrow/sql_util_submodule.h"
 #include "tfx_bsl/cc/arrow/table_util.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
-#include "include/pybind11/stl.h"
+#include "pybind11/stl.h"
 
 namespace tfx_bsl {
 namespace {
@@ -270,6 +271,6 @@ void DefineArrowSubmodule(pybind11::module main_module) {
   m.doc() = "Arrow utilities.";
   DefineArrayUtilSubmodule(m);
   DefineTableUtilSubmodule(m);
+  DefineSqlUtilSubmodule(m);
 }
-
 }  // namespace tfx_bsl

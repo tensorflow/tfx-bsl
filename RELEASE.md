@@ -4,9 +4,18 @@
 
 ## Major Features and Improvements
 
+*   Provided the SQL query ability for Apache Arrow RecordBatch. It's not
+    available under Windows.
+
 ## Bug Fixes and Other Changes
 
+*   Depends on `protobuf>=3.13,<4`.
+*   Upgraded the protobuf (com_google_protobuf) to `3.13.0`.
+*   Upgraded the bazel_skylib to `1.0.2` due to the upgrading of protobuf.
+
 ## Breaking Changes
+
+*   The minimum required OS version for the macOS is 10.14 now.
 
 ## Deprecations
 

@@ -14,7 +14,7 @@
 #ifndef THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
 #define THIRD_PARTY_PY_TFX_BSL_CC_ARROW_ARROW_SUBMODULE_H_
 
-#include "include/pybind11/pybind11.h"
+#include "pybind11/pybind11.h"
 
 namespace tfx_bsl {
 

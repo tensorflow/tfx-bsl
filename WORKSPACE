@@ -4,34 +4,34 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "bazel_skylib",
-    sha256 = "2ef429f5d7ce7111263289644d233707dba35e39696377ebab8b0bc701f7818e",
-    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.8.0/bazel-skylib.0.8.0.tar.gz"],
-)
-
-# 310ba5ee72661c081129eb878c1bbcec936b20f0 is based on 3.8.0 with a fix for protobuf.bzl.
-PROTOBUF_COMMIT = "310ba5ee72661c081129eb878c1bbcec936b20f0"
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "b9e92f9af8819bbbc514e2902aec860415b70209f31dfc8c4fa72515a5df9d59",
-    strip_prefix = "protobuf-%s" % PROTOBUF_COMMIT,
+    sha256 = "97e70364e9249702246c0e9444bccdc4b847bed1eb03c5a3ece4f83dfe6abc44",
     urls = [
-    "https://storage.googleapis.com/mirror.tensorflow.org/github.com/protocolbuffers/protobuf/archive/310ba5ee72661c081129eb878c1bbcec936b20f0.tar.gz",
-    "https://github.com/protocolbuffers/protobuf/archive/310ba5ee72661c081129eb878c1bbcec936b20f0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.0.2/bazel-skylib-1.0.2.tar.gz",
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.0.2/bazel-skylib-1.0.2.tar.gz",
     ],
 )
 
-# Needed by com_google_protobuf.
+PROTOBUF_COMMIT = "fde7cf7358ec7cd69e8db9be4f1fa6a5c431386a" # 3.13.0
 http_archive(
-    name = "six_archive",
-    build_file = "@com_google_protobuf//:six.BUILD",
-    sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
-    urls = ["https://pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz#md5=34eed507548117b2ab523ab14b2f8b55"],
+    name = "com_google_protobuf",
+    sha256 = "e589e39ef46fb2b3b476b3ca355bd324e5984cbdfac19f0e1625f0042e99c276",
+    strip_prefix = "protobuf-%s" % PROTOBUF_COMMIT,
+    urls = [
+        "https://storage.googleapis.com/grpc-bazel-mirror/github.com/google/protobuf/archive/%s.tar.gz" % PROTOBUF_COMMIT,
+        "https://github.com/google/protobuf/archive/%s.tar.gz" % PROTOBUF_COMMIT,
+    ],
 )
 
-# Needed by com_google_protobuf.
-bind(
-    name = "six",
-    actual = "@six_archive//:six",
+# Needed by abseil-py by zetasql.
+http_archive(
+    name = "six_archive",
+    urls = [
+        "http://mirror.bazel.build/pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz",
+        "https://pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz",
+    ],
+    sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
+    strip_prefix = "six-1.10.0",
+    build_file = "//third_party:six.BUILD"
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -50,11 +50,11 @@ http_archive(
     patches = ["//third_party:arrow.patch"],
 )
 
-ABSL_COMMIT = "0f3bb466b868b523cf1dc9b2aaaed65c77b28862"  # lts_20200923.2
+ABSL_COMMIT = "e1d388e7e74803050423d035e4374131b9b57919"  # lts_20210324.1
 http_archive(
     name = "com_google_absl",
     urls = ["https://github.com/abseil/abseil-cpp/archive/%s.zip" % ABSL_COMMIT],
-    sha256 = "9929f3662141bbb9c6c28accf68dcab34218c5ee2d83e6365d9cb2594b3f3171",
+    sha256 = "baebd1536bec56ae7d7c060c20c01af89ecba2c0b1bc8992b652520655395f94",
     strip_prefix = "abseil-cpp-%s" % ABSL_COMMIT,
 )
 
@@ -94,7 +94,7 @@ load("//third_party:python_configure.bzl", "local_python_configure")
 local_python_configure(name = "local_config_python")
 
 http_archive(
-    name = "farmhash_archive",
+    name = "com_google_farmhash",
     build_file = "//third_party:farmhash.BUILD",
     sha256 = "6560547c63e4af82b0f202cb710ceabb3f21347a4b996db565a411da5b17aba0",  # SHARED_FARMHASH_SHA
     strip_prefix = "farmhash-816a4ae622e964763ca0862d9dbd19324a1eaf45",
@@ -102,6 +102,25 @@ http_archive(
         "https://github.com/google/farmhash/archive/816a4ae622e964763ca0862d9dbd19324a1eaf45.tar.gz",
     ],
 )
+
+ZETASQL_COMMIT = "5ccb05880e72ab9ff75dd6b05d7b0acce53f1ea2" # 04/22/2021
+http_archive(
+    name = "com_google_zetasql",
+    urls = ["https://github.com/google/zetasql/archive/%s.zip" % ZETASQL_COMMIT],
+    strip_prefix = "zetasql-%s" % ZETASQL_COMMIT,
+    sha256 = '4ca4e45f457926484822701ec15ca4d0172b01d7ce43c0b34c6f3ab98c95b241'
+)
+
+load("@com_google_zetasql//bazel:zetasql_deps_step_1.bzl", "zetasql_deps_step_1")
+zetasql_deps_step_1()
+load("@com_google_zetasql//bazel:zetasql_deps_step_2.bzl", "zetasql_deps_step_2")
+zetasql_deps_step_2(
+    analyzer_deps = True,
+    evaluator_deps = True,
+    tools_deps = False,
+    java_deps = False,
+    testing_deps = False)
+
 # Specify the minimum required bazel version.
 load("@org_tensorflow_no_deps//tensorflow:version_check.bzl", "check_bazel_version_at_least")
 check_bazel_version_at_least("3.7.2")
