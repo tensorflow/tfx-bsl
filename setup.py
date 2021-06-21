@@ -171,8 +171,8 @@ setup(
         'pyarrow>=1,<3',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
         'tensorflow-metadata' + select_constraint(
-            default='>=1.0,<1.1',
-            nightly='>=1.1.0.dev',
+            default='>=1.1,<1.2',
+            nightly='>=1.2.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master'),
         'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
     ],
