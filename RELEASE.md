@@ -23,6 +23,8 @@
 *   Upgraded the protobuf (com_google_protobuf) to `3.13.0`.
 *   Upgraded the bazel_skylib to `1.0.2` due to the upgrading of protobuf.
 *   Depends on `tensorflow-metadata>=1.1,<1.2`.
+*   More documentation is added for the SequenceExample decoder. It's available
+    at `tfx_bsl/coders/README.md`.
 
 ## Breaking Changes
 
