@@ -34,6 +34,8 @@ namespace tfx_bsl {
 
 namespace {
 
+using tensorflow::metadata::v0::FeatureType;
+
 absl::string_view KindToStr(tensorflow::Feature::KindCase kind) {
   switch (kind) {
     case tensorflow::Feature::kBytesList:
@@ -150,7 +152,8 @@ class BinaryBuilderWrapper : public BinaryBuilderInterface {
 Status TfmdFeatureToArrowField(const bool is_sequence_feature,
                                const tensorflow::metadata::v0::Feature& feature,
                                std::shared_ptr<arrow::Field>* out) {
-  switch (feature.type()) {
+  const FeatureType feature_type = feature.type();
+  switch (feature_type) {
     case tensorflow::metadata::v0::FLOAT: {
       auto type = arrow::large_list(arrow::float32());
       if (is_sequence_feature) {
@@ -176,7 +179,9 @@ Status TfmdFeatureToArrowField(const bool is_sequence_feature,
       break;
     }
     default:
-      return errors::InvalidArgument("Bad field type");
+      return errors::InvalidArgument(
+          "Bad field type for feature: ", feature.name(),
+          " with type: ", feature_type);
   }
   return Status::OK();
 }
@@ -678,7 +683,8 @@ Status FinishTopLevelFeatures(
 static Status MakeFeatureDecoder(
     const tensorflow::metadata::v0::Feature& feature,
     std::unique_ptr<FeatureDecoder>* out) {
-  switch (feature.type()) {
+  const FeatureType feature_type = feature.type();
+  switch (feature_type) {
     case tensorflow::metadata::v0::FLOAT:
       out->reset(FloatDecoder::Make());
       break;
@@ -689,7 +695,9 @@ static Status MakeFeatureDecoder(
       out->reset(BytesDecoder::Make());
       break;
     default:
-      return errors::InvalidArgument("Bad field type");
+      return errors::InvalidArgument(
+          "Bad field type for feature: ", feature.name(),
+          " with type: ", feature_type);
   }
   return Status::OK();
 }
@@ -842,7 +850,8 @@ Status SchemalessIncrementalExamplesDecoder::Finish(
 static Status MakeFeatureListDecoder(
     const tensorflow::metadata::v0::Feature& feature,
     std::unique_ptr<FeatureListDecoder>* out) {
-  switch (feature.type()) {
+  const FeatureType feature_type = feature.type();
+  switch (feature_type) {
     case tensorflow::metadata::v0::FLOAT:
       out->reset(FloatListDecoder::Make());
       break;
@@ -853,7 +862,9 @@ static Status MakeFeatureListDecoder(
       out->reset(BytesListDecoder::Make());
       break;
     default:
-      return errors::InvalidArgument("Bad field type");
+      return errors::InvalidArgument(
+          "Bad field type for feature: ", feature.name(),
+          " with type: ", feature_type);
   }
   return Status::OK();
 }

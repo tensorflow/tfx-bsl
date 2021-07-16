@@ -258,6 +258,18 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     with self.assertRaisesRegex(RuntimeError, "Unable to get the arrow schema"):
       _ = coder.ArrowSchema()
 
+  def test_invalid_feature_type(self):
+    serialized_schema = text_format.Parse(
+        """
+        feature {
+          name: "a"
+          type: STRUCT
+        }
+        """, schema_pb2.Schema()).SerializeToString()
+    with self.assertRaisesRegex(RuntimeError,
+                                "Bad field type for feature: a.*"):
+      _ = example_coder.ExamplesToRecordBatchDecoder(serialized_schema)
+
 
 _ENCODE_TEST_EXAMPLES = [
     """
