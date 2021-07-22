@@ -4,6 +4,9 @@
 
 ## Major Features and Improvements
 
+*   Added support for converting `tf.compat.v1.ragged.RaggedTensorValue`s to
+    `TensorsToRecordBatchConverter`.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

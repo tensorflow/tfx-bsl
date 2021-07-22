@@ -30,11 +30,13 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 
 if tf.__version__ < "2":
   logging.warning("tfx_bsl.tfxio.tensor_to_arrow can only handle evaluated "
-                  "tensors (i.e. ndarays or SparseTensorValues) in TF 1.x.")
+                  "tensors (i.e. ndarays, SparseTensorValues and "
+                  "RaggedTensorValues) in TF 1.x.")
 
-_TensorType = Union[tf.Tensor, tf.SparseTensor,
+_TensorType = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor,
                     composite_tensor.CompositeTensor]
-_TensorValueType = Union[np.ndarray, tf.compat.v1.SparseTensorValue]
+_TensorValueType = Union[np.ndarray, tf.compat.v1.SparseTensorValue,
+                         tf.compat.v1.ragged.RaggedTensorValue]
 TensorAlike = Union[_TensorType, _TensorValueType]
 
 
@@ -157,9 +159,15 @@ class _TypeHandler(abc.ABC):
       elif isinstance(tensor, tf.compat.v1.SparseTensorValue):
         actual_spec = tf.SparseTensorSpec(tensor.dense_shape,
                                           tensor.values.dtype)
+      elif isinstance(tensor, tf.compat.v1.ragged.RaggedTensorValue):
+        actual_spec = tf.RaggedTensorSpec(
+            tensor.shape,
+            tensor.values.dtype,
+            row_splits_dtype=tensor.row_splits.dtype)
       else:
-        raise TypeError("Only ndarrays and SparseTensorValues are supported "
-                        "with TF 1.x, got {}".format(type(tensor)))
+        raise TypeError("Only ndarrays, SparseTensorValues and "
+                        "RaggedTensorValues are supported with TF 1.x, "
+                        "got {}".format(type(tensor)))
     else:
       actual_spec = tf.type_spec_from_value(tensor)
     if not self._type_spec.is_compatible_with(actual_spec):
@@ -342,7 +350,8 @@ class _RaggedTensorHandler(_TypeHandler):
 
     def _create_nested_list(tensor: TensorAlike) -> pa.Array:
       """Recursively constructs nested arrow arrays from a tensor."""
-      if isinstance(tensor, tf.RaggedTensor):
+      if isinstance(tensor,
+                    (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue)):
         values = tensor.values
         return pa.LargeListArray.from_arrays(
             offsets=np.asarray(tensor.row_splits),

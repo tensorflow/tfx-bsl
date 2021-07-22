@@ -37,10 +37,7 @@ _TF_TYPE_TO_ARROW_TYPE = {
     tf.string: pa.large_binary(),
 }
 
-_ROW_PARTITION_DTYPES = {
-    "INT64": np.int64,
-    "INT32": np.int32
-}
+_ROW_PARTITION_DTYPES = {"INT64": np.int64, "INT32": np.int32}
 
 
 def _make_2d_dense_tensor_test_cases():
@@ -67,8 +64,7 @@ def _make_2d_dense_tensor_test_cases():
                        }""",
             },
             tensor_input={"dt": tensor},
-            expected_record_batch={"dt": expected_array},
-            test_values_conversion=True))
+            expected_record_batch={"dt": expected_array}))
   return result
 
 
@@ -98,8 +94,7 @@ def _make_2d_varlen_sparse_tensor_test_cases():
                         indices=[[0, 0], [2, 0], [2, 1]],
                         dense_shape=[4, 2]),
             },
-            expected_record_batch={"sp1": expected_array},
-            test_values_conversion=True))
+            expected_record_batch={"sp1": expected_array}))
   return result
 
 
@@ -148,7 +143,6 @@ def _make_2d_generic_sparse_tensor_test_cases():
                     pa.array([[0, 2, 4], [], [1], []],
                              type=pa.large_list(pa.int64())),
             },
-            test_values_conversion=True,
             options=tensor_to_arrow.TensorsToRecordBatchConverter.Options(
                 generic_sparse_tensor_names=frozenset({"sp1"}))))
   return result
@@ -229,7 +223,8 @@ def _make_3d_sparse_tensor_test_cases():
                 "sp1$index1": pa.large_list(pa.int64()),
             },
             expected_tensor_representations={
-                "sp1": """sparse_tensor {
+                "sp1":
+                    """sparse_tensor {
                 dense_shape {
                   dim {
                     size: 4
@@ -247,18 +242,19 @@ def _make_3d_sparse_tensor_test_cases():
                 "sp1":
                     tf.SparseTensor(
                         values=values,
-                        indices=[[0, 0, 0], [0, 2, 2], [0, 2, 4],
-                                 [2, 3, 1]],
+                        indices=[[0, 0, 0], [0, 2, 2], [0, 2, 4], [2, 3, 1]],
                         dense_shape=[4, 4, 5]),
             },
             expected_record_batch={
-                "sp1$values": expected_value_array,
-                "sp1$index0": pa.array([[0, 2, 2], [], [3], []],
-                                       type=pa.large_list(pa.int64())),
-                "sp1$index1": pa.array([[0, 2, 4], [], [1], []],
-                                       type=pa.large_list(pa.int64())),
-            },
-            test_values_conversion=True))
+                "sp1$values":
+                    expected_value_array,
+                "sp1$index0":
+                    pa.array([[0, 2, 2], [], [3], []],
+                             type=pa.large_list(pa.int64())),
+                "sp1$index1":
+                    pa.array([[0, 2, 4], [], [1], []],
+                             type=pa.large_list(pa.int64())),
+            }))
   return result
 
 
@@ -295,8 +291,7 @@ _CONVERT_TEST_CASES = [
             "sp2":
                 pa.array([[], [], [b"aa", b"bb"], []],
                          type=pa.large_list(pa.large_binary()))
-        },
-        test_values_conversion=True),
+        }),
     dict(
         testcase_name="ragged_tensors",
         type_specs={
@@ -370,8 +365,7 @@ _CONVERT_TEST_CASES = [
         },
         expected_record_batch={
             "sp1": pa.array([[], []], type=pa.large_list(pa.int32())),
-        },
-        test_values_conversion=True),
+        }),
     dict(
         testcase_name="1d_dense",
         type_specs={
@@ -388,8 +382,7 @@ _CONVERT_TEST_CASES = [
         },
         expected_record_batch={
             "dt1": pa.array([[1], [2], [3]], type=pa.large_list(pa.int32())),
-        },
-        test_values_conversion=True),
+        }),
     dict(
         testcase_name="empty_2d_dense",
         type_specs={"dt": tf.TensorSpec([None, 0], tf.float32)},
@@ -404,8 +397,7 @@ _CONVERT_TEST_CASES = [
         tensor_input={"dt": tf.constant(np.empty((2, 0), dtype=np.float32))},
         expected_record_batch={
             "dt": pa.array([[], []], type=pa.large_list(pa.float32()))
-        },
-        test_values_conversion=True),
+        }),
 ] + _make_2d_varlen_sparse_tensor_test_cases(
 ) + _make_2d_generic_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases() + _make_2d_dense_tensor_test_cases(
@@ -431,7 +423,6 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
       expected_tensor_representations,
       tensor_input,
       expected_record_batch,
-      test_values_conversion=False,
       options=tensor_to_arrow.TensorsToRecordBatchConverter.Options()):
 
     def convert_and_check(tensors, test_values_conversion):
@@ -471,33 +462,43 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
         if "value" not in k:
           self._assert_tensor_alike_equal(adapter_output[k], tensors[k])
 
+    def ragged_tensor_to_value(tensor):
+      if isinstance(tensor, tf.RaggedTensor):
+        values = tensor.values
+        return tf.compat.v1.ragged.RaggedTensorValue(
+            values=ragged_tensor_to_value(values),
+            row_splits=tensor.row_splits.numpy())
+      else:
+        return tensor.numpy()
+
     def convert_eager_to_value(tensor):
       if isinstance(tensor, tf.SparseTensor):
-        return tf.compat.v1.SparseTensorValue(
-            tensor.indices, tensor.values, tensor.dense_shape)
+        return tf.compat.v1.SparseTensorValue(tensor.indices, tensor.values,
+                                              tensor.dense_shape)
       elif isinstance(tensor, tf.Tensor):
         return tensor.numpy()
+      elif isinstance(tensor, tf.RaggedTensor):
+        return ragged_tensor_to_value(tensor)
       else:
         raise NotImplementedError(
-            "Only support converting SparseTensors or Tensors. Got: {}"
-            .format(type(tensor)))
+            "Only support converting SparseTensors, Tensors and RaggedTensors. "
+            "Got: {}".format(type(tensor)))
 
     if tf.__version__ >= "2":
       convert_and_check(tensor_input, test_values_conversion=False)
-    elif not test_values_conversion:
-      raise absltest.SkipTest("Test case is disabled for TF 1.x: ragged "
-                                "tensor value support is not implemented. ")
 
-    if test_values_conversion:
-      if tf.executing_eagerly():
-        values_input = {
-            k: convert_eager_to_value(v) for k, v in tensor_input.items()
-        }
-      else:
-        with tf.compat.v1.Session(
-            graph=next(iter(tensor_input.values())).graph) as s:
-          values_input = s.run(tensor_input)
-      convert_and_check(values_input, test_values_conversion=True)
+    if tf.executing_eagerly():
+      values_input = {
+          k: convert_eager_to_value(v) for k, v in tensor_input.items()
+      }
+    else:
+      some_tensor = next(iter(tensor_input.values()))
+      graph = (
+          some_tensor.row_splits[0].graph
+          if isinstance(some_tensor, tf.RaggedTensor) else some_tensor.graph)
+      with tf.compat.v1.Session(graph=graph) as s:
+        values_input = s.run(tensor_input)
+    convert_and_check(values_input, test_values_conversion=True)
 
   def test_relaxed_varlen_sparse_tensor(self):
     # Demonstrates that TensorAdapter(TensorsToRecordBatchConverter()) is not
@@ -533,8 +534,9 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
   def test_incompatible_type_spec(self):
     converter = tensor_to_arrow.TensorsToRecordBatchConverter(
         {"sp": tf.SparseTensorSpec([None, None], tf.int32)})
-    sp_cls = tf.SparseTensor if tf.__version__ >= "2" else \
-        tf.compat.v1.SparseTensorValue
+    sp_cls = (
+        tf.SparseTensor
+        if tf.__version__ >= "2" else tf.compat.v1.SparseTensorValue)
     with self.assertRaisesRegex(TypeError, "Expected SparseTensorSpec"):
       converter.convert({
           "sp":
