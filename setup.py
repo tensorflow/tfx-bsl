@@ -163,7 +163,7 @@ setup(
     # six, and protobuf) with TF.
     install_requires=[
         'absl-py>=0.9,<0.13',
-        'apache-beam[gcp]>=2.29,<3',
+        'apache-beam[gcp]>=2.31,<3',
         'google-api-python-client>=1.7.11,<2',
         # TODO(b/193746372): Remove bigquery dependency after TF 2.6 becomes
         # available.
@@ -174,8 +174,8 @@ setup(
         'pyarrow>=1,<3',
         'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
         'tensorflow-metadata' + select_constraint(
-            default='>=1.1,<1.2',
-            nightly='>=1.2.0.dev',
+            default='>=1.2,<1.3',
+            nightly='>=1.3.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master'),
         'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
     ],
