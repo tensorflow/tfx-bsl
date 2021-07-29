@@ -95,6 +95,32 @@ _QUANTILES_TEST_CASES = [
         expected=[[1, 61, 121, 181, 241, 300]],
         num_streams=1),
     dict(
+        testcase_name="nan",
+        values=[
+            pa.array(np.linspace(1, 100, 100, dtype=np.float64)),
+            pa.array(np.linspace(101, 200, 100, dtype=np.float64)),
+            pa.array(np.linspace(201, 300, 100, dtype=np.float64)),
+            pa.array(np.array([np.nan, np.nan])),
+        ],
+        expected=[[1, 61, 121, 181, 241, 300]],
+        num_streams=1),
+    dict(
+        testcase_name="nan_weighted",
+        values=[
+            pa.array(np.linspace(1, 100, 100, dtype=np.float64)),
+            pa.array(np.linspace(101, 200, 100, dtype=np.float64)),
+            pa.array(np.linspace(201, 300, 100, dtype=np.float64)),
+            pa.array(np.array([-100, np.nan])),
+        ],
+        weights=[
+            pa.array([1] * 100, type=pa.float64()),
+            pa.array([2] * 100, type=pa.float64()),
+            pa.array([3] * 100, type=pa.float64()),
+            pa.array(np.array([np.nan, 10000])),
+        ],
+        expected=[[1, 111, 171, 221, 261, 300]],
+        num_streams=1),
+    dict(
         testcase_name="int",
         values=[
             pa.array(np.linspace(1, 100, 100, dtype=np.int32)),

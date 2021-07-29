@@ -6,6 +6,9 @@
 
 ## Bug Fixes and Other Changes
 
+*   `QuantilesSketch` now ignores NaNs in input values and weights. Previously,
+    NaNs would lead to incorrect quantiles calculation.
+
 ## Breaking Changes
 
 ## Deprecations

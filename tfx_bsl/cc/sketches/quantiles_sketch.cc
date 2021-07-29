@@ -97,11 +97,15 @@ class QuantilesSketchImpl {
       for (int value_idx = stream_idx, weight_idx = 0;
            weight_idx < num_inputs_per_stream;
            value_idx += num_streams_, ++weight_idx) {
-        if (values.IsNull(value_idx) || weights.IsNull(weight_idx) ||
-            weights.Value(weight_idx) <= 0) {
-          continue;
-        }
-        stream.PushEntry(values.Value(value_idx), weights.Value(weight_idx));
+        if (values.IsNull(value_idx) || weights.IsNull(weight_idx)) continue;
+
+        // Arrow doesn't treat `numpy.nan` as null; therefore, additional check
+        // is needed.
+        const double value = values.Value(value_idx);
+        const double weight = weights.Value(weight_idx);
+        if (std::isnan(value) || std::isnan(weight) || weight <= 0) continue;
+
+        stream.PushEntry(value, weight);
       }
     }
     return Status::OK();
@@ -118,7 +122,13 @@ class QuantilesSketchImpl {
       for (int value_idx = stream_idx; value_idx < values.length();
            value_idx += num_streams_) {
         if (values.IsNull(value_idx)) continue;
-        stream.PushEntry(values.Value(value_idx), 1.0);
+
+        // Arrow doesn't treat `numpy.nan` as null; therefore, additional check
+        // is needed.
+        const double value = values.Value(value_idx);
+        if (std::isnan(value)) continue;
+
+        stream.PushEntry(value, 1.0);
       }
     }
     return Status::OK();
