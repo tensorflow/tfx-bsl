@@ -8,6 +8,8 @@
 
 *   `QuantilesSketch` now ignores NaNs in input values and weights. Previously,
     NaNs would lead to incorrect quantiles calculation.
+*   Depends on
+    `tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,<3`.
 
 ## Breaking Changes
 
