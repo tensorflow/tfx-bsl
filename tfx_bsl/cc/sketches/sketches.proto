@@ -21,7 +21,7 @@ message Kmv {
   // Max number of values in the sketch.
   int32 num_buckets = 1;
   // Values of the hashes.
-  repeated fixed64 hashes = 2 [packed=true];
+  repeated fixed64 hashes = 2 [packed = true];
   // Largest hash value in the sketch.
   fixed64 max_limit = 3;
 }
@@ -33,7 +33,9 @@ message MisraGries {
   // Names of items.
   repeated bytes items = 2;
   // Weights or counts of items.
-  repeated double weights = 3 [packed=true];
+  repeated double weights = 3 [packed = true];
+  // Extra items with zero weights.
+  repeated bytes extra_items = 9;
   // The quantity decremented from the stored weights.
   double delta = 4;
 
@@ -54,16 +56,16 @@ message Quantiles {
   message Stream {
     // Contains processed input elements.
     message Summary {
-      repeated double value = 1 [packed=true];
-      repeated double weight = 2 [packed=true];
-      repeated double min_rank = 3 [packed=true];
-      repeated double max_rank = 4 [packed=true];
+      repeated double value = 1 [packed = true];
+      repeated double weight = 2 [packed = true];
+      repeated double min_rank = 3 [packed = true];
+      repeated double max_rank = 4 [packed = true];
     }
     repeated Summary summaries = 1;
     // Contains unprocessed input elements.
     message Buffer {
-      repeated double value = 1 [packed=true];
-      repeated double weight = 2 [packed=true];
+      repeated double value = 1 [packed = true];
+      repeated double weight = 2 [packed = true];
     }
     Buffer buffer = 2;
     // Parameters of the streams producing the sketch.

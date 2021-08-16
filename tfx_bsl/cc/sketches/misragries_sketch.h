@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "arrow/api.h"
@@ -108,6 +109,10 @@ class MisraGriesSketch {
   double delta_;
   // Dictionary containing lower bound estimates of the item counts.
   absl::flat_hash_map<std::string, double> item_counts_;
+  // Set containing extra elements that were discarded from item_counts_ during
+  // the latest Compress or DecrementCounters. These are used to fill the result
+  // to num_buckets_ size in Estimate.
+  absl::flat_hash_set<std::string> extra_items_;
 
   absl::optional<std::string> invalid_utf8_placeholder_;
   absl::optional<int> large_string_threshold_;

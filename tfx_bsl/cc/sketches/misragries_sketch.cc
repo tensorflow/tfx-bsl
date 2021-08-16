@@ -29,11 +29,58 @@ namespace sketches {
 namespace {
 
 // Accounts for rounding error due to float arithmetic.
-bool LessThanOrEqualToZero(double value) {
-  // TODO(b/168224198): Investigate if weighted/unweighted cases should use
-  // different values of kEpsilon.
-  static constexpr double kEpsilon = 1e-8;
-  return (value < kEpsilon);
+// TODO(b/168224198): Investigate if weighted/unweighted cases should use
+// different values of kEpsilon.
+static constexpr double kEpsilon = 1e-8;
+
+inline bool LessThanOrEqualToZero(double value) { return (value < kEpsilon); }
+
+inline bool EqualToZero(double value) { return (abs(value) < kEpsilon); }
+
+// Subtracts value from each weight in `item_counts`, removes elements with
+// negative weight and moves items that have zero weight to `extra_items`.
+//
+// `DecrementCounters` expects (but doesn't validate) the following conditions:
+//  - `item_counts` has more than `max_num_items` elements;
+//  - `value` is (`max_num_items` + 1)-th largest weight in `item_counts`.
+//
+// The purpose of `DecrementCounters` is to trim `item_counts` to
+// `max_num_items` items discarding items with smaller weights. However, when
+// `item_counts` has multiple items having weight equal to
+// (`max_num_items` + 1)-th largest, the number of items with positive weight
+// after subtraction can be less than `max_num_items`. In this case, to prevent
+// outputting fewer items than requested, we keep some extra items with zero
+// weight in `extra_items`. Note that keeping zero-weight items is enough to
+// fill `item_counts` to `max_num_items` elements since `value` is
+// (`max_num_items` + 1)-th largest weight.
+void DecrementCounters(double value, int max_num_items,
+                       absl::flat_hash_map<std::string, double>* item_counts,
+                       absl::flat_hash_set<std::string>* extra_items) {
+  // `DecrementCounters` is expected to be called when `item_counts` has more
+  // than `max_num_items` unique elements. It is, therefore, sufficient to keep
+  // `extra_items` from the current call only to fill `item_counts` to
+  // `max_num_items` elements. It also allows not to save weights of
+  // `extra_items` since we know that they are 0 (relative to `total_error`).
+  assert(item_counts->size() > max_num_items);
+  extra_items->clear();
+  for (auto iter = item_counts->begin(); iter != item_counts->end();) {
+    iter->second -= value;
+    if (LessThanOrEqualToZero(iter->second)) {
+      if (EqualToZero(iter->second)) {
+        extra_items->insert(iter->first);
+      }
+      item_counts->erase(iter++);
+    } else {
+      ++iter;
+    }
+  }
+
+  // Remove excessive extra items.
+  for (auto iter = extra_items->begin();
+       iter != extra_items->end() &&
+       item_counts->size() + extra_items->size() > max_num_items;) {
+    extra_items->erase(iter++);
+  }
 }
 
 // Updates the item counts with the values of the visited array. Constructor
@@ -46,14 +93,16 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
       const absl::optional<int>& large_string_threshold,
       const absl::optional<std::string>& large_string_placeholder,
       int num_buckets, const arrow::FloatArray* weights, double& delta,
-      absl::flat_hash_map<std::string, double>& item_counts)
+      absl::flat_hash_map<std::string, double>& item_counts,
+      absl::flat_hash_set<std::string>& extra_items)
       : invalid_utf8_placeholder_(invalid_utf8_placeholder),
         large_string_threshold_(large_string_threshold),
         large_string_placeholder_(large_string_placeholder),
         num_buckets_(num_buckets),
         weights_(weights),
         delta_(delta),
-        item_counts_(item_counts) {}
+        item_counts_(item_counts),
+        extra_items_(extra_items) {}
 
   arrow::Status Visit(const arrow::BinaryArray& array) override {
     return VisitInternal(array);
@@ -187,7 +236,9 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
         insertion_pair.first->second += 1.0;
       // New item just added, so there might be an overflow.
       } else if (item_counts_.size() > num_buckets_) {
-        DecrementCounters(1.0);
+        DecrementCounters(/*value=*/1.0, num_buckets_, &item_counts_,
+                          &extra_items_);
+        delta_ += 1.0;
       }
     }
 
@@ -214,23 +265,12 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
                const std::pair<std::string, double>& rhs){
               return lhs.second < rhs.second;
             })->second;
-        DecrementCounters(min_weight);
+        DecrementCounters(min_weight, num_buckets_, &item_counts_,
+                          &extra_items_);
+        delta_ += min_weight;
       }
     }
 
-    // Subtract value from each item in item_counts_ and remove those that
-    // become zero.
-    void DecrementCounters(double value) {
-      for (auto iter = item_counts_.begin(); iter!= item_counts_.end();) {
-        iter->second -= value;
-        if (LessThanOrEqualToZero(iter->second)) {
-          item_counts_.erase(iter++);
-        } else {
-          ++iter;
-        }
-      }
-      delta_ += value;
-    }
 
     const absl::optional<std::string>& invalid_utf8_placeholder_;
     const absl::optional<int>& large_string_threshold_;
@@ -239,6 +279,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
     const arrow::FloatArray* weights_;
     double& delta_;
     absl::flat_hash_map<std::string, double>& item_counts_;
+    absl::flat_hash_set<std::string>& extra_items_;
 };
 
 }  // namespace
@@ -258,7 +299,7 @@ MisraGriesSketch::MisraGriesSketch(
 Status MisraGriesSketch::AddValues(const arrow::Array& items) {
   UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
                             large_string_placeholder_, num_buckets_, nullptr,
-                            delta_, item_counts_);
+                            delta_, item_counts_, extra_items_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
   return Status::OK();
 }
@@ -276,7 +317,7 @@ Status MisraGriesSketch::AddValues(
   const auto& weight_array = static_cast<const arrow::FloatArray&>(weights);
   UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
                             large_string_placeholder_, num_buckets_,
-                            &weight_array, delta_, item_counts_);
+                            &weight_array, delta_, item_counts_, extra_items_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
   return Status::OK();
 }
@@ -305,6 +346,9 @@ Status MisraGriesSketch::Merge(MisraGriesSketch& other) {
       insertion_pair.first->second += item.second;
     }
   }
+  for (const auto& item : other.extra_items_) {
+    extra_items_.insert(item);
+  }
   delta_ += other.delta_;
   Compress();
   return Status::OK();
@@ -325,14 +369,7 @@ void MisraGriesSketch::Compress() {
 
   double nth_largest = weights[num_buckets_];
   // Remove all items with weights less than or equal to n-th largest weight.
-  for (auto iter = item_counts_.begin(); iter!= item_counts_.end();) {
-    iter->second -= nth_largest;
-    if (LessThanOrEqualToZero(iter->second)) {
-      item_counts_.erase(iter++);
-    } else {
-      ++iter;
-    }
-  }
+  DecrementCounters(nth_largest, num_buckets_, &item_counts_, &extra_items_);
   delta_ += nth_largest;
 }
 
@@ -352,6 +389,22 @@ std::vector<std::pair<std::string, double>> MisraGriesSketch::GetCounts() const{
         return x.first < y.first;
       }
   );
+  // Fill the `result` up to `num_buckets_` items using `extra_items_`.
+  if (result.size() < num_buckets_) {
+    std::vector<std::string> ordered_extra_items;
+    for (const auto& item : extra_items_) {
+      if (item_counts_.find(item) == item_counts_.end()) {
+        ordered_extra_items.emplace_back(item);
+      }
+    }
+    std::sort(ordered_extra_items.begin(), ordered_extra_items.end());
+    for (const auto& item : ordered_extra_items) {
+      result.emplace_back(item, delta_);
+      if (result.size() == num_buckets_) {
+        break;
+      }
+    }
+  }
   return result;
 }
 
@@ -403,6 +456,9 @@ std::string MisraGriesSketch::Serialize() const{
     mg_proto.add_items(it.first);
     mg_proto.add_weights(it.second);
   }
+  for (const auto& item : extra_items_) {
+    mg_proto.add_extra_items(item);
+  }
   if (invalid_utf8_placeholder_) {
     mg_proto.set_replace_invalid_utf8_values(true);
     mg_proto.set_invalid_utf8_placeholder(*invalid_utf8_placeholder_);
@@ -439,6 +495,9 @@ MisraGriesSketch MisraGriesSketch::Deserialize(absl::string_view encoded) {
   int num_items = mg_proto.items_size();
   for (int i = 0; i < num_items; i++) {
     mg_sketch.item_counts_.emplace(mg_proto.items(i), mg_proto.weights(i));
+  }
+  for (const auto& item : mg_proto.extra_items()) {
+    mg_sketch.extra_items_.emplace(item);
   }
   return mg_sketch;
 }

@@ -13,6 +13,7 @@
 # limitations under the License.
 """Tests for tfx_bsl.sketches.MisraGriesSketch."""
 
+import itertools
 import pickle
 
 import pyarrow as pa
@@ -205,6 +206,28 @@ class MisraGriesSketchTest(parameterized.TestCase):
       _ = sketches.MisraGriesSketch(
           _NUM_BUCKETS, large_string_placeholder=b"<L>")
 
+  def test_many_uniques(self):
+    # Test that the tail elements with equal counts are not discarded after
+    # `AddValues` call.
+    sketch = _create_basic_sketch(pa.array(["a", "b", "c", "a"]), num_buckets=2)
+    estimate = sketch.Estimate()
+    estimate.validate(full=True)
+    # Since "b" and "c" have equal counts and neither token has count > 4/2, any
+    # combination is possible.
+    all_counts = [{
+        "values": b"a",
+        "counts": 2.0
+    }, {
+        "values": b"b",
+        "counts": 1.0
+    }, {
+        "values": b"c",
+        "counts": 1.0
+    }]
+    self.assertIn(
+        tuple(estimate.to_pylist()),
+        list(itertools.combinations(all_counts, 2)))
+
   def test_merge(self):
     sketch1 = _create_basic_sketch(pa.array(["a", "b", "c", "a"]))
     sketch2 = _create_basic_sketch(pa.array(["d", "a"]))
@@ -227,6 +250,66 @@ class MisraGriesSketchTest(parameterized.TestCase):
     }]
 
     self.assertEqual(estimate.to_pylist(), expected_counts)
+
+  def test_merge_equal_to_kth_weights(self):
+    # Test that tail elements with equal counts are not discarded after
+    # `Compress` call.
+    sketch1 = _create_basic_sketch(
+        pa.array(["a"] * 5 + ["b"] * 5 + ["c"] * 4 + ["a"] * 4), num_buckets=3)
+    sketch2 = _create_basic_sketch(
+        pa.array(["d"] * 4 + ["a"] * 2), num_buckets=3)
+    sketch1.Merge(sketch2)
+    estimate = sketch1.Estimate()
+    estimate.validate(full=True)
+    # Since "c" and "d" have equal counts, the last entry may be either.
+    expected_counts1 = [{
+        "values": b"a",
+        "counts": 11.0
+    }, {
+        "values": b"b",
+        "counts": 5.0
+    }, {
+        "values": b"c",
+        "counts": 4.0
+    }]
+    expected_counts2 = expected_counts1.copy()
+    expected_counts2[2] = {"values": b"d", "counts": 4.0}
+    self.assertIn(estimate.to_pylist(), [expected_counts1, expected_counts2])
+
+  def test_merge_with_extra_items(self):
+    # Each of these sketches get more values than `num_buckets`. This will
+    # result into removal of less frequent elements from the main buffer and
+    # adding them to a buffer of extra elements.
+    # Here we're testing that merging of sketches having extra elements is
+    # correct and results in a sketch that produces the requested number of
+    # elements.
+    sketch1 = _create_basic_sketch(
+        pa.array(["a"] * 3 + ["b"] * 2 + ["c", "d"]), num_buckets=3)
+    sketch2 = _create_basic_sketch(
+        pa.array(["e"] * 3 + ["f"] * 2 + ["g", "h"]), num_buckets=3)
+    sketch3 = _create_basic_sketch(
+        pa.array(["i"] * 2 + ["j", "k", "l"]), num_buckets=3)
+    sketch1.Merge(sketch2)
+    sketch1.Merge(sketch3)
+    estimate = sketch1.Estimate()
+    estimate.validate(full=True)
+
+    # Due to large number of unique elements (relative to `num_buckets`), the
+    # total estimated count error is 5.
+    def get_expected_counts():
+      for least_frequent_item in [b"b", b"f", b"i"]:
+        yield [{
+            "values": b"a",
+            "counts": 5.0
+        }, {
+            "values": b"e",
+            "counts": 5.0
+        }, {
+            "values": least_frequent_item,
+            "counts": 5.0
+        }]
+
+    self.assertIn(estimate.to_pylist(), list(get_expected_counts()))
 
   def test_picklable(self):
     sketch = _create_basic_sketch(pa.array(["a", "b", "c", "a"]))
