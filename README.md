@@ -148,7 +148,8 @@ combinations may also work.
 
 tfx-bsl                                                                         | apache-beam[gcp] | pyarrow  | tensorflow        | tensorflow-metadata | tensorflow-serving-api |
 ------------------------------------------------------------------------------- | -----------------| ---------|-------------------|---------------------|------------------------|
-[GitHub master](https://github.com/tensorflow/tfx-bsl/blob/master/RELEASE.md)   | 2.31.0           | 2.0.0    | nightly (1.x/2.x) | 1.2.0              | 2.5.1                  |
+[GitHub master](https://github.com/tensorflow/tfx-bsl/blob/master/RELEASE.md)   | 2.31.0           | 2.0.0    | nightly (1.x/2.x) | 1.2.0               | 2.6.0                  |
+[1.3.0](https://github.com/tensorflow/tfx-bsl/blob/v1.3.0/RELEASE.md)           | 2.31.0           | 2.0.0    | 1.15 / 2.6        | 1.2.0               | 2.6.0                  |
 [1.2.0](https://github.com/tensorflow/tfx-bsl/blob/v1.2.0/RELEASE.md)           | 2.31.0           | 2.0.0    | 1.15 / 2.5        | 1.2.0               | 2.5.1                  |
 [1.1.0](https://github.com/tensorflow/tfx-bsl/blob/v1.1.0/RELEASE.md)           | 2.29.0           | 2.0.0    | 1.15 / 2.5        | 1.1.0               | 2.5.1                  |
 [1.0.0](https://github.com/tensorflow/tfx-bsl/blob/v1.0.0/RELEASE.md)           | 2.29.0           | 2.0.0    | 1.15 / 2.5        | 1.0.0               | 2.5.1                  |

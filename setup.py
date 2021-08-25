@@ -174,7 +174,7 @@ setup(
             default='>=1.2,<1.3',
             nightly='>=1.3.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master'),
-        'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,<3',
+        'tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,<3',
     ],
     python_requires='>=3.6,<4',
     packages=find_packages(),
