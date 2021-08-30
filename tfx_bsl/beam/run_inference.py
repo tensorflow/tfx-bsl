@@ -15,6 +15,7 @@
 
 import abc
 import base64
+import importlib
 import os
 import platform
 import sys
@@ -528,12 +529,16 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
   # TODO(b/159982957): Replace this with a mechinism that registers any custom
   # op.
   def _maybe_register_addon_ops(self):
-    try:
-      # pytype: disable=import-error
-      import tensorflow_text as _  # pylint: disable=g-import-not-at-top
-      # pytype: enable=import-error
-    except (ImportError, tf.errors.NotFoundError):
-      pass
+
+    def _try_import(name):
+      try:
+        importlib.import_module(name)
+      except (ImportError, tf.errors.NotFoundError):
+        logging.info('%s is not available.', name)
+
+    _try_import('tensorflow_text')
+    _try_import('tensorflow_decision_forests')
+    _try_import('struct2tensor')
 
   def _load_model(self):
     """Load a saved model into memory.
