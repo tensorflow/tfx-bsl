@@ -96,28 +96,84 @@ TEST(KmvSketchTest, MergeSimple) {
   EXPECT_EQ(2, kmv1.Estimate());
 }
 
-TEST(KmvSketchTest, AddManyValues) {
+// This test case is expected to fail if the hash function changes at all, even
+// if the change does not affect its distributional properties. The hard-
+// coded value can be updated as long as a change is otherwise verified as
+// working.
+TEST(KmvSketchTest, CheckExactCount) {
   KmvSketch kmv(128);
-  for (int batch = 0; batch < 10; batch++) {
-    arrow::Int64Builder builder;
-    for (int i = 0; i < 1000; i++) {
-      ASSERT_TRUE(builder.Append(batch*1000+i).ok());
-    }
-    std::shared_ptr<arrow::Int64Array> array;
-    ASSERT_TRUE(builder.Finish(&array).ok());
-    ASSERT_TRUE(kmv.AddValues(*array).ok());;
-    uint64_t distinct_estimate = kmv.Estimate();
-    int64_t distinct_true = 1000 * (batch + 1);
-    int64_t expected_error = 1 / sqrt(128) * distinct_true;
+  arrow::Int64Builder builder;
+  for (int i = 0; i < 10000; i++) {
+    ASSERT_TRUE(builder.Append(i).ok());
+  }
+  std::shared_ptr<arrow::Int64Array> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());
+  EXPECT_EQ(kmv.Estimate(), 9670);
+}
 
-    EXPECT_LE(abs(distinct_true - (int64_t)distinct_estimate),
-              expected_error);
+// TODO(zwestrick): derive more principled error bounds for this and the
+// the following test.
+TEST(KmvSketchTest, AddManyValues) {
+  for (int valcount : {100, 1000, 10000}) {
+    std::vector<double> rel_errs(100);
+    for (int trial = 0; trial < 100; trial++) {
+      KmvSketch kmv(128);
+      arrow::Int64Builder builder;
+      for (int i = 0; i < valcount; i++) {
+        ASSERT_TRUE(builder.Append(trial * 1000000 + i).ok());
+      }
+      std::shared_ptr<arrow::Int64Array> array;
+      ASSERT_TRUE(builder.Finish(&array).ok());
+      ASSERT_TRUE(kmv.AddValues(*array).ok());
+
+      uint64_t distinct_estimate = kmv.Estimate();
+      int64_t distinct_true = valcount;
+      double rel_error = abs(distinct_true - (int64_t)distinct_estimate) /
+                         (double)distinct_true;
+      rel_errs[trial] = rel_error;
+    }
+    std::sort(rel_errs.begin(), rel_errs.end());
+    // We expect a 50th, 90th, and 95th percentile errors of 1.0 2.0 and 4.0 /
+    // sqrt(K) respectively.
+    EXPECT_LT(rel_errs[50], 1.0 / sqrt(128));
+    EXPECT_LT(rel_errs[90], 2.0 / sqrt(128));
+    EXPECT_LT(rel_errs[95], 4.0 / sqrt(128));
+  }
+}
+
+TEST(KmvSketchTest, SerializationPreservesAccuracy) {
+  for (int valcount : {100, 1000, 10000}) {
+    std::vector<double> rel_errs(100);
+    for (int trial = 0; trial < 100; trial++) {
+      KmvSketch kmv(128);
+      arrow::Int64Builder builder;
+      for (int i = 0; i < valcount; i++) {
+        ASSERT_TRUE(builder.Append(trial * 1000000 + i).ok());
+      }
+      std::shared_ptr<arrow::Int64Array> array;
+      ASSERT_TRUE(builder.Finish(&array).ok());
+      ASSERT_TRUE(kmv.AddValues(*array).ok());
+      const std::string serialized_sketch = kmv.Serialize();
+      const KmvSketch kmv_recovered = KmvSketch::Deserialize(serialized_sketch);
+
+      uint64_t distinct_estimate = kmv_recovered.Estimate();
+      int64_t distinct_true = valcount;
+      double rel_error = abs(distinct_true - (int64_t)distinct_estimate) /
+                         (double)distinct_true;
+      rel_errs[trial] = rel_error;
+    }
+    std::sort(rel_errs.begin(), rel_errs.end());
+    // We expect a 50th, 90th, and 95th percentile errors of 1.0 2.0 and 4.0 /
+    // sqrt(K) respectively.
+    EXPECT_LT(rel_errs[50], 1.0 / sqrt(128));
+    EXPECT_LT(rel_errs[90], 2.0 / sqrt(128));
+    EXPECT_LT(rel_errs[95], 4.0 / sqrt(128));
   }
 }
 
 TEST(KmvSketchTest, MergeManyValues) {
   KmvSketch kmv(128);
-
   int num_trials = 10;
   for (int trial = 0; trial < num_trials; trial++) {
     KmvSketch new_kmv(128);
@@ -134,33 +190,9 @@ TEST(KmvSketchTest, MergeManyValues) {
   uint64_t distinct_estimate = kmv.Estimate();
   int64_t distinct_true = 1000 * num_trials;
   int64_t expected_error = 1 / sqrt(128) * distinct_true;
-
+  // TODO(zwestrick): consider relaxing error tolerance of this test.
   EXPECT_LE(abs(distinct_true - (int64_t)distinct_estimate),
             expected_error);
-}
-
-TEST(KmvSketchTest, SerializationPreservesAccuracy) {
-  KmvSketch kmv(128);
-  for (int batch = 0; batch < 10; batch++) {
-    arrow::Int64Builder builder;
-    for (int i = 0; i < 1000; i++) {
-      ASSERT_TRUE(builder.Append(batch*1000+i).ok());
-    }
-    std::shared_ptr<arrow::Int64Array> array;
-    ASSERT_TRUE(builder.Finish(&array).ok());
-    ASSERT_TRUE(kmv.AddValues(*array).ok());;
-    std::string serialized_sketch = kmv.Serialize();
-    KmvSketch kmv_recovered = KmvSketch::Deserialize(serialized_sketch);
-
-    uint64_t distinct_estimate = kmv.Estimate();
-    uint64_t distinct_estimate_recovered = kmv_recovered.Estimate();
-    EXPECT_EQ(distinct_estimate, distinct_estimate_recovered);
-
-    int64_t distinct_true = 1000 * (batch + 1);
-    int64_t expected_error = 1 / sqrt(128) * distinct_true;
-    EXPECT_LE(abs(distinct_true - (int64_t)distinct_estimate),
-              expected_error);
-  }
 }
 
 TEST(KmvSketchTest, MergeDifferentNumBuckets) {
