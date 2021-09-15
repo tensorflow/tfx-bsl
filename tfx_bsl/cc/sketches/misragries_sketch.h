@@ -22,6 +22,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "arrow/api.h"
@@ -79,16 +80,20 @@ class MisraGriesSketch {
                    absl::optional<std::string> large_string_placeholder);
   // This class is copyable and movable.
   ~MisraGriesSketch() = default;
-  // Adds an array of items.
+  // Adds an array of items, and sets the stored type if it was previously
+  // unset. Raises an error if the new types are incompatible.
   Status AddValues(const arrow::Array& items);
   // Adds an array of items with their associated weights. Raises an error if
-  // the weights are not a FloatArray.
+  // the weights are not a FloatArray, or the type of the newly added items are
+  // incompatible with the stored type.
   Status AddValues(const arrow::Array& items, const arrow::Array& weights);
   // Merges another MisraGriesSketch into this sketch. Raises an error if the
   // sketches do not have the same number of buckets.
-  Status Merge(MisraGriesSketch& other);
+  Status Merge(const MisraGriesSketch& other);
   // Returns the list of top-k items sorted in descending order of their counts.
-  std::vector<std::pair<std::string, double>> GetCounts() const;
+  // Ties are resolved lexicographically by item value. Returns a non-OK status
+  // if decoding fails.
+  Status GetCounts(std::vector<std::pair<std::string, double>>& result) const;
   // Creates a struct array <values, counts> of the top-k items.
   Status Estimate(std::shared_ptr<arrow::Array>* values_and_counts_array) const;
   // Serializes the sketch into a string.
@@ -99,14 +104,28 @@ class MisraGriesSketch {
   double GetDelta() const;
   // Gets theoretical upper bound on delta (for testing purposes).
   double GetDeltaUpperBound(double global_weight) const;
+  // Gets the input type of this sketch.
+  tfx_bsl::sketches::InputType::Type GetInputType() const;
 
  private:
   // Reduces size of the item_counts_ to num_buckets_ items.
   void Compress();
+  // Encodes a value as a string for storage internally.
+  template <typename T> std::string Encode(const T val) const {
+    return input_type_ == InputType::FLOAT
+                                     ? absl::StrFormat("%a", val)
+                                     : absl::StrCat(val);
+  }
+  // In place decodes `item` into the form produced by Estimate. Returns true
+  // on success, or false if item can not be decoded given the stored type.
+  Status Decode(std::string* item) const;
   // The number of items stored in item_counts_.
   int num_buckets_;
   // Tracks the maximum error due to subtractions.
   double delta_;
+  // Tracks the type of values in this sketch. Values are stored internally as
+  // strings, but may be decoded differently depending on their original type.
+  tfx_bsl::sketches::InputType::Type input_type_;
   // Dictionary containing lower bound estimates of the item counts.
   absl::flat_hash_map<std::string, double> item_counts_;
   // Set containing extra elements that were discarded from item_counts_ during

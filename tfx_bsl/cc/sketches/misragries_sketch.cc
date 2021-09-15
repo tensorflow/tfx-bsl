@@ -13,12 +13,16 @@
 // limitations under the License.
 
 #include "tfx_bsl/cc/sketches/misragries_sketch.h"
+
 #include <cstddef>
 #include <memory>
 
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "arrow/api.h"
-#include "absl/strings/str_format.h"
+#include "tfx_bsl/cc/sketches/sketches.pb.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include "tfx_bsl/cc/util/utf8.h"
@@ -27,6 +31,7 @@ namespace tfx_bsl {
 namespace sketches {
 
 namespace {
+using tfx_bsl::sketches::InputType;
 
 // Accounts for rounding error due to float arithmetic.
 // TODO(b/168224198): Investigate if weighted/unweighted cases should use
@@ -93,6 +98,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
       const absl::optional<int>& large_string_threshold,
       const absl::optional<std::string>& large_string_placeholder,
       int num_buckets, const arrow::FloatArray* weights, double& delta,
+      InputType::Type& input_type,
       absl::flat_hash_map<std::string, double>& item_counts,
       absl::flat_hash_set<std::string>& extra_items)
       : invalid_utf8_placeholder_(invalid_utf8_placeholder),
@@ -101,12 +107,13 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
         num_buckets_(num_buckets),
         weights_(weights),
         delta_(delta),
+        input_type_(input_type),
         item_counts_(item_counts),
         extra_items_(extra_items) {}
 
   arrow::Status Visit(const arrow::BinaryArray& array) override {
     return VisitInternal(array);
-    }
+  }
     arrow::Status Visit(const arrow::LargeBinaryArray& array) override {
       return VisitInternal(array);
     }
@@ -140,17 +147,41 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
     arrow::Status Visit(const arrow::UInt64Array& array) override {
       return VisitInternal(array);
     }
+    arrow::Status Visit(const arrow::FloatArray& array) override {
+      return VisitInternal(array, InputType::FLOAT);
+    }
+    arrow::Status Visit(const arrow::DoubleArray& array) override {
+      return VisitInternal(array, InputType::FLOAT);
+    }
 
  private:
-    template <class T>
-    arrow::Status VisitInternal(const T& array) {
-      if (!weights_) {
-        AddItemsWithoutWeights(array);
-      } else {
-        AddItemsWithWeights(array);
-      }
-      return arrow::Status::OK();
+  // Encodes a value as a string according to the stored type.
+  template <typename T> std::string Encode(const T val) const {
+    return input_type_ == InputType::FLOAT
+                                     ? absl::StrFormat("%a", val)
+                                     : absl::StrCat(val);
+  }
+
+  template <class T>
+  arrow::Status VisitInternal(
+      const T& array, const InputType::Type type = InputType::RAW_STRING) {
+    if (input_type_ == InputType::UNSET) {
+      input_type_ = type;
     }
+    if (input_type_ != type) {
+      return arrow::Status::TypeError(
+          absl::StrFormat("sketch stored type error: stored %s given %s",
+                          InputType::Type_Name(input_type_),
+                          InputType::Type_Name(input_type_)));
+    }
+
+    if (!weights_) {
+      AddItemsWithoutWeights(array);
+    } else {
+      AddItemsWithWeights(array);
+    }
+    return arrow::Status::OK();
+  }
 
     // Updates item_counts_ with an Arrow BinaryArray of values.
     template <typename T>
@@ -188,7 +219,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
         if (array.IsNull(i)) {
           continue;
         }
-        std::string item = absl::StrCat(array.Value(i));
+        const std::string item = Encode(array.Value(i));
         InsertItem(item);
       }
     }
@@ -216,7 +247,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
         if (array.IsNull(i)) {
           continue;
         }
-        const auto item = absl::StrCat(array.Value(i));
+        const std::string item = Encode(array.Value(i));
         const auto weight = weights_->Value(i);
         InsertItem(item, weight);
       }
@@ -278,6 +309,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
     const int num_buckets_;
     const arrow::FloatArray* weights_;
     double& delta_;
+    InputType::Type& input_type_;
     absl::flat_hash_map<std::string, double>& item_counts_;
     absl::flat_hash_set<std::string>& extra_items_;
 };
@@ -290,6 +322,7 @@ MisraGriesSketch::MisraGriesSketch(
     absl::optional<std::string> large_string_placeholder)
     : num_buckets_(num_buckets),
       delta_(0.0),
+      input_type_(InputType::UNSET),
       invalid_utf8_placeholder_(std::move(invalid_utf8_placeholder)),
       large_string_threshold_(std::move(large_string_threshold)),
       large_string_placeholder_(std::move(large_string_placeholder)) {
@@ -299,7 +332,7 @@ MisraGriesSketch::MisraGriesSketch(
 Status MisraGriesSketch::AddValues(const arrow::Array& items) {
   UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
                             large_string_placeholder_, num_buckets_, nullptr,
-                            delta_, item_counts_, extra_items_);
+                            delta_, input_type_, item_counts_, extra_items_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
   return Status::OK();
 }
@@ -317,12 +350,13 @@ Status MisraGriesSketch::AddValues(
   const auto& weight_array = static_cast<const arrow::FloatArray&>(weights);
   UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
                             large_string_placeholder_, num_buckets_,
-                            &weight_array, delta_, item_counts_, extra_items_);
+                            &weight_array, delta_, input_type_, item_counts_,
+                            extra_items_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
   return Status::OK();
 }
 
-Status MisraGriesSketch::Merge(MisraGriesSketch& other) {
+Status MisraGriesSketch::Merge(const MisraGriesSketch& other) {
   if (other.num_buckets_ != num_buckets_) {
     return errors::InvalidArgument(
         "Both sketches must have the same number of buckets: ",
@@ -339,6 +373,16 @@ Status MisraGriesSketch::Merge(MisraGriesSketch& other) {
   if (other.invalid_utf8_placeholder_ != invalid_utf8_placeholder_) {
     return errors::InvalidArgument(
         "Both sketches must have the same invalid_utf8_placeholder.");
+  }
+  if (input_type_ == InputType::UNSET) {
+    input_type_ = other.input_type_;
+  }
+  if (other.input_type_ != InputType::UNSET &&
+      input_type_ != other.input_type_) {
+    return errors::InvalidArgument(
+        absl::StrFormat("Both sketches must have the same type (%s vs %s)",
+                        InputType::Type_Name(input_type_),
+                        InputType::Type_Name(other.input_type_)));
   }
   for (const auto& item : other.item_counts_) {
     auto insertion_pair = item_counts_.insert(item);
@@ -373,11 +417,35 @@ void MisraGriesSketch::Compress() {
   delta_ += nth_largest;
 }
 
-std::vector<std::pair<std::string, double>> MisraGriesSketch::GetCounts() const{
+Status MisraGriesSketch::Decode(std::string* item) const {
+  switch (input_type_) {
+    case InputType::RAW_STRING:
+      return tfx_bsl::Status::OK();
+    case InputType::FLOAT:
+      double out;
+      if (!absl::SimpleAtod(*item, &out))
+        return tfx_bsl::errors::InvalidArgument(
+            absl::StrFormat("failed to decode %s as float", *item));
+      *item = absl::StrCat(out);
+      return tfx_bsl::Status::OK();
+    default:
+      return tfx_bsl::errors::InvalidArgument(absl::StrFormat(
+          "unhandled input type %s", InputType::Type_Name(input_type_)));
+  }
+}
+
+Status MisraGriesSketch::GetCounts(
+    std::vector<std::pair<std::string, double>>& result) const {
+  result.clear();
+  result.reserve(item_counts_.size());
   // Add delta_ to each of the counts to get the upper bound estimate.
-  std::vector<std::pair<std::string, double>> result;
   for (const auto& pair : item_counts_) {
     result.emplace_back(pair.first, pair.second + delta_);
+  }
+  if (input_type_ != InputType::RAW_STRING) {
+    for (auto& item_w : result) {
+      TFX_BSL_RETURN_IF_ERROR(Decode(&item_w.first));
+    }
   }
   std::sort(
       result.begin(), result.end(),
@@ -405,12 +473,13 @@ std::vector<std::pair<std::string, double>> MisraGriesSketch::GetCounts() const{
       }
     }
   }
-  return result;
+  return tfx_bsl::Status::OK();
 }
 
 Status MisraGriesSketch::Estimate(
     std::shared_ptr<arrow::Array>* values_and_counts_array) const {
-  std::vector<std::pair<std::string, double>> sorted_pairs = GetCounts();
+  std::vector<std::pair<std::string, double>> sorted_pairs;
+  TFX_BSL_RETURN_IF_ERROR(GetCounts(sorted_pairs));
   // Combine the item and count vectors into an Arrow StructArray.
   arrow::LargeBinaryBuilder binary_builder;
   arrow::DoubleBuilder double_builder;
@@ -452,6 +521,7 @@ std::string MisraGriesSketch::Serialize() const{
   MisraGries mg_proto;
   mg_proto.set_num_buckets(num_buckets_);
   mg_proto.set_delta(delta_);
+  mg_proto.set_input_type(input_type_);
   for (const auto& it : item_counts_) {
     mg_proto.add_items(it.first);
     mg_proto.add_weights(it.second);
@@ -492,6 +562,7 @@ MisraGriesSketch MisraGriesSketch::Deserialize(absl::string_view encoded) {
   if (mg_proto.delta() > 0.) {
     mg_sketch.delta_ = mg_proto.delta();
   }
+  mg_sketch.input_type_ = mg_proto.input_type();
   int num_items = mg_proto.items_size();
   for (int i = 0; i < num_items; i++) {
     mg_sketch.item_counts_.emplace(mg_proto.items(i), mg_proto.weights(i));
@@ -512,6 +583,10 @@ double MisraGriesSketch::GetDeltaUpperBound(double global_weight) const {
     m_prime += pair.second;
   }
   return (global_weight - m_prime) / (num_buckets_ + 1);
+}
+
+InputType::Type MisraGriesSketch::GetInputType() const {
+  return input_type_;
 }
 
 }  // namespace sketches

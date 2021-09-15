@@ -12,20 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "tfx_bsl/cc/sketches/misragries_sketch.h"
+
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
-#include <algorithm>
-#include <cmath>
-#include "absl/strings/str_join.h"
-#include "tfx_bsl/cc/sketches/misragries_sketch.h"
-#include <gtest/gtest.h>
-#include "absl/strings/str_cat.h"
-#include "absl/strings/string_view.h"
-#include "tfx_bsl/cc/util/status.h"
-#include "absl/strings/str_format.h"
 
+#include "testing/base/public/gmock.h"
+#include <gtest/gtest.h>
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
+#include "absl/strings/string_view.h"
+#include "tfx_bsl/cc/sketches/sketches.pb.h"
+#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -68,24 +73,36 @@ void CreateArrowFloatArrayFromVector(
   ASSERT_TRUE(builder.Finish(array).ok());
 }
 
-absl::flat_hash_map<std::string, double> CreateCountsMap(
-    const std::vector<std::pair<std::string, double>>& counts_vector) {
-  absl::flat_hash_map<std::string, double> counts_map;
+void CreateArrowDoubleArrayFromVector(const std::vector<double> values,
+                                      std::shared_ptr<Array>* array) {
+  arrow::DoubleBuilder builder;
+  ASSERT_TRUE(builder.Reserve(values.size()).ok());
+  ASSERT_TRUE(builder.AppendValues(values).ok());
+  ASSERT_TRUE(builder.Finish(array).ok());
+}
+
+// TODO(b/199515135): Delete this when migrating to py, since output can be
+// a multimap (e.g. for floats).
+Status CreateCountsMap(const MisraGriesSketch& mg,
+                       absl::flat_hash_map<std::string, double>& counts_map) {
+  std::vector<std::pair<std::string, double>> counts_vector;
+  TFX_BSL_RETURN_IF_ERROR(mg.GetCounts(counts_vector));
   for (const auto& pair : counts_vector) {
     counts_map.insert({pair.first, pair.second});
   }
-  return counts_map;
+  return tfx_bsl::Status::OK();
 }
-
 
 TEST(MisraGriesSketchTest, AddSimpleBinary) {
   MisraGriesSketch mg = MakeSketch(kNumBuckets);
   std::vector<std::string> values{ "foo", "foo", "bar" };
   std::shared_ptr<arrow::Array> array;
   CreateArrowBinaryArrayFromVector(values, &array);
-  ASSERT_TRUE(mg.AddValues(*array).ok());;
-  absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+  ASSERT_TRUE(mg.AddValues(*array).ok());
+
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
   EXPECT_EQ(counts["foo"], 2);
   EXPECT_EQ(counts["bar"], 1);
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(3));
@@ -100,11 +117,59 @@ TEST(MisraGriesSketchTest, AddSimpleInt64) {
 
   ASSERT_TRUE(mg.AddValues(*array).ok());;
 
-  absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
   EXPECT_EQ(counts["1"], 4);
   EXPECT_EQ(counts["3"], 1);
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(6));
+}
+
+TEST(MisraGriesSketchTest, AddSimpleDouble) {
+  MisraGriesSketch mg = MakeSketch(3);
+  std::vector<double> values{1.0, 1.0, 1.0, 1.0, 2.5, 1.00000001};
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowDoubleArrayFromVector(values, &array);
+
+  ASSERT_TRUE(mg.AddValues(*array).ok());
+
+  std::vector<std::pair<std::string, double>> counts;
+  ASSERT_TRUE(mg.GetCounts(counts).ok());
+  // Note: 1.0 and 1.00000001 have distinct encoded representations but the
+  // same decoded representation (1).
+  EXPECT_THAT(counts,
+              testing::ElementsAre(testing::Pair("1", 4), testing::Pair("1", 1),
+                                   testing::Pair("2.5", 1)));
+  EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(6));
+}
+
+TEST(MisraGriesSketchTest, AddingDistinctTypesIsError) {
+  MisraGriesSketch mg = MakeSketch(3);
+  std::shared_ptr<arrow::Array> array1;
+  CreateArrowFloatArrayFromVector({1.0, 2.0}, &array1);
+  std::shared_ptr<arrow::Array> array2;
+  CreateArrowBinaryArrayFromVector({"a", "b"}, &array2);
+
+  ASSERT_TRUE(mg.AddValues(*array1).ok());
+  ASSERT_FALSE(mg.AddValues(*array2).ok());
+}
+
+TEST(MisraGriesSketchTest, MixingFloatAndDoubleIsOK) {
+  float val = 0.7;
+  std::shared_ptr<arrow::Array> array1;
+  CreateArrowFloatArrayFromVector({val}, &array1);
+  std::shared_ptr<arrow::Array> array2;
+  std::vector<double> array2_vals;
+  array2_vals.push_back(val);
+  CreateArrowDoubleArrayFromVector(array2_vals, &array2);
+
+  MisraGriesSketch mg = MakeSketch(kNumBuckets);
+
+  ASSERT_TRUE(mg.AddValues(*array1).ok());
+  ASSERT_TRUE(mg.AddValues(*array2).ok());
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+  EXPECT_THAT(counts, testing::UnorderedElementsAre(testing::Pair("0.7", 2)));
 }
 
 TEST(MisraGriesSketchTest, AddSimpleBinaryWithWeights) {
@@ -120,8 +185,9 @@ TEST(MisraGriesSketchTest, AddSimpleBinaryWithWeights) {
 
   ASSERT_TRUE(mg.AddValues(*array, *weight_array).ok());;
 
-  absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
   EXPECT_EQ(counts["foo"], 5);
   EXPECT_EQ(counts["bar"], 4);
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(9.0));
@@ -155,11 +221,55 @@ TEST(MisraGriesSketchTest, MergeSimple) {
   Status status = mg1.Merge(mg2);
   ASSERT_TRUE(status.ok());
 
-  absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg1.GetCounts());
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg1, counts).ok());
+
   EXPECT_EQ(counts["foo"], 4);
   EXPECT_EQ(counts["bar"], 2);
   EXPECT_LE(mg1.GetDelta(), mg1.GetDeltaUpperBound(6));
+}
+
+TEST(MisraGriesSketchTest, MergeDistinctTypesIsError) {
+  std::shared_ptr<arrow::Array> array1;
+  CreateArrowBinaryArrayFromVector({"foo", "foo", "bar"}, &array1);
+  std::shared_ptr<arrow::Array> array2;
+  CreateArrowFloatArrayFromVector({1.0, 3.0}, &array2);
+
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg1.AddValues(*array1).ok());
+  MisraGriesSketch mg2 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg2.AddValues(*array2).ok());
+  ASSERT_FALSE(mg1.Merge(mg2).ok());
+}
+
+TEST(MisraGriesSketchTest, MergeEmptyWithNonEmptySketch) {
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowBinaryArrayFromVector({"a", "b"}, &array);
+
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg1.AddValues(*array).ok());
+  MisraGriesSketch mg2 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg1.Merge(mg2).ok());
+
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg1, counts).ok());
+  EXPECT_THAT(counts, testing::UnorderedElementsAre(testing::Pair("a", 1),
+                                                    testing::Pair("b", 1)));
+}
+
+TEST(MisraGriesSketchTest, MergeNonEmptyWithEmptySketch) {
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowBinaryArrayFromVector({"a", "b"}, &array);
+
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg1.AddValues(*array).ok());
+  MisraGriesSketch mg2 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg2.Merge(mg1).ok());
+
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg2, counts).ok());
+  EXPECT_THAT(counts, testing::UnorderedElementsAre(testing::Pair("a", 1),
+                                                    testing::Pair("b", 1)));
 }
 
 TEST(MisraGriesSketchTest, AddWithFewBuckets) {
@@ -179,8 +289,9 @@ TEST(MisraGriesSketchTest, AddWithFewBuckets) {
   MisraGriesSketch mg = MakeSketch(2);
   ASSERT_TRUE(mg.AddValues(*array).ok());
 
-  absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+  absl::flat_hash_map<std::string, double> counts;
+  ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
   double estimated_count = counts["0"];
   EXPECT_LE(k, estimated_count);
   EXPECT_LE(estimated_count - mg.GetDelta(), k);
@@ -218,8 +329,9 @@ TEST(MisraGriesSketchTest, MergeWithFewBuckets) {
     ASSERT_TRUE(new_mg.AddValues(*array).ok());
     ASSERT_TRUE(old_mg.Merge(new_mg).ok());
 
-    absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(old_mg.GetCounts());
+    absl::flat_hash_map<std::string, double> counts;
+    ASSERT_TRUE(CreateCountsMap(old_mg, counts).ok());
+
     int global_weight = values.size() * i;
     EXPECT_LE(old_mg.GetDelta(), old_mg.GetDeltaUpperBound(global_weight));
     for (const auto& item : counts) {
@@ -260,6 +372,35 @@ TEST(MisraGriesSketchTest, Estimate) {
   }
 }
 
+TEST(MisraGriesSketchTest, EstimateFloat) {
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowFloatArrayFromVector({1.0, 0.7, 0.0}, &array);
+
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg1.AddValues(*array).ok());
+
+  std::shared_ptr<arrow::Array> values_and_counts_array;
+  ASSERT_TRUE(mg1.Estimate(&values_and_counts_array).ok());
+  EXPECT_LE(mg1.GetDelta(), mg1.GetDeltaUpperBound(5));
+
+  auto result_struct =
+      std::dynamic_pointer_cast<arrow::StructArray>(values_and_counts_array);
+  auto result_values = static_cast<arrow::LargeBinaryArray*>(
+      result_struct->GetFieldByName("values").get());
+  auto result_counts = static_cast<arrow::DoubleArray*>(
+      result_struct->GetFieldByName("counts").get());
+
+  std::vector<std::pair<absl::string_view, float>> true_counts;
+
+  true_counts.push_back({"0", 1});
+  true_counts.push_back({"0.7", 1});
+  true_counts.push_back({"1", 1});
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(result_values->GetView(i), true_counts[i].first);
+    EXPECT_EQ(result_counts->Value(i), true_counts[i].second);
+  }
+}
+
 TEST(MisraGriesSketchTest, AddUnweightedLinearDistribution) {
   MisraGriesSketch mg = MakeSketch(kNumBuckets);
   // For i =  1, 2,... k, create vector of strings such that such that
@@ -284,8 +425,10 @@ TEST(MisraGriesSketchTest, AddUnweightedLinearDistribution) {
     ASSERT_TRUE(mg.AddValues(*array).ok());
     int global_weight = num_elements * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
-    absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+
+    absl::flat_hash_map<std::string, double> counts;
+    ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
     for (auto const& item : counts) {
       int true_count = std::stoi(std::string(item.first)) * trial;
       int estimated_count = item.second;
@@ -348,8 +491,10 @@ TEST(MisraGriesSketchTest, AddUnweightedZipfDistribution) {
     ASSERT_TRUE(mg.AddValues(*array).ok());
     double global_weight = items.size() * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
-    absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+
+    absl::flat_hash_map<std::string, double> counts;
+    ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
     for (auto const& item : counts) {
       int true_count = true_counts[std::string(item.first)] * trial;
       int estimated_count = item.second;
@@ -389,8 +534,9 @@ TEST(MisraGriesSketchTest, AddWeightedZipfDistribution) {
     double global_weight = total_weight * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
 
-    absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+    absl::flat_hash_map<std::string, double> counts;
+    ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
     for (auto const& item : counts) {
       double true_count = true_counts[std::string(item.first)] * trial;
       double estimated_count = item.second;
@@ -420,8 +566,8 @@ TEST(MisraGriesSketchTest, MergeManyValuesUnweightedZipfDistribution) {
     double global_weight = items.size() * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
 
-    absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
+    absl::flat_hash_map<std::string, double> counts;
+    ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
 
     for (auto const& item : counts) {
       int true_count = true_counts[std::string(item.first)] * trial;
@@ -464,10 +610,12 @@ TEST(MisraGriesSketchTest, ZipfSerializationPreservesAccuracy) {
     MisraGriesSketch mg_recovered =
         MisraGriesSketch::Deserialize(serialized_sketch);
 
-    absl::flat_hash_map<std::string, double> counts =
-      CreateCountsMap(mg.GetCounts());
-    absl::flat_hash_map<std::string, double> counts_recovered =
-      CreateCountsMap(mg_recovered.GetCounts());
+    absl::flat_hash_map<std::string, double> counts;
+    ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
+
+    absl::flat_hash_map<std::string, double> counts_recovered;
+    ASSERT_TRUE(CreateCountsMap(mg_recovered, counts_recovered).ok());
+
     double global_weight = total_weight * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
 
@@ -480,6 +628,20 @@ TEST(MisraGriesSketchTest, ZipfSerializationPreservesAccuracy) {
       EXPECT_LE(estimated_count - mg.GetDelta(), true_count);
     }
   }
+}
+
+TEST(MisraGriesSketchTest, SerializationPreservesInputType) {
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowFloatArrayFromVector({1.0}, &array);
+  MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
+  EXPECT_EQ(mg1.GetInputType(), tfx_bsl::sketches::InputType::UNSET);
+  ASSERT_TRUE(mg1.AddValues(*array).ok());
+
+  EXPECT_EQ(mg1.GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
+  const std::string s = mg1.Serialize();
+
+  MisraGriesSketch mg2 = MisraGriesSketch::Deserialize(s);
+  EXPECT_EQ(mg1.GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
 }
 
 }  // namespace sketches

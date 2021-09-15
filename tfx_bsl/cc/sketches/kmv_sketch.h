@@ -45,10 +45,13 @@ class KmvSketch {
   // KmvSketch is copyable and movable.
   KmvSketch(int num_buckets);
   ~KmvSketch() = default;
-  // Updates the sketch with an Arrow array of values.
+  // Updates the sketch with an Arrow array of values, returning an error if the
+  // value type of this sketch is set and different from the value type implied
+  // by the input, or of the input is of an unhandled type.
   Status AddValues(const arrow::Array& array);
   // Merges another KMV sketch into this sketch. Returns error if the other
-  // sketch has a different number of buckets than this sketch.
+  // sketch has a different number of buckets than this sketch, or if both
+  // sketches have distinct set value types.
   Status Merge(KmvSketch& other);
   // Estimates the number of distinct elements.
   uint64_t Estimate() const;
@@ -56,6 +59,8 @@ class KmvSketch {
   std::string Serialize() const;
   // Deserializes the string to a KmvSketch object.
   static KmvSketch Deserialize(absl::string_view encoded);
+  // Get the input type of this sketch.
+  tfx_bsl::sketches::InputType::Type GetInputType() const;
 
  private:
   // The max number of hashes stored in the sketch.
@@ -67,6 +72,8 @@ class KmvSketch {
   // Upper bound on the k smallest hashes. Any items with hashes larger than
   // max_limit_ will not be considered.
   uint64_t max_limit_;
+  // Tracks the type of values in consumed by this sketch.
+  tfx_bsl::sketches::InputType::Type input_type_;
 };
 
 }  // namespace sketches

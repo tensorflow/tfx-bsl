@@ -16,6 +16,19 @@ syntax = "proto3";
 
 package tfx_bsl.sketches;
 
+// InputType represents the type of values consumed by a sketch. Values of
+// distinct type that are encoded and decoded identically may be assigned
+// the same InputType.
+message InputType {
+enum Type {
+  UNSET = 0;
+  // Represents a value stored as a raw string (identity decoder).
+  RAW_STRING = 1;
+  // Represents a float or double, stored internally in hex exponential format.
+  FLOAT = 2;
+}
+}
+
 // Specifies how the KMV sketch is formatted for serialization.
 message Kmv {
   // Max number of values in the sketch.
@@ -24,6 +37,7 @@ message Kmv {
   repeated fixed64 hashes = 2 [packed = true];
   // Largest hash value in the sketch.
   fixed64 max_limit = 3;
+  InputType.Type input_type = 4;
 }
 
 // Specifies how the MisraGries sketch is formatted for serialization.
@@ -47,6 +61,7 @@ message MisraGries {
   // the given threshold with `large_string_placeholder`.
   int32 large_string_threshold = 7;
   string large_string_placeholder = 8;
+  InputType.Type input_type = 11;
 }
 
 // Specifies how the Quantiles Sketch is formatted for serialization.

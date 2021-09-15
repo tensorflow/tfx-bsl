@@ -14,6 +14,7 @@
 
 #include "tfx_bsl/cc/sketches/kmv_sketch.h"
 #include <gtest/gtest.h>
+#include "tfx_bsl/cc/sketches/sketches.pb.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "absl/strings/str_format.h"
 
@@ -21,7 +22,7 @@ namespace tfx_bsl {
 namespace sketches {
 
 // Tests to assess the accuracy of the KMV sketch.
-// TODO(monicadsong@): Convert these tests to python.
+// TODO(b/199515135): Convert these tests to python.
 
 TEST(KmvSketchTest, AddSimpleLargeBinary) {
   KmvSketch kmv(128);
@@ -75,6 +76,45 @@ TEST(KmvSketchTest, AddSimpleInt64) {
   EXPECT_EQ(2, kmv.Estimate());
 }
 
+TEST(KmvSketchTest, AddSimpleDouble) {
+  KmvSketch kmv(128);
+  arrow::DoubleBuilder builder;
+  ASSERT_TRUE(builder.Append(0.70000001).ok());
+  ASSERT_TRUE(builder.Append(0.70000001).ok());
+  ASSERT_TRUE(builder.Append(0.7).ok());
+  std::shared_ptr<arrow::DoubleArray> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());;
+  EXPECT_EQ(2, kmv.Estimate());
+}
+
+TEST(KmvSketchTest, SimilarFloatsAndDoublesAreDistinct) {
+  KmvSketch kmv(128);
+  arrow::DoubleBuilder builder;
+  ASSERT_TRUE(builder.Append(0.70000001).ok());
+  ASSERT_TRUE(builder.Append(0.70000001f).ok());
+  std::shared_ptr<arrow::DoubleArray> array;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  ASSERT_TRUE(kmv.AddValues(*array).ok());;
+  EXPECT_EQ(2, kmv.Estimate());
+}
+
+TEST(KmvSketchTest, FailsToAddDifferentTypes) {
+  KmvSketch kmv(128);
+  arrow::DoubleBuilder builder1;
+  ASSERT_TRUE(builder1.Append(1).ok());
+  std::shared_ptr<arrow::DoubleArray> array1;
+  ASSERT_TRUE(builder1.Finish(&array1).ok());
+  ASSERT_TRUE(kmv.AddValues(*array1).ok());;
+
+  arrow::StringBuilder builder2;
+  // 0x1p+0 is the internal encoding of 1.
+  ASSERT_TRUE(builder2.Append("0x1p+0").ok());
+  std::shared_ptr<arrow::StringArray> array2;
+  ASSERT_TRUE(builder2.Finish(&array2).ok());
+  ASSERT_FALSE(kmv.AddValues(*array2).ok());;
+}
+
 
 TEST(KmvSketchTest, MergeSimple) {
   KmvSketch kmv1(128);
@@ -94,6 +134,23 @@ TEST(KmvSketchTest, MergeSimple) {
   Status status = kmv1.Merge(kmv2);
   ASSERT_TRUE(status.ok());
   EXPECT_EQ(2, kmv1.Estimate());
+}
+
+TEST(KmvSketchTest, FailsToMergeDifferentTypes) {
+  KmvSketch kmv1(128);
+  arrow::LargeBinaryBuilder builder;
+  ASSERT_TRUE(builder.Append("foo").ok());
+  std::shared_ptr<arrow::LargeBinaryArray> array1;
+  ASSERT_TRUE(builder.Finish(&array1).ok());
+  ASSERT_TRUE(kmv1.AddValues(*array1).ok());;
+
+  KmvSketch kmv2(128);
+  arrow::DoubleBuilder builder2;
+  ASSERT_TRUE(builder2.Append(44.44).ok());
+  std::shared_ptr<arrow::DoubleArray> array2;
+  ASSERT_TRUE(builder2.Finish(&array2).ok());
+  ASSERT_TRUE(kmv2.AddValues(*array2).ok());;
+  ASSERT_FALSE(kmv1.Merge(kmv2).ok());
 }
 
 // This test case is expected to fail if the hash function changes at all, even
@@ -211,6 +268,20 @@ TEST(KmvSketchTest, MergeDifferentNumBuckets) {
   ASSERT_FALSE(status.ok());
   ASSERT_EQ(("Both sketches must have the same number of buckets: 128 v.s. 64"),
             status.error_message());
+}
+
+TEST(KmvSketchTest, SerializationPreservesInputType) {
+  std::shared_ptr<arrow::Array> array;
+    arrow::DoubleBuilder builder;
+  ASSERT_TRUE(builder.Append(1).ok());
+  std::shared_ptr<arrow::DoubleArray> array1;
+  ASSERT_TRUE(builder.Finish(&array).ok());
+  KmvSketch kmv(128);
+  ASSERT_TRUE(kmv.AddValues(*array).ok());
+
+  const std::string serialized_sketch = kmv.Serialize();
+  const KmvSketch kmv_recovered = KmvSketch::Deserialize(serialized_sketch);
+  EXPECT_EQ(kmv_recovered.GetInputType(), InputType::FLOAT);
 }
 
 }  // namespace sketches
