@@ -112,40 +112,40 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
         extra_items_(extra_items) {}
 
   arrow::Status Visit(const arrow::BinaryArray& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::RAW_STRING);
   }
     arrow::Status Visit(const arrow::LargeBinaryArray& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::RAW_STRING);
     }
     arrow::Status Visit(const arrow::StringArray& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::RAW_STRING);
     }
     arrow::Status Visit(const arrow::LargeStringArray& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::RAW_STRING);
     }
     arrow::Status Visit(const arrow::Int8Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::Int16Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::Int32Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::Int64Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::UInt8Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::UInt16Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::UInt32Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::UInt64Array& array) override {
-      return VisitInternal(array);
+      return VisitInternal(array, InputType::INT);
     }
     arrow::Status Visit(const arrow::FloatArray& array) override {
       return VisitInternal(array, InputType::FLOAT);
@@ -163,8 +163,7 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
   }
 
   template <class T>
-  arrow::Status VisitInternal(
-      const T& array, const InputType::Type type = InputType::RAW_STRING) {
+  arrow::Status VisitInternal(const T& array, const InputType::Type type) {
     if (input_type_ == InputType::UNSET) {
       input_type_ = type;
     }
@@ -421,6 +420,8 @@ Status MisraGriesSketch::Decode(std::string* item) const {
   switch (input_type_) {
     case InputType::RAW_STRING:
       return tfx_bsl::Status::OK();
+    case InputType::INT:
+      return tfx_bsl::Status::OK();
     case InputType::FLOAT:
       double out;
       if (!absl::SimpleAtod(*item, &out))
@@ -442,10 +443,22 @@ Status MisraGriesSketch::GetCounts(
   for (const auto& pair : item_counts_) {
     result.emplace_back(pair.first, pair.second + delta_);
   }
-  if (input_type_ != InputType::RAW_STRING) {
-    for (auto& item_w : result) {
-      TFX_BSL_RETURN_IF_ERROR(Decode(&item_w.first));
-    }
+  switch (input_type_) {
+    // INT, RAW_STRING, and UNSET (empty sketch) do not need to be decoded.
+    case InputType::INT:
+      break;
+    case InputType::RAW_STRING:
+      break;
+    case InputType::UNSET:
+      break;
+    case InputType::FLOAT:
+      for (auto& item_w : result) {
+        TFX_BSL_RETURN_IF_ERROR(Decode(&item_w.first));
+      }
+      break;
+    default:
+      return tfx_bsl::errors::FailedPrecondition(absl::StrCat(
+          "unhandled input type ", InputType::Type_Name(input_type_)));
   }
   std::sort(
       result.begin(), result.end(),

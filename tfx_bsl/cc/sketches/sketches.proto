@@ -26,6 +26,8 @@ enum Type {
   RAW_STRING = 1;
   // Represents a float or double, stored internally in hex exponential format.
   FLOAT = 2;
+  // Represents an int, stored internally as a decimal string.
+  INT = 3;
 }
 }
 

@@ -39,40 +39,40 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
   const std::vector<uint64_t>& result() const { return result_; }
 
   arrow::Status Visit(const arrow::BinaryArray& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::RAW_STRING);
   }
   arrow::Status Visit(const arrow::LargeBinaryArray& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::RAW_STRING);
   }
   arrow::Status Visit(const arrow::StringArray& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::RAW_STRING);
   }
   arrow::Status Visit(const arrow::LargeStringArray& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::RAW_STRING);
   }
   arrow::Status Visit(const arrow::Int8Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::Int16Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::Int32Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::Int64Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::UInt8Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::UInt16Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::UInt32Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::UInt64Array& array) override {
-    return VisitInternal(array);
+    return VisitInternal(array, InputType::INT);
   }
   arrow::Status Visit(const arrow::FloatArray& array) override {
     return VisitInternal(array, InputType::FLOAT);
@@ -99,15 +99,19 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
   }
 
   template <typename T>
-  arrow::Status VisitInternal(
-      const arrow::NumericArray<T>& numeric_array,
-      const InputType::Type type = InputType::RAW_STRING) {
+  arrow::Status VisitInternal(const T& array, const InputType::Type type) {
     ARROW_RETURN_NOT_OK(SetInputType(type));
+    AddHashes(array);
+    return arrow::Status::OK();
+  }
+
+  template <typename T>
+  void AddHashes(const arrow::NumericArray<T>& numeric_array) {
     result_.reserve(numeric_array.length() - numeric_array.null_count());
     for (int i = 0; i < numeric_array.length(); i++) {
       if (!numeric_array.IsNull(i)) {
         auto value = numeric_array.Value(i);
-        if (type == InputType::FLOAT) {
+        if (input_type_ == InputType::FLOAT) {
           result_.push_back(
               farmhash::Fingerprint64(absl::StrFormat("%a", value)));
         } else {
@@ -115,12 +119,10 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
         }
       }
     }
-    return arrow::Status::OK();
   }
 
-  template<typename T>
-  arrow::Status VisitInternal(const arrow::BaseBinaryArray<T>& binary_array) {
-    ARROW_RETURN_NOT_OK(SetInputType(InputType::RAW_STRING));
+  template <typename T>
+  void AddHashes(const arrow::BaseBinaryArray<T>& binary_array) {
     result_.reserve(binary_array.length() - binary_array.null_count());
     for (int i = 0; i < binary_array.length(); i++) {
       if (!binary_array.IsNull(i)) {
@@ -129,7 +131,6 @@ class GetHashesVisitor : public arrow::ArrayVisitor {
             farmhash::Fingerprint64(string_view.data(), string_view.size()));
       }
     }
-    return arrow::Status::OK();
   }
 };
 

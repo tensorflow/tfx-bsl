@@ -136,7 +136,7 @@ TEST(KmvSketchTest, MergeSimple) {
   EXPECT_EQ(2, kmv1.Estimate());
 }
 
-TEST(KmvSketchTest, FailsToMergeDifferentTypes) {
+TEST(KmvSketchTest, MergeDistinctTypesIsError) {
   KmvSketch kmv1(128);
   arrow::LargeBinaryBuilder builder;
   ASSERT_TRUE(builder.Append("foo").ok());
@@ -150,7 +150,18 @@ TEST(KmvSketchTest, FailsToMergeDifferentTypes) {
   std::shared_ptr<arrow::DoubleArray> array2;
   ASSERT_TRUE(builder2.Finish(&array2).ok());
   ASSERT_TRUE(kmv2.AddValues(*array2).ok());;
+
+  KmvSketch kmv3(128);
+  arrow::Int64Builder builder3;
+  ASSERT_TRUE(builder3.Append(44).ok());
+  std::shared_ptr<arrow::Int64Array> array3;
+  ASSERT_TRUE(builder3.Finish(&array3).ok());
+  ASSERT_TRUE(kmv3.AddValues(*array3).ok());;
+
+
   ASSERT_FALSE(kmv1.Merge(kmv2).ok());
+  ASSERT_FALSE(kmv1.Merge(kmv3).ok());
+  ASSERT_FALSE(kmv2.Merge(kmv3).ok());
 }
 
 // This test case is expected to fail if the hash function changes at all, even

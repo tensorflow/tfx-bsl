@@ -143,6 +143,13 @@ TEST(MisraGriesSketchTest, AddSimpleDouble) {
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(6));
 }
 
+TEST(MisraGriesSketchTest, GetCountsOnEmptySketch) {
+  MisraGriesSketch mg = MakeSketch(3);
+  std::vector<std::pair<std::string, double>> counts;
+  ASSERT_TRUE(mg.GetCounts(counts).ok());
+  EXPECT_TRUE(counts.empty());
+}
+
 TEST(MisraGriesSketchTest, AddingDistinctTypesIsError) {
   MisraGriesSketch mg = MakeSketch(3);
   std::shared_ptr<arrow::Array> array1;
@@ -234,12 +241,19 @@ TEST(MisraGriesSketchTest, MergeDistinctTypesIsError) {
   CreateArrowBinaryArrayFromVector({"foo", "foo", "bar"}, &array1);
   std::shared_ptr<arrow::Array> array2;
   CreateArrowFloatArrayFromVector({1.0, 3.0}, &array2);
+  std::shared_ptr<arrow::Array> array3;
+  CreateArrowIntArrayFromVector({5, 6}, &array3);
 
   MisraGriesSketch mg1 = MakeSketch(kNumBuckets);
   ASSERT_TRUE(mg1.AddValues(*array1).ok());
   MisraGriesSketch mg2 = MakeSketch(kNumBuckets);
   ASSERT_TRUE(mg2.AddValues(*array2).ok());
+  MisraGriesSketch mg3 = MakeSketch(kNumBuckets);
+  ASSERT_TRUE(mg3.AddValues(*array3).ok());
+
   ASSERT_FALSE(mg1.Merge(mg2).ok());
+  ASSERT_FALSE(mg1.Merge(mg3).ok());
+  ASSERT_FALSE(mg2.Merge(mg3).ok());
 }
 
 TEST(MisraGriesSketchTest, MergeEmptyWithNonEmptySketch) {
