@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "absl/memory/memory.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -556,9 +557,12 @@ std::string MisraGriesSketch::Serialize() const{
   return mg_proto.SerializeAsString();
 }
 
-MisraGriesSketch MisraGriesSketch::Deserialize(absl::string_view encoded) {
+Status MisraGriesSketch::Deserialize(
+    absl::string_view encoded, std::unique_ptr<MisraGriesSketch>* result) {
   MisraGries mg_proto;
-  mg_proto.ParseFromArray(encoded.data(), encoded.size());
+  if (!mg_proto.ParseFromArray(encoded.data(), encoded.size()))
+    return tfx_bsl::errors::InvalidArgument(
+        "Failed to parse MisraGries sketch");
   absl::optional<std::string> invalid_utf8_placeholder;
   if (mg_proto.replace_invalid_utf8_values()) {
     invalid_utf8_placeholder = mg_proto.invalid_utf8_placeholder();
@@ -569,21 +573,21 @@ MisraGriesSketch MisraGriesSketch::Deserialize(absl::string_view encoded) {
     large_string_threshold = mg_proto.large_string_threshold();
     large_string_placeholder = mg_proto.large_string_placeholder();
   }
-  MisraGriesSketch mg_sketch(
+  *result = absl::make_unique<MisraGriesSketch>(
       mg_proto.num_buckets(), std::move(invalid_utf8_placeholder),
       std::move(large_string_threshold), std::move(large_string_placeholder));
   if (mg_proto.delta() > 0.) {
-    mg_sketch.delta_ = mg_proto.delta();
+    (*result)->delta_ = mg_proto.delta();
   }
-  mg_sketch.input_type_ = mg_proto.input_type();
+  (*result)->input_type_ = mg_proto.input_type();
   int num_items = mg_proto.items_size();
   for (int i = 0; i < num_items; i++) {
-    mg_sketch.item_counts_.emplace(mg_proto.items(i), mg_proto.weights(i));
+    (*result)->item_counts_.emplace(mg_proto.items(i), mg_proto.weights(i));
   }
   for (const auto& item : mg_proto.extra_items()) {
-    mg_sketch.extra_items_.emplace(item);
+    (*result)->extra_items_.emplace(item);
   }
-  return mg_sketch;
+  return Status::OK();
 }
 
 double MisraGriesSketch::GetDelta() const {

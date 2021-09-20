@@ -15,6 +15,7 @@
 #ifndef TFX_BSL_CC_SKETCHES_MISRAGRIES_SKETCH_H_
 #define TFX_BSL_CC_SKETCHES_MISRAGRIES_SKETCH_H_
 
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -99,7 +100,8 @@ class MisraGriesSketch {
   // Serializes the sketch into a string.
   std::string Serialize() const;
   // Deserializes the string to a MisraGries object.
-  static MisraGriesSketch Deserialize(absl::string_view encoded);
+  static Status Deserialize(absl::string_view encoded,
+                            std::unique_ptr<MisraGriesSketch>* result);
   // Gets delta_.
   double GetDelta() const;
   // Gets theoretical upper bound on delta (for testing purposes).

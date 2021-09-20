@@ -357,5 +357,10 @@ class MisraGriesSketchTest(parameterized.TestCase):
 
     self.assertEqual(estimate.to_pylist(), expected_counts)
 
+  def test_deserialize_fails_with_exception(self):
+    with self.assertRaisesRegex(RuntimeError,
+                                "Failed to parse MisraGries sketch"):
+      sketches.MisraGriesSketch.Deserialize("I am no proto")
+
 if __name__ == "__main__":
   absltest.main()

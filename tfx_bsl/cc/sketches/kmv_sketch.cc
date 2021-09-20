@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/strings/str_format.h"
@@ -217,17 +218,17 @@ std::string KmvSketch::Serialize() const {
   return kmv_proto.SerializeAsString();
 }
 
-KmvSketch KmvSketch::Deserialize(absl::string_view encoded) {
+Status KmvSketch::Deserialize(absl::string_view encoded,
+                              std::unique_ptr<KmvSketch>* result) {
   Kmv kmv_proto;
-  kmv_proto.ParseFromArray(encoded.data(), encoded.size());
+  if (!kmv_proto.ParseFromArray(encoded.data(), encoded.size()))
+    return tfx_bsl::errors::InvalidArgument("Failed to parse Kmv sketch");
   const auto proto_hashes = kmv_proto.hashes();
-
-  KmvSketch kmv_new{kmv_proto.num_buckets()};
-
-  kmv_new.hashes_.insert(proto_hashes.begin(), proto_hashes.end());
-  kmv_new.max_limit_ = kmv_proto.max_limit();
-  kmv_new.input_type_ = kmv_proto.input_type();
-  return kmv_new;
+  *result = std::make_unique<KmvSketch>(kmv_proto.num_buckets());
+  (*result)->hashes_.insert(proto_hashes.begin(), proto_hashes.end());
+  (*result)->max_limit_ = kmv_proto.max_limit();
+  (*result)->input_type_ = kmv_proto.input_type();
+  return Status::OK();
 }
 
 InputType::Type KmvSketch::GetInputType() const {

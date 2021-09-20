@@ -14,6 +14,7 @@
 #include "tfx_bsl/cc/sketches/sketches_submodule.h"
 
 #include <memory>
+#include <stdexcept>
 
 #include "absl/strings/string_view.h"
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
@@ -35,30 +36,34 @@ using ::tfx_bsl::sketches::QuantilesSketch;
 void DefineKmvSketchClass(py::module sketch_module) {
   py::class_<KmvSketch>(sketch_module, "KmvSketch")
       .def(py::init<const int&>())
-      .def( "AddValues",
-           [](KmvSketch& sketch, const std::shared_ptr<arrow::Array>& array) {
-              Status s = sketch.AddValues(*array);
-              if (!s.ok()) {
-                throw std::runtime_error(s.ToString());
-              }
-            },
-           py::doc("Updates the sketch with an Arrow array of values."),
-           py::call_guard<py::gil_scoped_release>())
-      .def("Merge",
-           [](KmvSketch& sketch, KmvSketch& other) {
-             Status s = sketch.Merge(other);
-             if (!s.ok()) {
-               throw std::runtime_error(s.ToString());
-             }
-           },
-           py::doc("Merges another KMV sketch into this sketch. Returns error "
-                   "if the other sketch has a different number of buckets than "
-                   "this sketch."),
-           py::call_guard<py::gil_scoped_release>())
+      .def(
+          "AddValues",
+          [](KmvSketch& sketch, const std::shared_ptr<arrow::Array>& array) {
+            Status s = sketch.AddValues(*array);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+          },
+          py::doc("Updates the sketch with an Arrow array of values."),
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "Merge",
+          [](KmvSketch& sketch, KmvSketch& other) {
+            Status s = sketch.Merge(other);
+            if (!s.ok()) {
+              throw std::runtime_error(s.ToString());
+            }
+          },
+          py::doc("Merges another KMV sketch into this sketch. Returns error "
+                  "if the other sketch has a different number of buckets than "
+                  "this sketch."),
+          py::call_guard<py::gil_scoped_release>())
       .def("Estimate", &KmvSketch::Estimate,
            py::doc("Estimates the number of distinct elements."),
            py::call_guard<py::gil_scoped_release>())
-      .def("Serialize", [](KmvSketch& sketch){
+      .def(
+          "Serialize",
+          [](KmvSketch& sketch) {
             std::string serialized;
             {
               // Release the GIL during the call to Serialize
@@ -66,12 +71,16 @@ void DefineKmvSketchClass(py::module sketch_module) {
               serialized = sketch.Serialize();
             }
             return py::bytes(serialized);
-           },
+          },
           py::doc("Serializes the sketch as a string."))
-      .def_static("Deserialize",
-           [](absl::string_view byte_string){
-              return KmvSketch::Deserialize(byte_string);
-            },
+      .def_static(
+          "Deserialize",
+          [](absl::string_view byte_string) {
+            std::unique_ptr<KmvSketch> result;
+            Status s = KmvSketch::Deserialize(byte_string, &result);
+            if (!s.ok()) throw std::runtime_error(s.ToString());
+            return result;
+          },
           py::doc("Deserializes the string to a KmvSketch object."),
           py::call_guard<py::gil_scoped_release>())
       // Pickle support
@@ -89,9 +98,12 @@ void DefineKmvSketchClass(py::module sketch_module) {
             char* data;
             Py_ssize_t size;
             PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
-            return KmvSketch::Deserialize(absl::string_view(data, size));
-          }
-      ));
+            std::unique_ptr<KmvSketch> result;
+            Status s =
+                KmvSketch::Deserialize(absl::string_view(data, size), &result);
+            if (!s.ok()) throw std::runtime_error(s.ToString());
+            return result;
+          }));
 }
 
 void DefineMisraGriesSketchClass(py::module sketch_module) {
@@ -179,7 +191,10 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
       .def_static(
           "Deserialize",
           [](absl::string_view byte_string) {
-            return MisraGriesSketch::Deserialize(byte_string);
+            std::unique_ptr<MisraGriesSketch> result;
+            Status s = MisraGriesSketch::Deserialize(byte_string, &result);
+            if (!s.ok()) throw std::runtime_error(s.ToString());
+            return result;
           },
           py::doc("Deserializes the string to a MisraGries object."),
           py::call_guard<py::gil_scoped_release>())
@@ -198,7 +213,11 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
             char* data;
             Py_ssize_t size;
             PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
-            return MisraGriesSketch::Deserialize(absl::string_view(data, size));
+            std::unique_ptr<MisraGriesSketch> result;
+            Status s = MisraGriesSketch::Deserialize(
+                absl::string_view(data, size), &result);
+            if (!s.ok()) throw std::runtime_error(s.ToString());
+            return result;
           }));
 }
 

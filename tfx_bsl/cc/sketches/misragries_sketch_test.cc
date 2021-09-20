@@ -621,14 +621,15 @@ TEST(MisraGriesSketchTest, ZipfSerializationPreservesAccuracy) {
     ASSERT_TRUE(mg.AddValues(*array, *weight_array).ok());
     // Perform serialization routine.
     std::string serialized_sketch = mg.Serialize();
-    MisraGriesSketch mg_recovered =
-        MisraGriesSketch::Deserialize(serialized_sketch);
+    std::unique_ptr<MisraGriesSketch> mg_recovered;
+    ASSERT_TRUE(
+        MisraGriesSketch::Deserialize(serialized_sketch, &mg_recovered).ok());
 
     absl::flat_hash_map<std::string, double> counts;
     ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
 
     absl::flat_hash_map<std::string, double> counts_recovered;
-    ASSERT_TRUE(CreateCountsMap(mg_recovered, counts_recovered).ok());
+    ASSERT_TRUE(CreateCountsMap(*mg_recovered, counts_recovered).ok());
 
     double global_weight = total_weight * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
@@ -654,8 +655,10 @@ TEST(MisraGriesSketchTest, SerializationPreservesInputType) {
   EXPECT_EQ(mg1.GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
   const std::string s = mg1.Serialize();
 
-  MisraGriesSketch mg2 = MisraGriesSketch::Deserialize(s);
-  EXPECT_EQ(mg1.GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
+  std::unique_ptr<MisraGriesSketch> mg_recovered;
+  ASSERT_TRUE(MisraGriesSketch::Deserialize(s, &mg_recovered).ok());
+
+  EXPECT_EQ(mg_recovered->GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
 }
 
 }  // namespace sketches

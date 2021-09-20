@@ -96,6 +96,10 @@ class KmvSketchTest(parameterized.TestCase):
     num_unique = deserialized.Estimate()
     self.assertEqual(3, num_unique)
 
+  def test_deserialize_fails_with_exception(self):
+    with self.assertRaisesRegex(RuntimeError, "Failed to parse Kmv sketch"):
+      sketches.KmvSketch.Deserialize("I am no proto")
+
 
 if __name__ == "__main__":
   absltest.main()

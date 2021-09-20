@@ -16,13 +16,14 @@
 #define TFX_BSL_CC_SKETCHES_KMV_SKETCH_H_
 
 #include <cstdint>
+#include <memory>
 #include <set>
 #include <string>
 
 #include "absl/strings/string_view.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
+#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -58,7 +59,8 @@ class KmvSketch {
   // Serializes the sketch into a string.
   std::string Serialize() const;
   // Deserializes the string to a KmvSketch object.
-  static KmvSketch Deserialize(absl::string_view encoded);
+  static Status Deserialize(absl::string_view encoded,
+                            std::unique_ptr<KmvSketch>* result);
   // Get the input type of this sketch.
   tfx_bsl::sketches::InputType::Type GetInputType() const;
 

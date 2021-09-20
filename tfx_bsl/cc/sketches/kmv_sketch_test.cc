@@ -13,10 +13,13 @@
 // limitations under the License.
 
 #include "tfx_bsl/cc/sketches/kmv_sketch.h"
+
+#include <memory>
+
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
 #include "tfx_bsl/cc/util/status.h"
-#include "absl/strings/str_format.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -223,9 +226,11 @@ TEST(KmvSketchTest, SerializationPreservesAccuracy) {
       ASSERT_TRUE(builder.Finish(&array).ok());
       ASSERT_TRUE(kmv.AddValues(*array).ok());
       const std::string serialized_sketch = kmv.Serialize();
-      const KmvSketch kmv_recovered = KmvSketch::Deserialize(serialized_sketch);
+      std::unique_ptr<KmvSketch> kmv_recovered;
+      ASSERT_TRUE(
+          KmvSketch::Deserialize(serialized_sketch, &kmv_recovered).ok());
 
-      uint64_t distinct_estimate = kmv_recovered.Estimate();
+      uint64_t distinct_estimate = kmv_recovered->Estimate();
       int64_t distinct_true = valcount;
       double rel_error = abs(distinct_true - (int64_t)distinct_estimate) /
                          (double)distinct_true;
@@ -291,8 +296,9 @@ TEST(KmvSketchTest, SerializationPreservesInputType) {
   ASSERT_TRUE(kmv.AddValues(*array).ok());
 
   const std::string serialized_sketch = kmv.Serialize();
-  const KmvSketch kmv_recovered = KmvSketch::Deserialize(serialized_sketch);
-  EXPECT_EQ(kmv_recovered.GetInputType(), InputType::FLOAT);
+  std::unique_ptr<KmvSketch> kmv_recovered;
+  ASSERT_TRUE(KmvSketch::Deserialize(serialized_sketch, &kmv_recovered).ok());
+  EXPECT_EQ(kmv_recovered->GetInputType(), InputType::FLOAT);
 }
 
 }  // namespace sketches

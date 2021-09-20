@@ -195,7 +195,10 @@ class QuantilesSketchImpl {
   static Status Deserialize(absl::string_view serialized,
                             std::unique_ptr<QuantilesSketchImpl>* result) {
     Quantiles sketch_proto;
-    sketch_proto.ParseFromArray(serialized.data(), serialized.size());
+    if (!sketch_proto.ParseFromArray(serialized.data(), serialized.size())) {
+      return errors::InvalidArgument(
+          "Failed to parse serialized Quantiles sketch.");
+    }
     std::vector<std::vector<Summary>> summaries;
     std::vector<std::vector<BufferEntry>> buffer_entries;
     const size_t num_streams = sketch_proto.streams_size();
