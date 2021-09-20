@@ -14,8 +14,8 @@
 #include "tfx_bsl/cc/coders/example_coder.h"
 
 #include <google/protobuf/arena.h>
-#include "absl/container/flat_hash_set.h"
 #include "arrow/api.h"
+#include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include "tensorflow/core/example/example.pb.h"
@@ -28,8 +28,10 @@ namespace {
 class FeatureEncoderInterface {
  public:
   virtual ~FeatureEncoderInterface() = default;
-  virtual Status EncodeFeature(const int64_t index,
-                               tensorflow::Feature* feature) = 0;
+  virtual Status EncodeFeatures(
+      const int64_t index, std::vector<tensorflow::Feature*>& features) = 0;
+  virtual Status ValidateNumProducedFeatures(const int expected,
+                                             const std::string& field_name) = 0;
 
  protected:
   virtual void EncodeFeatureValues(int64_t start, int64_t end,
@@ -39,33 +41,73 @@ class FeatureEncoderInterface {
 template <typename ListT>
 class FeatureEncoder : public FeatureEncoderInterface {
  public:
+  virtual ~FeatureEncoder() {}
+
+  // Encodes field's features at the given index.
+  Status EncodeFeatures(const int64_t index,
+                        std::vector<tensorflow::Feature*>& features) {
+    TFX_BSL_RETURN_IF_ERROR(ValidateIndex(index));
+    if (IsValueValid(index)) {
+      const int64_t start_offset = list_array_->value_offset(index);
+      const int64_t end_offset = list_array_->value_offset(index + 1);
+      EncodeFeatureValues(start_offset, end_offset, features.front());
+    }
+    return Status::OK();
+  }
+
+  // Checks that the number of allocated features is as expected.
+  Status ValidateNumProducedFeatures(const int expected,
+                                     const std::string& field_name) {
+    if (expected != num_produced_features_) {
+      return errors::InvalidArgument(
+          absl::StrCat("Expected to produce ", expected, " features, got ",
+                       num_produced_features_,
+                       ". You may need to use "
+                       "RecordBatchToExamplesEncoder with a schema, or there's "
+                       "inconsistency between the schema and RecordBatch."));
+    }
+    return Status::OK();
+  }
+
+ protected:
   FeatureEncoder(const std::shared_ptr<ListT>& list_array)
       : list_array_(list_array) {}
-  virtual ~FeatureEncoder() {}
-  Status EncodeFeature(const int64_t index, tensorflow::Feature* feature) {
+
+  // Checks the index for out-of-bound.
+  Status ValidateIndex(const int64_t index) {
     if (index >= list_array_->length()) {
       return errors::InvalidArgument(
           absl::StrCat("out-of-bound example index: ", index, " vs ",
                        list_array_->length()));
     }
-    if (list_array_->IsValid(index)) {
-      const int64_t start_offset = list_array_->value_offset(index);
-      const int64_t end_offset = list_array_->value_offset(index + 1);
-      EncodeFeatureValues(start_offset, end_offset, feature);
-    }
     return Status::OK();
   }
 
+  // Checks whether value is present at a given index.
+  bool IsValueValid(const int64_t index) { return list_array_->IsValid(index); }
+
+  void set_num_produced_features(const int num_produced_features) {
+    num_produced_features_ = num_produced_features;
+  }
+
  private:
+  // List that is being encoded.
   std::shared_ptr<ListT> list_array_;
+  // Expected number of features that encoding will result into. Defaults to
+  // single feature per input field.
+  int num_produced_features_ = 1;
 };
 
 template <typename ListT>
 class FloatEncoder : public FeatureEncoder<ListT> {
  public:
-  FloatEncoder(const std::shared_ptr<ListT>& list_array,
-               const std::shared_ptr<arrow::FloatArray>& values_array)
-      : FeatureEncoder<ListT>(list_array), values_array_(values_array) {}
+  static Status Make(const std::shared_ptr<ListT>& list_array,
+                     const std::shared_ptr<arrow::Array>& values_array,
+                     std::unique_ptr<FeatureEncoderInterface>* result) {
+    *result = absl::WrapUnique(new FloatEncoder<ListT>(
+        list_array, std::static_pointer_cast<arrow::FloatArray>(values_array)));
+    return Status::OK();
+  }
 
  protected:
   void EncodeFeatureValues(int64_t start, int64_t end,
@@ -77,15 +119,23 @@ class FloatEncoder : public FeatureEncoder<ListT> {
   }
 
  private:
+  FloatEncoder(const std::shared_ptr<ListT>& list_array,
+               const std::shared_ptr<arrow::FloatArray>& values_array)
+      : FeatureEncoder<ListT>(list_array), values_array_(values_array) {}
+
   std::shared_ptr<arrow::FloatArray> values_array_;
 };
 
 template <typename ListT>
 class IntEncoder : public FeatureEncoder<ListT> {
  public:
-  IntEncoder(const std::shared_ptr<ListT>& list_array,
-             const std::shared_ptr<arrow::Int64Array>& values_array)
-      : FeatureEncoder<ListT>(list_array), values_array_(values_array) {}
+  static Status Make(const std::shared_ptr<ListT>& list_array,
+                     const std::shared_ptr<arrow::Array>& values_array,
+                     std::unique_ptr<FeatureEncoderInterface>* result) {
+    *result = absl::WrapUnique(new IntEncoder<ListT>(
+        list_array, std::static_pointer_cast<arrow::Int64Array>(values_array)));
+    return Status::OK();
+  }
 
  protected:
   void EncodeFeatureValues(int64_t start, int64_t end,
@@ -97,6 +147,10 @@ class IntEncoder : public FeatureEncoder<ListT> {
   }
 
  private:
+  IntEncoder(const std::shared_ptr<ListT>& list_array,
+             const std::shared_ptr<arrow::Int64Array>& values_array)
+      : FeatureEncoder<ListT>(list_array), values_array_(values_array) {}
+
   std::shared_ptr<arrow::Int64Array> values_array_;
 };
 
@@ -105,9 +159,13 @@ class BytesEncoder : public FeatureEncoder<ListT> {
   using offset_type = typename BinaryArrayT::offset_type;
 
  public:
-  BytesEncoder(const std::shared_ptr<ListT>& list_array,
-               const std::shared_ptr<BinaryArrayT>& values_array)
-      : FeatureEncoder<ListT>(list_array), values_array_(values_array) {}
+  static Status Make(const std::shared_ptr<ListT>& list_array,
+                     const std::shared_ptr<arrow::Array>& values_array,
+                     std::unique_ptr<FeatureEncoderInterface>* result) {
+    *result = absl::WrapUnique(new BytesEncoder<ListT, BinaryArrayT>(
+        list_array, std::static_pointer_cast<BinaryArrayT>(values_array)));
+    return Status::OK();
+  }
 
  protected:
   void EncodeFeatureValues(int64_t start, int64_t end,
@@ -122,7 +180,113 @@ class BytesEncoder : public FeatureEncoder<ListT> {
   }
 
  private:
+  BytesEncoder(const std::shared_ptr<ListT>& list_array,
+               const std::shared_ptr<BinaryArrayT>& values_array)
+      : FeatureEncoder<ListT>(list_array), values_array_(values_array) {}
+
   std::shared_ptr<BinaryArrayT> values_array_;
+};
+
+template <typename ListT>
+Status MakeFeatureEncoderHelper(const std::shared_ptr<ListT>&,
+                                std::unique_ptr<FeatureEncoderInterface>*);
+
+// Substitutes values in `split` by offsets of the given `list` that are located
+// at positions with indices of current values in `split`.
+Status PropagateListSplit(const std::shared_ptr<arrow::LargeListArray>& list,
+                          std::shared_ptr<arrow::Int64Array>* split) {
+  arrow::Int64Builder batch_split_builder;
+  TFX_BSL_RETURN_IF_ERROR(
+      FromArrowStatus(batch_split_builder.Reserve((*split)->length())));
+  for (int64_t i = 0; i < (*split)->length(); i++) {
+    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
+        batch_split_builder.Append(list->value_offset((*split)->Value(i)))));
+  }
+  return FromArrowStatus(batch_split_builder.Finish(split));
+}
+
+template <typename ListT>
+class LargeListEncoder : public FeatureEncoder<ListT> {
+ public:
+  static Status Make(const std::shared_ptr<ListT>& list_array,
+                     const std::shared_ptr<arrow::Array>& values_array,
+                     std::unique_ptr<FeatureEncoderInterface>* result) {
+    auto values = values_array;
+    auto batch_split =
+        std::static_pointer_cast<arrow::Int64Array>(list_array->offsets());
+    auto encoder = absl::WrapUnique(new LargeListEncoder<ListT>(list_array));
+    TFX_BSL_RETURN_IF_ERROR(
+        encoder->FlattenAndMakeRowLengthsEncoders(values, batch_split));
+    // Values are now flat and batch split is translated to the last dimension.
+    TFX_BSL_RETURN_IF_ERROR(encoder->MakeValuesEncoder(values, batch_split));
+
+    // Update number of produced features: one per each partition + one for
+    // values.
+    encoder->set_num_produced_features(encoder->component_encoders_.size());
+    *result = std::move(encoder);
+    return Status::OK();
+  }
+
+  Status EncodeFeatures(const int64_t index,
+                        std::vector<tensorflow::Feature*>& features) {
+    TFX_BSL_RETURN_IF_ERROR(this->ValidateIndex(index));
+    if (this->IsValueValid(index)) {
+      for (int64_t i = 0; i < features.size(); i++) {
+        std::vector<tensorflow::Feature*> features_subset{features[i]};
+        TFX_BSL_RETURN_IF_ERROR(
+            component_encoders_[i]->EncodeFeatures(index, features_subset));
+      }
+    }
+    return Status::OK();
+  }
+
+ protected:
+  void EncodeFeatureValues(int64_t start, int64_t end,
+                           tensorflow::Feature* feature) {}
+
+ private:
+  LargeListEncoder(const std::shared_ptr<ListT>& list_array)
+      : FeatureEncoder<ListT>(list_array) {}
+
+  // Flattens `value_array` and creates `IntEncoder` for each row length
+  // partition of flattened dimension.
+  Status FlattenAndMakeRowLengthsEncoders(
+      std::shared_ptr<arrow::Array>& values_array,
+      std::shared_ptr<arrow::Int64Array>& batch_split) {
+    while (values_array->type()->id() == arrow::Type::LARGE_LIST) {
+      std::shared_ptr<arrow::Array> row_lengths;
+      TFX_BSL_RETURN_IF_ERROR(GetElementLengths(*values_array, &row_lengths));
+      const auto& row_lengths_list_array =
+          arrow::LargeListArray::FromArrays(*batch_split, *row_lengths)
+              .ValueOrDie();
+      component_encoders_.emplace_back();
+      TFX_BSL_RETURN_IF_ERROR(IntEncoder<arrow::LargeListArray>::Make(
+          row_lengths_list_array,
+          std::static_pointer_cast<arrow::Int64Array>(row_lengths),
+          &component_encoders_.back()));
+      auto values_list =
+          std::static_pointer_cast<arrow::LargeListArray>(values_array);
+      // Translate batch split to the next dimension and flatten values by 1
+      // dimension.
+      TFX_BSL_RETURN_IF_ERROR(PropagateListSplit(values_list, &batch_split));
+      values_array = values_list->values();
+    }
+    return Status::OK();
+  }
+
+  // Produces encoder for flat values.
+  Status MakeValuesEncoder(std::shared_ptr<arrow::Array>& flat_values,
+                           std::shared_ptr<arrow::Int64Array>& batch_split) {
+    auto values_list_array =
+        arrow::LargeListArray::FromArrays(*batch_split, *flat_values);
+    TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_list_array.status()));
+    component_encoders_.emplace(component_encoders_.begin(), nullptr);
+    TFX_BSL_RETURN_IF_ERROR(MakeFeatureEncoderHelper<arrow::LargeListArray>(
+        values_list_array.ValueUnsafe(), &component_encoders_.front()));
+    return Status::OK();
+  }
+
+  std::vector<std::unique_ptr<FeatureEncoderInterface>> component_encoders_;
 };
 
 template <typename ListT>
@@ -131,25 +295,17 @@ Status MakeFeatureEncoderHelper(const std::shared_ptr<ListT>& list_array,
   const std::shared_ptr<arrow::Array>& values_array = list_array->values();
   switch (values_array->type()->id()) {
     case arrow::Type::FLOAT:
-      *out = absl::make_unique<FloatEncoder<ListT>>(
-          list_array,
-          std::static_pointer_cast<arrow::FloatArray>(values_array));
-      return Status::OK();
+      return FloatEncoder<ListT>::Make(list_array, values_array, out);
     case arrow::Type::INT64:
-      *out = absl::make_unique<IntEncoder<ListT>>(
-          list_array,
-          std::static_pointer_cast<arrow::Int64Array>(values_array));
-      return Status::OK();
+      return IntEncoder<ListT>::Make(list_array, values_array, out);
     case arrow::Type::BINARY:
-      *out = absl::make_unique<BytesEncoder<ListT, arrow::BinaryArray>>(
-          list_array,
-          std::static_pointer_cast<arrow::BinaryArray>(values_array));
-      return Status::OK();
+      return BytesEncoder<ListT, arrow::BinaryArray>::Make(list_array,
+                                                           values_array, out);
     case arrow::Type::LARGE_BINARY:
-      *out = absl::make_unique<BytesEncoder<ListT, arrow::LargeBinaryArray>>(
-          list_array,
-          std::static_pointer_cast<arrow::LargeBinaryArray>(values_array));
-      return Status::OK();
+      return BytesEncoder<ListT, arrow::LargeBinaryArray>::Make(
+          list_array, values_array, out);
+    case arrow::Type::LARGE_LIST:
+      return LargeListEncoder<ListT>::Make(list_array, values_array, out);
     default:
       return errors::InvalidArgument("Bad field type");
   }
@@ -174,24 +330,46 @@ Status MakeFeatureEncoder(const std::shared_ptr<arrow::Array>& array,
   }
 }
 
+using FeatureNameToColumnsMap =
+    std::unordered_map<std::string, std::vector<std::string>>;
+
+// Checks for conflicts in names of produced features.
+Status ValidateProducedFeatureNames(
+    const std::vector<std::string>& field_names,
+    const FeatureNameToColumnsMap& nested_features) {
+  // Checking that field names are distinct.
+  std::unordered_set<std::string> distinct_field_names;
+  for (const auto& name : field_names) {
+    if (!distinct_field_names.insert(name).second) {
+      return errors::InvalidArgument(
+          "RecordBatch contains duplicate column names.");
+    }
+  }
+  // Checking that nested feature component names are different from field
+  // names.
+  for (const auto& nested_feature : nested_features) {
+    for (const auto& component_name : nested_feature.second) {
+      if (!distinct_field_names.insert(component_name).second) {
+        return errors::InvalidArgument(
+            "RecordBatch contains nested component name conflicts.");
+      }
+    }
+  }
+  return Status::OK();
+}
+
 }  // namespace
 
 Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
+                             const FeatureNameToColumnsMap& nested_features,
                              std::vector<std::string>* serialized_examples) {
   std::vector<std::pair<std::string, std::unique_ptr<FeatureEncoderInterface>>>
       feature_encoders;
   feature_encoders.reserve(record_batch.num_columns());
   const std::vector<std::string> field_names =
       record_batch.schema()->field_names();
-
-  // Checking that field names are distinct.
-  std::unordered_set<std::string> distinct_field_names;
-  for (const auto& name : field_names) {
-    if (!distinct_field_names.insert(name).second) {
-      return errors::InvalidArgument(
-          "RecordBatch contains duplicate column names");
-    }
-  }
+  TFX_BSL_RETURN_IF_ERROR(
+      ValidateProducedFeatureNames(field_names, nested_features));
 
   for (const auto& name : field_names) {
     const std::shared_ptr<arrow::Array> array =
@@ -199,6 +377,18 @@ Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
     feature_encoders.emplace_back(name, nullptr);
     TFX_BSL_RETURN_IF_ERROR(
         MakeFeatureEncoder(array, &feature_encoders.back().second));
+    if (nested_features.find(name) != nested_features.end()) {
+      // Check that actual nested depth of a field is consistent with
+      // `nested_features`.
+      TFX_BSL_RETURN_IF_ERROR(
+          feature_encoders.back().second->ValidateNumProducedFeatures(
+              nested_features.at(name).size(), name));
+    } else {
+      // Check that fields that are not nested are mapped into exactly one
+      // feature.
+      TFX_BSL_RETURN_IF_ERROR(
+          feature_encoders.back().second->ValidateNumProducedFeatures(1, name));
+    }
   }
 
   serialized_examples->resize(record_batch.num_rows());
@@ -208,14 +398,21 @@ Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
     auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
     auto* feature_map = example->mutable_features()->mutable_feature();
     for (const auto& p : feature_encoders) {
-      tensorflow::Feature* feature = &(*feature_map)[p.first];
-      TFX_BSL_RETURN_IF_ERROR(p.second->EncodeFeature(example_index, feature));
+      std::vector<tensorflow::Feature*> features;
+      if (nested_features.find(p.first) != nested_features.end()) {
+        for (const auto& component_name : nested_features.at(p.first)) {
+          features.push_back(&(*feature_map)[component_name]);
+        }
+      } else {
+        features.push_back(&(*feature_map)[p.first]);
+      }
+      TFX_BSL_RETURN_IF_ERROR(
+          p.second->EncodeFeatures(example_index, features));
     }
     if (!example->SerializeToString(&(*serialized_examples)[example_index])) {
       return errors::DataLoss("Unable to serialize example");
     }
   }
-
   return Status::OK();
 }
 

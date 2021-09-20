@@ -1,7 +1,9 @@
 # Description:
 #   Arrow-related utilities.
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = [
+    "//tfx_bsl/cc:__subpackages__",
+])
 
 licenses(["notice"])
 

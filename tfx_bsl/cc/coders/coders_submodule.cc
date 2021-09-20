@@ -23,6 +23,10 @@
 #include "tfx_bsl/cc/util/status.h"
 #include "pybind11/pytypes.h"
 #include "pybind11/stl.h"
+#include "pybind11/stl_bind.h"
+
+// Making the type cast opaque to prevent data copy on Python->C++ trip.
+PYBIND11_MAKE_OPAQUE(std::unordered_map<std::string, std::vector<std::string>>);
 
 namespace tfx_bsl {
 namespace py = pybind11;
@@ -136,24 +140,33 @@ void DefineCodersSubmodule(py::module main_module) {
           return py::reinterpret_steal<py::object>(numpy_dict);
         });
 
-  m.def("RecordBatchToExamples",
-        [](std::shared_ptr<arrow::RecordBatch> record_batch) -> py::list {
-          std::vector<std::string> serialized_examples;
-          {
-            // Release the GIL during the call to RecordBatchToExamples.
-            py::gil_scoped_release release_gil;
-            Status s =
-                RecordBatchToExamples(*record_batch, &serialized_examples);
-            if (!s.ok()) {
-              throw std::runtime_error(s.ToString());
-            }
+  // Adding binding to opaque type to enable pass-by-reference below.
+  py::bind_map<std::unordered_map<std::string, std::vector<std::string>>>(
+      m, "FeatureNameToColumnsMap");
+  m.def(
+      "RecordBatchToExamples",
+      [](std::shared_ptr<arrow::RecordBatch> record_batch,
+         const std::unordered_map<std::string, std::vector<std::string>>&
+             nested_features) -> py::list {
+        std::vector<std::string> serialized_examples;
+        {
+          // Release the GIL during the call to RecordBatchToExamples.
+          py::gil_scoped_release release_gil;
+          Status s = RecordBatchToExamples(*record_batch, nested_features,
+                                           &serialized_examples);
+          if (!s.ok()) {
+            throw std::runtime_error(s.ToString());
           }
-          py::list bytes_examples;
-          for (auto& example : serialized_examples) {
-            bytes_examples.append(py::bytes(example));
-          }
-          return bytes_examples;
-        });
+        }
+        py::list bytes_examples;
+        for (auto& example : serialized_examples) {
+          bytes_examples.append(py::bytes(example));
+        }
+        return bytes_examples;
+      },
+      py::arg("record_batch"),
+      py::arg("nested_features") =
+          std::unordered_map<std::string, std::vector<std::string>>());
 }
 
 }  // namespace tfx_bsl

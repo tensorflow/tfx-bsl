@@ -49,6 +49,7 @@ namespace tfx_bsl {
 class FeatureDecoder;
 class FeatureListDecoder;
 class UnknownTypeFeatureListDecoder;
+
 class ExamplesToRecordBatchDecoder {
  public:
   static Status Make(
@@ -261,10 +262,15 @@ class SchemalessIncrementalSequenceExamplesDecoder {
 // Converts a RecordBatch to a list of examples.
 //
 // The fields of the RecordBatch must have types list[dtype] or
-// large_list[dtype], where dtype is one of float32, int64, binary, or
-// large_binary.
-Status RecordBatchToExamples(const arrow::RecordBatch& record_batch,
-                             std::vector<std::string>* serialized_examples);
+// large_list[dtype], where dtype is one of float32, int64, binary, large_binary
+// or large_list[dtype]. The latter requires providing names of features
+// representing nested list components: flat values and row lengths, otherwise
+// `nested_features` can be empty.
+Status RecordBatchToExamples(
+    const arrow::RecordBatch& record_batch,
+    const std::unordered_map<std::string, std::vector<std::string>>&
+        nested_features,
+    std::vector<std::string>* serialized_examples);
 
 }  // namespace tfx_bsl
 

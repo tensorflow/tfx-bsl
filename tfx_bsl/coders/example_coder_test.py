@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Tests for tfx_bsl.coders.example_coder."""
-
+import pickle
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.coders import example_coder
@@ -21,7 +21,6 @@ from google.protobuf import text_format
 from absl.testing import absltest
 from absl.testing import parameterized
 from tensorflow_metadata.proto.v0 import schema_pb2
-
 
 _TEST_EXAMPLES = [
     """
@@ -72,8 +71,7 @@ _DECODE_CASES = [
                      type=pa.large_list(pa.large_binary())),
             pa.array([[1.0, 2.0], None, None, []],
                      type=pa.large_list(pa.float32())),
-            pa.array([[4, 5], None, None, []],
-                     type=pa.large_list(pa.int64()))
+            pa.array([[4, 5], None, None, []], type=pa.large_list(pa.int64()))
         ], ["v", "w", "x", "y", "z"])),
     dict(
         testcase_name="with_schema_simple",
@@ -209,8 +207,7 @@ _INVALID_INPUT_CASES = [
 class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
   @parameterized.named_parameters(*_DECODE_CASES)
-  def test_decode(self, schema_text_proto, examples_text_proto,
-                  expected):
+  def test_decode(self, schema_text_proto, examples_text_proto, expected):
     serialized_examples = [
         text_format.Parse(pbtxt, tf.train.Example()).SerializeToString()
         for pbtxt in examples_text_proto
@@ -364,6 +361,312 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
   def test_invalid_input(self, record_batch, error, error_msg_regex):
     with self.assertRaisesRegex(error, error_msg_regex):
       example_coder.RecordBatchToExamples(record_batch)
+
+
+_ENCODE_NESTED_TEST_EXAMPLES = [
+    """
+    features {
+      feature { key: "x$values" value { bytes_list { value: ["a", "b"] } } }
+      feature { key: "y$values" value { float_list { value: [1.0, 2.0] } } }
+      feature { key: "y$row_length_1" value { int64_list { value: [2] } } }
+      feature { key: "z$values" value { int64_list { value: [4, 5] } } }
+      feature { key: "z$row_length_1" value { int64_list { value: [2] } } }
+      feature { key: "z$row_length_2" value { int64_list { value: [1, 1] } } }
+    }
+    """,
+    """
+    features {
+      feature { key: "x$values" value { } }
+      feature { key: "y$values" value { float_list { value: [3.0] } } }
+      feature { key: "y$row_length_1" value { int64_list { value: [1] } } }
+      feature { key: "z$values" value { } }
+      feature { key: "z$row_length_1" value { } }
+      feature { key: "z$row_length_2" value { } }
+    }
+    """,
+    """
+    features {
+      feature { key: "x$values" value { } }
+      feature { key: "y$values" value { } }
+      feature { key: "y$row_length_1" value { } }
+      feature { key: "z$values" value { int64_list { value: [6] } } }
+      feature { key: "z$row_length_1" value { int64_list { value: [1] } } }
+      feature { key: "z$row_length_2" value { int64_list { value: [1] } } }
+    }
+    """,
+    """
+    features {
+      feature { key: "x$values" value { bytes_list { value: [] } } }
+      feature { key: "y$values" value { float_list { value: [] } } }
+      feature { key: "y$row_length_1" value { int64_list { value: [0] } } }
+      feature { key: "z$values" value { int64_list { value: [] } } }
+      feature { key: "z$row_length_1" value { int64_list { value: [1] } } }
+      feature { key: "z$row_length_2" value { int64_list { value: [0] } } }
+    }
+    """,
+]
+
+_ENCODE_NESTED_CASES = [
+    # Note that uniform_row_length partitions do not affect encoding.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[[1.0, 2.0]], [[3.0]], None, [[]]],
+                     type=pa.large_list(pa.large_list(pa.float32()))),
+            pa.array([[[[4], [5]]], None, [[[6]]], [[[]]]],
+                     type=pa.large_list(
+                         pa.large_list(pa.large_list(pa.int64()))))
+        ], ["x", "y", "z"]),
+        examples_text_proto=_ENCODE_NESTED_TEST_EXAMPLES,
+        schema=text_format.Parse(
+            """
+        tensor_representation_group {
+        key: ""
+        value {
+          tensor_representation {
+            key: "x"
+            value {
+              ragged_tensor {
+                feature_path { step: "x$values"}
+                partition { uniform_row_length: 2 }
+              }
+            }
+          }
+          tensor_representation {
+            key: "y"
+            value {
+              ragged_tensor {
+                feature_path { step: "y$values"}
+                partition { row_length: "y$row_length_1" }
+                partition { uniform_row_length: 2 }
+              }
+            }
+          }
+          tensor_representation {
+            key: "z"
+            value {
+              ragged_tensor {
+                feature_path { step: "z$values"}
+                partition { row_length: "z$row_length_1" }
+                partition { uniform_row_length: 2 }
+                partition { row_length: "z$row_length_2" }
+              }
+            }
+          }
+      }
+      }""", schema_pb2.Schema())),
+    # x is not a ragged tensor and is converted as a plain feature.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[[1.0, 2.0]], [[3.0]], None, [[]]],
+                     type=pa.large_list(pa.large_list(pa.float32()))),
+            pa.array([[[[4], [5]]], None, [[[6]]], [[[]]]],
+                     type=pa.large_list(
+                         pa.large_list(pa.large_list(pa.int64()))))
+        ], ["x$values", "y", "z"]),
+        examples_text_proto=_ENCODE_NESTED_TEST_EXAMPLES,
+        schema=text_format.Parse(
+            """
+        tensor_representation_group {
+        key: ""
+        value {
+          tensor_representation {
+            key: "y"
+            value {
+              ragged_tensor {
+                feature_path { step: "y$values"}
+                partition { row_length: "y$row_length_1" }
+              }
+            }
+          }
+          tensor_representation {
+            key: "z"
+            value {
+              ragged_tensor {
+                feature_path { step: "z$values"}
+                partition { row_length: "z$row_length_1" }
+                partition { row_length: "z$row_length_2" }
+              }
+            }
+          }
+      }
+      }""", schema_pb2.Schema())),
+    # Ragged tensor representations belong to different groups.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[[1.0, 2.0]], [[3.0]], None, [[]]],
+                     type=pa.large_list(pa.large_list(pa.float32()))),
+            pa.array([[[[4], [5]]], None, [[[6]]], [[[]]]],
+                     type=pa.large_list(
+                         pa.large_list(pa.large_list(pa.int64()))))
+        ], ["x$values", "y", "z"]),
+        examples_text_proto=_ENCODE_NESTED_TEST_EXAMPLES,
+        schema=text_format.Parse(
+            """
+        tensor_representation_group {
+        key: "1"
+        value {
+          tensor_representation {
+            key: "z"
+            value {
+              ragged_tensor {
+                feature_path { step: "z$values"}
+                partition { row_length: "z$row_length_1" }
+                partition { row_length: "z$row_length_2" }
+              }
+            }
+          }
+      }
+      }
+      tensor_representation_group {
+        key: "2"
+        value {
+          tensor_representation {
+            key: "y"
+            value {
+              ragged_tensor {
+                feature_path { step: "y$values"}
+                partition { row_length: "y$row_length_1" }
+              }
+            }
+          }
+      }
+      }""", schema_pb2.Schema())),
+]
+
+_INVALID_ENCODE_NESTED_TYPE_CASES = [
+    # Ragged value feature name conflicts with a different feature in the batch.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[[1.0, 2.0]], [[3.0]], None, [[]]],
+                     type=pa.large_list(pa.large_list(pa.int64())))
+        ], ["x", "x$values"]),
+        error=RuntimeError,
+        error_msg_regex="RecordBatch contains nested component name conflicts",
+        schema=text_format.Parse(
+            """
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "x"
+                  value {
+                    ragged_tensor {
+                      feature_path { step: "x$values"}
+                    }
+                  }
+                }
+              }
+            }""", schema_pb2.Schema()),
+    ),
+    # Two ragged features have same value feature name.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary())),
+            pa.array([[[1.0, 2.0]], [[3.0]], None, [[]]],
+                     type=pa.large_list(pa.large_list(pa.int64())))
+        ], ["x", "y"]),
+        error=RuntimeError,
+        error_msg_regex="RecordBatch contains nested component name conflicts",
+        schema=text_format.Parse(
+            """
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "x"
+                  value {
+                    ragged_tensor {
+                      feature_path { step: "x$values"}
+                    }
+                  }
+                }
+                tensor_representation {
+                  key: "y"
+                  value {
+                    ragged_tensor {
+                      feature_path { step: "x$values"}
+                    }
+                  }
+                }
+              }
+            }""", schema_pb2.Schema()),
+    ),
+    # Ragged feature is expected to be 2d, but got 1d.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[b"a", b"b"], None, None, []],
+                     type=pa.large_list(pa.large_binary()))
+        ], ["x"]),
+        error=RuntimeError,
+        error_msg_regex="Expected to produce 2 features, got 1",
+        schema=text_format.Parse(
+            """
+            tensor_representation_group {
+              key: ""
+              value {
+                tensor_representation {
+                  key: "x"
+                  value {
+                    ragged_tensor {
+                      feature_path { step: "x$values"}
+                      partition { row_length: "x$row_length_1" }
+                    }
+                  }
+                }
+              }
+            }""", schema_pb2.Schema()),
+    ),
+    # Batch has a nested list without corresponding RaggedTensor in the schema.
+    dict(
+        record_batch=pa.RecordBatch.from_arrays([
+            pa.array([[[b"a"], [b"b"]], None, None, [[]]],
+                     type=pa.large_list(pa.large_list(pa.large_binary())))
+        ], ["x"]),
+        error=RuntimeError,
+        error_msg_regex="Expected to produce 1 features, got 2",
+    ),
+]
+
+
+class RecordBatchToExamplesEncoderTest(parameterized.TestCase):
+
+  @parameterized.parameters(*(_ENCODE_CASES + _ENCODE_NESTED_CASES))
+  def test_encode(self, record_batch, examples_text_proto, schema=None):
+    expected_examples = [
+        text_format.Parse(pbtxt, tf.train.Example())
+        for pbtxt in examples_text_proto
+    ]
+    schema = (schema or schema_pb2.Schema())
+    coder = example_coder.RecordBatchToExamplesEncoder(schema)
+    # Verify that coder can be properly pickled and unpickled.
+    coder = pickle.loads(pickle.dumps(coder))
+    actual_examples = [
+        tf.train.Example.FromString(encoded)
+        for encoded in coder.encode(record_batch)
+    ]
+
+    self.assertEqual(actual_examples, expected_examples)
+
+  @parameterized.parameters(*(_INVALID_ENCODE_TYPE_CASES +
+                              _INVALID_ENCODE_NESTED_TYPE_CASES))
+  def test_invalid_input(self,
+                         record_batch,
+                         error,
+                         error_msg_regex,
+                         schema=None):
+    schema = (schema or schema_pb2.Schema())
+    coder = example_coder.RecordBatchToExamplesEncoder(schema)
+    with self.assertRaisesRegex(error, error_msg_regex):
+      coder.encode(record_batch)
 
 
 if __name__ == "__main__":

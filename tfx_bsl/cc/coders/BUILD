@@ -23,6 +23,7 @@ cc_library(
         "@arrow",
         "//tfx_bsl/cc/util:status",
         "//tfx_bsl/cc/util:status_util",
+        "//tfx_bsl/cc/arrow:array_util",
         # In OSS, this target may appear not to exist. It is created from a patch:
         # //third_party/tensorflow_expose_example_proto.patch
         "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",

@@ -4,6 +4,9 @@
 
 ## Major Features and Improvements
 
+*   Introduces `RecordBatchToExamplesEncoder` that supports encoding nested
+    `pyarrow.large_list()`s representing `tf.RaggedTensor`s.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes
