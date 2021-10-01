@@ -9,6 +9,9 @@
 
 ## Bug Fixes and Other Changes
 
+*   Register s2t ops before loading decoder in record_to_tensor_tfxio if
+    struct2tensor is installed.
+
 ## Breaking Changes
 
 ## Deprecations

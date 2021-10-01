@@ -294,6 +294,7 @@ class _DecodeFnWrapper(object):
 
   def __init__(self, saved_decoder_path: Text):
     self.saved_decoder_path = saved_decoder_path
+    _MaybeRegisterStruct2TensorOps()
     decoder = tf_graph_record_decoder.load_decoder(saved_decoder_path)
     self.output_type_specs = decoder.output_type_specs()
     # Store the concrete function to avoid tracing upon calling.
@@ -359,3 +360,12 @@ class _RecordsToRecordBatch(beam.DoFn):
       yield record_based_tfxio.AppendRawRecordColumn(
           decoded, self._raw_record_column_name, records,
           self._record_index_column_name)
+
+
+# TODO(b/159982957): Replace this with a mechanism that registers any custom
+# op.
+def _MaybeRegisterStruct2TensorOps():
+  try:
+    import struct2tensor as _  # pylint: disable=g-import-not-at-top
+  except (ImportError, tf.errors.NotFoundError):
+    pass
