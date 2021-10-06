@@ -67,6 +67,7 @@ http_archive(
     sha256 = "7c0c8f10299545f8fe19a483eab4bda8be150623de65cc09ebd8c4b2b073f4ca",
 )
 
+# TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.
 TENSORFLOW_COMMIT = "582c8d236cb079023657287c318ff26adb239002"  # 2.4.0
 http_archive(
     name = "org_tensorflow_no_deps",
