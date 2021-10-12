@@ -39,17 +39,15 @@ _ALL_EXAMPLE_CODER_TYPES = {
 
 _INFER_TEST_CASES = [
     # Test different shapes
-    {
-        'testcase_name':
-            'fixed_len_vector',
-        'ascii_proto':
-            """
+    dict(
+        testcase_name='fixed_len_vector',
+        ascii_proto="""
           feature: {
             name: "x" type: INT shape: {dim {size: 1}}
             presence: {min_fraction: 1}
           }
         """,
-        'expected': {
+        expected={
             'x':
                 """
               dense_tensor {
@@ -60,19 +58,16 @@ _INFER_TEST_CASES = [
                   }
                 }
               }"""
-        }
-    },
-    {
-        'testcase_name':
-            'fixed_len_matrix',
-        'ascii_proto':
-            """
+        }),
+    dict(
+        testcase_name='fixed_len_matrix',
+        ascii_proto="""
           feature: {
             name: "x" type: INT shape: {dim {size: 2} dim {size: 2}}
             presence: {min_fraction: 1}
           }
         """,
-        'expected': {
+        expected={
             'x':
                 """
               dense_tensor {
@@ -86,25 +81,21 @@ _INFER_TEST_CASES = [
                   }
                 }
               }"""
-        }
-    },
-    {
-        'testcase_name': 'var_len',
-        'ascii_proto': """feature: {name: "x" type: INT}""",
-        'expected': {
+        }),
+    dict(
+        testcase_name='var_len',
+        ascii_proto="""feature: {name: "x" type: INT}""",
+        expected={
             'x':
                 """
               varlen_sparse_tensor {
                 column_name: "x"
               }
             """
-        }
-    },
-    {
-        'testcase_name':
-            'sparse',
-        'ascii_proto':
-            """
+        }),
+    dict(
+        testcase_name='sparse',
+        ascii_proto="""
           feature {
             name: "index_key"
             type: INT
@@ -119,7 +110,7 @@ _INFER_TEST_CASES = [
             index_feature {name: "index_key"}
             value_feature {name: "value_key"}
           }""",
-        'expected': {
+        expected={
             'x':
                 """
               sparse_tensor {
@@ -132,22 +123,16 @@ _INFER_TEST_CASES = [
                 }
               }
             """
-        }
-    },
-    {
-        'testcase_name':
-            'deprecated_feature',
-        'ascii_proto':
-            """
+        }),
+    dict(
+        testcase_name='deprecated_feature',
+        ascii_proto="""
           feature: {name: "x" type: INT lifecycle_stage: DEPRECATED}
         """,
-        'expected': {}
-    },
-    {
-        'testcase_name':
-            'sparse_feature_rank_0',
-        'ascii_proto':
-            """
+        expected={}),
+    dict(
+        testcase_name='sparse_feature_rank_0',
+        ascii_proto="""
           feature {
             name: "value_key"
             type: INT
@@ -157,7 +142,7 @@ _INFER_TEST_CASES = [
             value_feature {name: "value_key"}
           }
         """,
-        'expected': {
+        expected={
             'x':
                 """
               sparse_tensor {
@@ -165,13 +150,10 @@ _INFER_TEST_CASES = [
                 dense_shape { }
               }
             """
-        }
-    },
-    {
-        'testcase_name':
-            'sparse_feature_rank_2',
-        'ascii_proto':
-            """
+        }),
+    dict(
+        testcase_name='sparse_feature_rank_2',
+        ascii_proto="""
           feature {
             name: "index_key_1"
             type: INT
@@ -193,7 +175,7 @@ _INFER_TEST_CASES = [
             value_feature {name: "value_key"}
           }
         """,
-        'expected': {
+        expected={
             'x':
                 """
               sparse_tensor {
@@ -210,15 +192,13 @@ _INFER_TEST_CASES = [
                 }
               }
             """
-        }
-    }
+        })
 ]
 
-_LEGACY_INFER_TEST_CASES = [{
-    'testcase_name':
-        'fixed_len_scalar_no_default_legacy',
-    'ascii_proto':
-        """
+_LEGACY_INFER_TEST_CASES = [
+    dict(
+        testcase_name='fixed_len_scalar_no_default_legacy',
+        ascii_proto="""
           feature: {
             name: "dummy" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
@@ -228,9 +208,9 @@ _LEGACY_INFER_TEST_CASES = [{
             presence: {min_fraction: 1}
           }
         """,
-    'expected': {
-        'dummy':
-            """
+        expected={
+            'dummy':
+                """
               dense_tensor {
                 column_name: "dummy"
                 shape {
@@ -239,21 +219,19 @@ _LEGACY_INFER_TEST_CASES = [{
                   int_value: -1
                 }
               }""",
-        'x':
-            """
+            'x':
+                """
               dense_tensor {
                 column_name: "x"
                 shape {
                 }
               }""",
-    },
-    'generate_legacy_feature_spec':
-        True,
-}, {
-    'testcase_name':
-        'fixed_len_vector_no_default_legacy',
-    'ascii_proto':
-        """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='fixed_len_vector_no_default_legacy',
+        ascii_proto="""
           feature: {
             name: "dummy" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
@@ -263,9 +241,9 @@ _LEGACY_INFER_TEST_CASES = [{
             presence: {min_fraction: 1}
           }
         """,
-    'expected': {
-        'dummy':
-            """
+        expected={
+            'dummy':
+                """
               dense_tensor {
                 column_name: "dummy"
                 shape {
@@ -274,8 +252,8 @@ _LEGACY_INFER_TEST_CASES = [{
                   int_value: -1
                 }
               }""",
-        'x':
-            """
+            'x':
+                """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -284,14 +262,12 @@ _LEGACY_INFER_TEST_CASES = [{
                   }
                 }
               }""",
-    },
-    'generate_legacy_feature_spec':
-        True,
-}, {
-    'testcase_name':
-        'var_len_legacy',
-    'ascii_proto':
-        """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='var_len_legacy',
+        ascii_proto="""
           feature: {
             name: "dummy" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
@@ -300,9 +276,9 @@ _LEGACY_INFER_TEST_CASES = [{
             name: "x" type: INT
           }
         """,
-    'expected': {
-        'dummy':
-            """
+        expected={
+            'dummy':
+                """
               dense_tensor {
                 column_name: "dummy"
                 shape {
@@ -311,28 +287,26 @@ _LEGACY_INFER_TEST_CASES = [{
                   int_value: -1
                 }
               }""",
-        'x':
-            """
+            'x':
+                """
               varlen_sparse_tensor {
                 column_name: "x"
               }
             """
-    },
-    'generate_legacy_feature_spec':
-        True,
-}, {
-    'testcase_name':
-        'fixed_len_scalar_int_with_default_legacy',
-    'ascii_proto':
-        """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='fixed_len_scalar_int_with_default_legacy',
+        ascii_proto="""
           feature: {
             name: "x" type: INT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
           }
         """,
-    'expected': {
-        'x':
-            """
+        expected={
+            'x':
+                """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -342,22 +316,20 @@ _LEGACY_INFER_TEST_CASES = [{
                 }
               }
             """
-    },
-    'generate_legacy_feature_spec':
-        True,
-}, {
-    'testcase_name':
-        'fixed_len_scalar_string_with_default_legacy',
-    'ascii_proto':
-        """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='fixed_len_scalar_string_with_default_legacy',
+        ascii_proto="""
           feature: {
             name: "x" type: BYTES value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
           }
         """,
-    'expected': {
-        'x':
-            """
+        expected={
+            'x':
+                """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -367,22 +339,20 @@ _LEGACY_INFER_TEST_CASES = [{
                 }
               }
             """
-    },
-    'generate_legacy_feature_spec':
-        True,
-}, {
-    'testcase_name':
-        'fixed_len_scalar_float_with_default_legacy',
-    'ascii_proto':
-        """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='fixed_len_scalar_float_with_default_legacy',
+        ascii_proto="""
           feature: {
             name: "x" type: FLOAT value_count: {min: 1 max: 1}
             presence: {min_fraction: 0}
           }
         """,
-    'expected': {
-        'x':
-            """
+        expected={
+            'x':
+                """
               dense_tensor {
                 column_name: "x"
                 shape {
@@ -392,18 +362,92 @@ _LEGACY_INFER_TEST_CASES = [{
                 }
               }
             """
-    },
-    'generate_legacy_feature_spec':
-        True,
-}, {
-    'testcase_name':
-        'deprecated_feature_legacy',
-    'ascii_proto':
-        """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='deprecated_feature_legacy',
+        ascii_proto="""
           feature: {name: "x" type: INT deprecated: true}
         """,
-    'expected': {},
-}]
+        expected={},
+    )
+]
+
+_MIXED_SCHEMA_INFER_TEST_CASES = [
+    dict(
+        testcase_name='fixed_len_vector_and_tensor_representation',
+        ascii_proto="""
+          feature: {
+            name: "x" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          feature: {
+            name: "value"
+            type: FLOAT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "y"
+                value: {
+                  ragged_tensor {
+                    feature_path { step: "value" }
+                  }
+                }
+              }
+            }
+          }
+        """,
+        expected={
+            'x':
+                """
+              dense_tensor {
+                column_name: "x"
+                shape {
+                  dim {
+                    size: 1
+                  }
+                }
+              }""",
+            'y':
+                """
+                ragged_tensor {
+                  feature_path { step: "value" }
+                }
+                """
+        },
+        schema_is_mixed=True,
+    ),
+    dict(
+        testcase_name='tensor_representation_only',
+        ascii_proto="""
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "y"
+                value: {
+                  ragged_tensor {
+                    feature_path { step: "value" }
+                  }
+                }
+              }
+            }
+          }
+        """,
+        expected={
+            'y':
+                """
+                ragged_tensor {
+                  feature_path { step: "value" }
+                }
+                """
+        },
+        schema_is_mixed=True,
+    ),
+]
 
 _INVALID_SCHEMA_INFER_TEST_CASES = [
     dict(
@@ -520,6 +564,67 @@ _INVALID_SCHEMA_INFER_TEST_CASES = [
         """,
         error_msg=(r'sparse_feature x referred to value feature '
                    r'value_key which did not exist in the schema')),
+]
+
+_INVALID_MIXED_SCHEMA_INFER_TEST_CASES = [
+    dict(
+        testcase_name='feature_and_tensor_representation_same_name',
+        ascii_proto="""
+          feature: {
+            name: "x" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          feature: {
+            name: "y" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          feature: {
+            name: "value"
+            type: FLOAT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "y"
+                value: {
+                  ragged_tensor {
+                    feature_path { step: "value" }
+                  }
+                }
+              }
+            }
+          }
+        """,
+        error_msg=(r'Feature name "y" conflicts with tensor representation '
+                   r'name in the same schema.'),
+        schema_is_mixed=True,
+    ),
+    dict(
+        testcase_name='source_column_and_tensor_representation_same_name',
+        ascii_proto="""
+          feature: {
+            name: "y" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "y"
+                value: {
+                  ragged_tensor {
+                    feature_path { step: "y" }
+                  }
+                }
+              }
+            }
+          }
+        """,
+        error_msg=(r'Feature name "y" conflicts with tensor representation '
+                   r'name in the same schema.'),
+        schema_is_mixed=True,
+    ),
 ]
 
 _GET_SOURCE_COLUMNS_TEST_CASES = [
@@ -866,9 +971,14 @@ _PARSE_EXAMPLE_TEST_CASES = _MakeFixedLenFeatureTestCases(
 class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
 
   @parameterized.named_parameters(
-      *(_INFER_TEST_CASES + _LEGACY_INFER_TEST_CASES))
+      *(_INFER_TEST_CASES + _LEGACY_INFER_TEST_CASES +
+        _MIXED_SCHEMA_INFER_TEST_CASES))
   def testInferTensorRepresentationsFromSchema(
-      self, ascii_proto, expected, generate_legacy_feature_spec=False):
+      self,
+      ascii_proto,
+      expected,
+      generate_legacy_feature_spec=False,
+      schema_is_mixed=False):
     # Skip a test if it's testing legacy logic but the schema is not the
     # legacy schema.
     if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
@@ -881,21 +991,36 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
         k: text_format.Parse(pbtxt, schema_pb2.TensorRepresentation())
         for k, pbtxt in expected.items()
     }
+    if not schema_is_mixed:
+      self.assertEqual(
+          expected_protos,
+          tensor_representation_util.InferTensorRepresentationsFromSchema(
+              schema))
     self.assertEqual(
         expected_protos,
-        tensor_representation_util.InferTensorRepresentationsFromSchema(schema))
+        tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
+            schema))
 
-  @parameterized.named_parameters(*_INVALID_SCHEMA_INFER_TEST_CASES)
+  @parameterized.named_parameters(*(_INVALID_SCHEMA_INFER_TEST_CASES +
+                                    _INVALID_MIXED_SCHEMA_INFER_TEST_CASES))
   def testInferTensorRepresentationsFromSchemaInvalidSchema(
-      self, ascii_proto, error_msg, generate_legacy_feature_spec=False):
+      self,
+      ascii_proto,
+      error_msg,
+      generate_legacy_feature_spec=False,
+      schema_is_mixed=False):
     if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
       print('Skipping test case: ', self.id(), file=sys.stderr)
       return
     schema = text_format.Parse(ascii_proto, schema_pb2.Schema())
     if _IS_LEGACY_SCHEMA:
       schema.generate_legacy_feature_spec = generate_legacy_feature_spec
+    if not schema_is_mixed:
+      with self.assertRaisesRegex(ValueError, error_msg):
+        tensor_representation_util.InferTensorRepresentationsFromSchema(schema)
     with self.assertRaisesRegex(ValueError, error_msg):
-      tensor_representation_util.InferTensorRepresentationsFromSchema(schema)
+      tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
+          schema)
 
   def testGetTensorRepresentationsFromSchema(self):
     self.assertIsNone(

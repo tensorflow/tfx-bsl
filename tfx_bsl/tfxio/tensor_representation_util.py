@@ -159,6 +159,28 @@ def InferTensorRepresentationsFromSchema(
   return infer_func(schema)
 
 
+def InferTensorRepresentationsFromMixedSchema(
+    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
+  """Infers TensorRepresentations from schema that has Features and TRs."""
+  tensor_representations = GetTensorRepresentationsFromSchema(schema)
+  inferred_tensor_representations = InferTensorRepresentationsFromSchema(schema)
+  if tensor_representations is None:
+    return inferred_tensor_representations
+  # Only keep inferred TRs that do not represent source columns.
+  source_columns = set()
+  for tensor_representation in tensor_representations.values():
+    source_columns.update(
+        str(path) for path in GetSourceColumnsFromTensorRepresentation(
+            tensor_representation))
+  for name, tensor_representation in inferred_tensor_representations.items():
+    if name in tensor_representations:
+      raise ValueError("Feature name \"{}\" conflicts with tensor "
+                       "representation name in the same schema.".format(name))
+    if name not in source_columns:
+      tensor_representations[name] = tensor_representation
+  return tensor_representations
+
+
 def GetSourceColumnsFromTensorRepresentation(
     tensor_representation: schema_pb2.TensorRepresentation
 ) -> List[path.ColumnPath]:
