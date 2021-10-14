@@ -447,6 +447,86 @@ _MIXED_SCHEMA_INFER_TEST_CASES = [
         },
         schema_is_mixed=True,
     ),
+    dict(
+        testcase_name='feature_and_tensor_representation_same_name',
+        ascii_proto="""
+          feature: {
+            name: "x" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          feature: {
+            name: "y" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          feature: {
+            name: "value"
+            type: FLOAT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "y"
+                value: {
+                  ragged_tensor {
+                    feature_path { step: "value" }
+                  }
+                }
+              }
+            }
+          }
+        """,
+        expected={
+            'x':
+                """
+              dense_tensor {
+                column_name: "x"
+                shape {
+                  dim {
+                    size: 1
+                  }
+                }
+              }""",
+            'y':
+                """
+                ragged_tensor {
+                  feature_path { step: "value" }
+                }
+                """,
+        },
+        schema_is_mixed=True,
+    ),
+    dict(
+        testcase_name='source_column_and_tensor_representation_same_name',
+        ascii_proto="""
+          feature: {
+            name: "y" type: INT shape: {dim {size: 1}}
+            presence: {min_fraction: 1}
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "y"
+                value: {
+                  ragged_tensor {
+                    feature_path { step: "y" }
+                  }
+                }
+              }
+            }
+          }
+        """,
+        expected={
+            'y':
+                """
+                ragged_tensor {
+                  feature_path { step: "y" }
+                }
+                """,
+        },
+        schema_is_mixed=True,
+    ),
 ]
 
 _INVALID_SCHEMA_INFER_TEST_CASES = [
@@ -564,67 +644,6 @@ _INVALID_SCHEMA_INFER_TEST_CASES = [
         """,
         error_msg=(r'sparse_feature x referred to value feature '
                    r'value_key which did not exist in the schema')),
-]
-
-_INVALID_MIXED_SCHEMA_INFER_TEST_CASES = [
-    dict(
-        testcase_name='feature_and_tensor_representation_same_name',
-        ascii_proto="""
-          feature: {
-            name: "x" type: INT shape: {dim {size: 1}}
-            presence: {min_fraction: 1}
-          }
-          feature: {
-            name: "y" type: INT shape: {dim {size: 1}}
-            presence: {min_fraction: 1}
-          }
-          feature: {
-            name: "value"
-            type: FLOAT
-          }
-          tensor_representation_group {
-            key: ""
-            value {
-              tensor_representation {
-                key: "y"
-                value: {
-                  ragged_tensor {
-                    feature_path { step: "value" }
-                  }
-                }
-              }
-            }
-          }
-        """,
-        error_msg=(r'Feature name "y" conflicts with tensor representation '
-                   r'name in the same schema.'),
-        schema_is_mixed=True,
-    ),
-    dict(
-        testcase_name='source_column_and_tensor_representation_same_name',
-        ascii_proto="""
-          feature: {
-            name: "y" type: INT shape: {dim {size: 1}}
-            presence: {min_fraction: 1}
-          }
-          tensor_representation_group {
-            key: ""
-            value {
-              tensor_representation {
-                key: "y"
-                value: {
-                  ragged_tensor {
-                    feature_path { step: "y" }
-                  }
-                }
-              }
-            }
-          }
-        """,
-        error_msg=(r'Feature name "y" conflicts with tensor representation '
-                   r'name in the same schema.'),
-        schema_is_mixed=True,
-    ),
 ]
 
 _GET_SOURCE_COLUMNS_TEST_CASES = [
@@ -1001,23 +1020,17 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
         tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
             schema))
 
-  @parameterized.named_parameters(*(_INVALID_SCHEMA_INFER_TEST_CASES +
-                                    _INVALID_MIXED_SCHEMA_INFER_TEST_CASES))
+  @parameterized.named_parameters(*_INVALID_SCHEMA_INFER_TEST_CASES)
   def testInferTensorRepresentationsFromSchemaInvalidSchema(
-      self,
-      ascii_proto,
-      error_msg,
-      generate_legacy_feature_spec=False,
-      schema_is_mixed=False):
+      self, ascii_proto, error_msg, generate_legacy_feature_spec=False):
     if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
       print('Skipping test case: ', self.id(), file=sys.stderr)
       return
     schema = text_format.Parse(ascii_proto, schema_pb2.Schema())
     if _IS_LEGACY_SCHEMA:
       schema.generate_legacy_feature_spec = generate_legacy_feature_spec
-    if not schema_is_mixed:
-      with self.assertRaisesRegex(ValueError, error_msg):
-        tensor_representation_util.InferTensorRepresentationsFromSchema(schema)
+    with self.assertRaisesRegex(ValueError, error_msg):
+      tensor_representation_util.InferTensorRepresentationsFromSchema(schema)
     with self.assertRaisesRegex(ValueError, error_msg):
       tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
           schema)

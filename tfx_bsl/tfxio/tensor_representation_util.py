@@ -166,7 +166,8 @@ def InferTensorRepresentationsFromMixedSchema(
   inferred_tensor_representations = InferTensorRepresentationsFromSchema(schema)
   if tensor_representations is None:
     return inferred_tensor_representations
-  # Only keep inferred TRs that do not represent source columns.
+  # Only keep inferred TRs that do not represent source columns. Existing TRs
+  # are preferred over the inferred in case of name collisions.
   source_columns = set()
   for tensor_representation in tensor_representations.values():
     source_columns.update(
@@ -174,9 +175,11 @@ def InferTensorRepresentationsFromMixedSchema(
             tensor_representation))
   for name, tensor_representation in inferred_tensor_representations.items():
     if name in tensor_representations:
-      raise ValueError("Feature name \"{}\" conflicts with tensor "
-                       "representation name in the same schema.".format(name))
-    if name not in source_columns:
+      logging.warning(
+          "Feature name %s conflicts with tensor representation name in the "
+          "same schema. Ignoring the feature and using the tensor "
+          "representation.", name)
+    elif name not in source_columns:
       tensor_representations[name] = tensor_representation
   return tensor_representations
 
