@@ -112,11 +112,16 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
           "If found, the index of occurrence within value_set "
           "(ignoring duplicates) will be output.\n\n"
           "For example given values = [99, 42, 3, null] and"
-          "value_set = [3, 3, 99], the output will be = [1, null, 0, null]\n\n"
+          "value_set = [3, 99], the output will be = [1, null, 0, null]\n\n"
           "Note: Null in the values is considered to match"
           "a null in the value_set array. For example given"
           "values = [99, 42, 3, null] and value_set = [3, 99, null],"
-          "the output will be = [1, null, 0, 2]"),
+          "the output will be = [1, null, 0, 2]\n\n"
+          "TODO(b/203116559): IndexIn links against Apache Arrow code "
+          "which has different behavior for duplicate elements in value_set."
+          "Version 2.0 would silently remove duplicates, version 4.0 "
+          "disallowed them and from version 5.0 the index of the first element "
+          "is used."),
       py::call_guard<py::gil_scoped_release>());
 
   m.def(

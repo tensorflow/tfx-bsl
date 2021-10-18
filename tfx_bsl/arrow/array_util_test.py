@@ -169,11 +169,13 @@ class ArrayUtilTest(parameterized.TestCase):
 
   def test_indexin_integer(self):
     values = pa.array([99, 42, 3, None])
-    value_set = pa.array([3, 3, 99])
+    # TODO(b/203116559): Change this back to [3, 3, 99] once arrow >= 5.0
+    # is required by TFDV.
+    value_set = pa.array([3, 4, 99])
     actual = array_util.IndexIn(values, value_set)
     actual.validate()
     self.assertTrue(
-        actual.equals(pa.array([1, None, 0, None], type=pa.int32())))
+        actual.equals(pa.array([2, None, 0, None], type=pa.int32())))
 
   @parameterized.parameters(
       *(list(
