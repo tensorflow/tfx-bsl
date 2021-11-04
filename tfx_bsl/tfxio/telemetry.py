@@ -28,11 +28,11 @@ from tfx_bsl.telemetry import util as telemetry_util
 @beam.typehints.with_output_types(pa.RecordBatch)
 @beam.ptransform_fn
 def ProfileRecordBatches(
-    pcoll: beam.pvalue.PCollection,
+    pcoll: beam.PCollection,
     telemetry_descriptors: Optional[List[Text]],
     logical_format: Text,
     physical_format: Text,
-    distribution_update_probability: float = 0.1) -> beam.PTransform:
+    distribution_update_probability: float = 0.1) -> beam.PCollection:
   """An identity transform to profile RecordBatches and updated Beam metrics.
 
   Args:
@@ -63,10 +63,10 @@ def ProfileRecordBatches(
 @beam.typehints.with_output_types(bytes)
 @beam.ptransform_fn
 def ProfileRawRecords(
-    pcoll: beam.pvalue.PCollection,
+    pcoll: beam.PCollection,
     telemetry_descriptors: Optional[List[Text]],
     logical_format: Text,
-    physical_format: Text) -> beam.PTransform:
+    physical_format: Text) -> beam.PCollection:
   """An identity transform to profile raw records for record based TFXIO."""
   return pcoll | "ProfileRawRecords" >> beam.ParDo(_ProfileRawRecordDoFn(
       telemetry_descriptors, logical_format, physical_format))
