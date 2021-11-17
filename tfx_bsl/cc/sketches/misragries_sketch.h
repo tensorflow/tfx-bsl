@@ -23,12 +23,12 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -83,25 +83,28 @@ class MisraGriesSketch {
   ~MisraGriesSketch() = default;
   // Adds an array of items, and sets the stored type if it was previously
   // unset. Raises an error if the new types are incompatible.
-  Status AddValues(const arrow::Array& items);
+  absl::Status AddValues(const arrow::Array& items);
   // Adds an array of items with their associated weights. Raises an error if
   // the weights are not a FloatArray, or the type of the newly added items are
   // incompatible with the stored type.
-  Status AddValues(const arrow::Array& items, const arrow::Array& weights);
+  absl::Status AddValues(const arrow::Array& items,
+                         const arrow::Array& weights);
   // Merges another MisraGriesSketch into this sketch. Raises an error if the
   // sketches do not have the same number of buckets.
-  Status Merge(const MisraGriesSketch& other);
+  absl::Status Merge(const MisraGriesSketch& other);
   // Returns the list of top-k items sorted in descending order of their counts.
   // Ties are resolved lexicographically by item value. Returns a non-OK status
   // if decoding fails.
-  Status GetCounts(std::vector<std::pair<std::string, double>>& result) const;
+  absl::Status GetCounts(
+      std::vector<std::pair<std::string, double>>& result) const;
   // Creates a struct array <values, counts> of the top-k items.
-  Status Estimate(std::shared_ptr<arrow::Array>* values_and_counts_array) const;
+  absl::Status Estimate(
+      std::shared_ptr<arrow::Array>* values_and_counts_array) const;
   // Serializes the sketch into a string.
   std::string Serialize() const;
   // Deserializes the string to a MisraGries object.
-  static Status Deserialize(absl::string_view encoded,
-                            std::unique_ptr<MisraGriesSketch>* result);
+  static absl::Status Deserialize(absl::string_view encoded,
+                                  std::unique_ptr<MisraGriesSketch>* result);
   // Gets delta_.
   double GetDelta() const;
   // Gets theoretical upper bound on delta (for testing purposes).
@@ -120,7 +123,7 @@ class MisraGriesSketch {
   }
   // In place decodes `item` into the form produced by Estimate. Returns true
   // on success, or false if item can not be decoded given the stored type.
-  Status Decode(std::string* item) const;
+  absl::Status Decode(std::string* item) const;
   // The number of items stored in item_counts_.
   int num_buckets_;
   // Tracks the maximum error due to subtractions.

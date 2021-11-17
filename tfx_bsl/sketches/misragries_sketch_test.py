@@ -108,13 +108,13 @@ class MisraGriesSketchTest(parameterized.TestCase):
     items = pa.array(["a", "a", "b", "c"], type=pa.string())
     weights = pa.array([4, 3, 2, 1], type=pa.int64())
     with self.assertRaisesRegex(
-        RuntimeError, "Invalid argument: Weight array must be float type."):
+        RuntimeError, "INVALID_ARGUMENT: Weight array must be float type."):
       _create_basic_sketch(items, weights=weights)
 
   def test_add_unsupported_type(self):
     values = pa.array([True, False], pa.bool_())
     sketch = sketches.MisraGriesSketch(_NUM_BUCKETS)
-    with self.assertRaisesRegex(RuntimeError, "Unimplemented: bool"):
+    with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED: bool"):
       sketch.AddValues(values)
 
   def test_replace_invalid_utf8(self):

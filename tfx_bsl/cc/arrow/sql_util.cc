@@ -80,16 +80,16 @@ void ConvertQueryResultToSlices(
 }
 
 // Validate the slice sql query.
-Status ValidateSliceSqlQuery(const zetasql::PreparedQuery& query,
-                             const std::string& sql) {
+absl::Status ValidateSliceSqlQuery(const zetasql::PreparedQuery& query,
+                                   const std::string& sql) {
   if (query.num_columns() != 1) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         absl::StrCat("Invalid SQL statement: ", sql,
                      " Only one column should be returned."));
   }
   if (!query.column_type(0)->IsArray() ||
       !query.column_type(0)->AsArray()->element_type()->IsStruct()) {
-    return errors::InvalidArgument(absl::StrCat(
+    return absl::InvalidArgumentError(absl::StrCat(
         "Invalid SQL statement: ", sql,
         " The each row of query result should in an Array of Struct type."));
   }
@@ -97,13 +97,13 @@ Status ValidateSliceSqlQuery(const zetasql::PreparedQuery& query,
        query.column_type(0)->AsArray()->element_type()->AsStruct()->fields()) {
     if (!field.type->IsString() && !field.type->IsNumerical() &&
         !field.type->IsBytes()) {
-      return errors::InvalidArgument(absl::StrCat(
+      return absl::InvalidArgumentError(absl::StrCat(
           "Invalid SQL statement: ", sql,
           " slices values must have primitive types. Found: ", field.name, ": ",
           field.type->ShortTypeName(zetasql::ProductMode::PRODUCT_INTERNAL)));
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // This class converts the apache arrow array type to the corresponding
@@ -416,7 +416,7 @@ class RecordBatchEvaluatorTableIterator
 }  // namespace
 
 // static. Create RecordBatchSQLSliceQuery.
-Status RecordBatchSQLSliceQuery::Make(
+absl::Status RecordBatchSQLSliceQuery::Make(
     const std::string& sql, std::shared_ptr<arrow::Schema> arrow_schema,
     std::unique_ptr<RecordBatchSQLSliceQuery>* result) {
   // Build name and type per column.
@@ -451,18 +451,18 @@ Status RecordBatchSQLSliceQuery::Make(
   absl::Status status = query->Prepare(analyzer_options, catalog.get());
   if (absl::IsInvalidArgument(status) &&
       absl::StartsWith(status.message(), "Unrecognized name:")) {
-    return errors::InvalidArgument(absl::StrCat(
+    return absl::InvalidArgumentError(absl::StrCat(
         "Unable to analyze SQL query. Error: ",
         absl::StatusCodeToString(status.code()), " : ", status.message(),
         ". Are you querying any unsupported column?"));
   }
-  TFX_BSL_RETURN_IF_ERROR(FromAbslStatus(status));
+  TFX_BSL_RETURN_IF_ERROR(status);
 
   TFX_BSL_RETURN_IF_ERROR(ValidateSliceSqlQuery(*query, sql));
   *result = absl::WrapUnique(new RecordBatchSQLSliceQuery(
       std::move(arrow_schema), std::move(columns_name_and_type),
       std::move(table), std::move(catalog), std::move(query)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 RecordBatchSQLSliceQuery::RecordBatchSQLSliceQuery(
@@ -477,13 +477,13 @@ RecordBatchSQLSliceQuery::RecordBatchSQLSliceQuery(
       catalog_(std::move(catalog)),
       query_(std::move(query)) {}
 
-Status RecordBatchSQLSliceQuery::Execute(
+absl::Status RecordBatchSQLSliceQuery::Execute(
     const arrow::RecordBatch& record_batch,
     std::vector<std::vector<std::vector<std::pair<std::string, std::string>>>>*
         result) {
   // Check if the schema is as same as the stored schema.
   if (!record_batch.schema()->Equals(*arrow_schema_)) {
-    return errors::InvalidArgument("Unexpected RecordBatch schema.");
+    return absl::InvalidArgumentError("Unexpected RecordBatch schema.");
   }
 
   // Add record batch to the table.
@@ -498,11 +498,11 @@ Status RecordBatchSQLSliceQuery::Execute(
   // Excute.
   zetasql_base::StatusOr<std::unique_ptr<zetasql::EvaluatorTableIterator>>
       query_result_iterator = query_->Execute();
-  TFX_BSL_RETURN_IF_ERROR(FromAbslStatus(query_result_iterator.status()));
+  TFX_BSL_RETURN_IF_ERROR(query_result_iterator.status());
 
   // Convert the query result to the output.
   ConvertQueryResultToSlices(std::move(query_result_iterator.value()), result);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 RecordBatchSQLSliceQuery::~RecordBatchSQLSliceQuery() {}

@@ -17,9 +17,9 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -134,7 +134,7 @@ TEST(KmvSketchTest, MergeSimple) {
   ASSERT_TRUE(builder2.Finish(&array2).ok());
   ASSERT_TRUE(kmv2.AddValues(*array2).ok());;
 
-  Status status = kmv1.Merge(kmv2);
+  absl::Status status = kmv1.Merge(kmv2);
   ASSERT_TRUE(status.ok());
   EXPECT_EQ(2, kmv1.Estimate());
 }
@@ -257,7 +257,7 @@ TEST(KmvSketchTest, MergeManyValues) {
     std::shared_ptr<arrow::LargeBinaryArray> array;
     ASSERT_TRUE(builder.Finish(&array).ok());
     ASSERT_TRUE(new_kmv.AddValues(*array).ok());;
-    Status status = kmv.Merge(new_kmv);
+    absl::Status status = kmv.Merge(new_kmv);
     ASSERT_TRUE(status.ok());
   }
   uint64_t distinct_estimate = kmv.Estimate();
@@ -280,7 +280,7 @@ TEST(KmvSketchTest, MergeDifferentNumBuckets) {
   KmvSketch kmv2(64);
   ASSERT_TRUE(kmv2.AddValues(*array).ok());;
 
-  Status status = kmv1.Merge(kmv2);
+  absl::Status status = kmv1.Merge(kmv2);
   ASSERT_FALSE(status.ok());
   ASSERT_EQ(("Both sketches must have the same number of buckets: 128 v.s. 64"),
             status.error_message());

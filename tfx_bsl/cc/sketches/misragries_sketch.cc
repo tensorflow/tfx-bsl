@@ -18,13 +18,13 @@
 #include <memory>
 
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include "tfx_bsl/cc/util/utf8.h"
 
@@ -329,23 +329,23 @@ MisraGriesSketch::MisraGriesSketch(
   item_counts_.reserve(num_buckets);
 }
 
-Status MisraGriesSketch::AddValues(const arrow::Array& items) {
+absl::Status MisraGriesSketch::AddValues(const arrow::Array& items) {
   UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
                             large_string_placeholder_, num_buckets_, nullptr,
                             delta_, input_type_, item_counts_, extra_items_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status MisraGriesSketch::AddValues(
-    const arrow::Array& items, const arrow::Array& weights) {
+absl::Status MisraGriesSketch::AddValues(const arrow::Array& items,
+                                         const arrow::Array& weights) {
   if (items.length() != weights.length()) {
-     return errors::InvalidArgument(
+    return absl::InvalidArgumentError(absl::StrCat(
         "Length of item array must be equal to length of weight array: ",
-         items.length(), " v.s. ", weights.length());
+        items.length(), " v.s. ", weights.length()));
   }
   if (weights.type()->id() != arrow::Type::FLOAT) {
-    return errors::InvalidArgument("Weight array must be float type.");
+    return absl::InvalidArgumentError("Weight array must be float type.");
   }
   const auto& weight_array = static_cast<const arrow::FloatArray&>(weights);
   UpdateItemCountsVisitor v(invalid_utf8_placeholder_, large_string_threshold_,
@@ -353,25 +353,25 @@ Status MisraGriesSketch::AddValues(
                             &weight_array, delta_, input_type_, item_counts_,
                             extra_items_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(items.Accept(&v)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status MisraGriesSketch::Merge(const MisraGriesSketch& other) {
+absl::Status MisraGriesSketch::Merge(const MisraGriesSketch& other) {
   if (other.num_buckets_ != num_buckets_) {
-    return errors::InvalidArgument(
-        "Both sketches must have the same number of buckets: ",
-         num_buckets_, " v.s. ", other.num_buckets_);
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Both sketches must have the same number of buckets: ", num_buckets_,
+        " v.s. ", other.num_buckets_));
   }
   if (other.large_string_threshold_ != large_string_threshold_) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         "Both sketches must have the same large_string_threshold.");
   }
   if (other.large_string_placeholder_ != large_string_placeholder_) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         "Both sketches must have the same large_string_placeholder.");
   }
   if (other.invalid_utf8_placeholder_ != invalid_utf8_placeholder_) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         "Both sketches must have the same invalid_utf8_placeholder.");
   }
   if (input_type_ == InputType::UNSET) {
@@ -379,7 +379,7 @@ Status MisraGriesSketch::Merge(const MisraGriesSketch& other) {
   }
   if (other.input_type_ != InputType::UNSET &&
       input_type_ != other.input_type_) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         absl::StrFormat("Both sketches must have the same type (%s vs %s)",
                         InputType::Type_Name(input_type_),
                         InputType::Type_Name(other.input_type_)));
@@ -395,7 +395,7 @@ Status MisraGriesSketch::Merge(const MisraGriesSketch& other) {
   }
   delta_ += other.delta_;
   Compress();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 void MisraGriesSketch::Compress() {
@@ -417,26 +417,26 @@ void MisraGriesSketch::Compress() {
   delta_ += nth_largest;
 }
 
-Status MisraGriesSketch::Decode(std::string* item) const {
+absl::Status MisraGriesSketch::Decode(std::string* item) const {
   switch (input_type_) {
     case InputType::RAW_STRING:
-      return tfx_bsl::Status::OK();
+      return absl::OkStatus();
     case InputType::INT:
-      return tfx_bsl::Status::OK();
+      return absl::OkStatus();
     case InputType::FLOAT:
       double out;
       if (!absl::SimpleAtod(*item, &out))
-        return tfx_bsl::errors::InvalidArgument(
+        return absl::InvalidArgumentError(
             absl::StrFormat("failed to decode %s as float", *item));
       *item = absl::StrCat(out);
-      return tfx_bsl::Status::OK();
+      return absl::OkStatus();
     default:
-      return tfx_bsl::errors::InvalidArgument(absl::StrFormat(
+      return absl::InvalidArgumentError(absl::StrFormat(
           "unhandled input type %s", InputType::Type_Name(input_type_)));
   }
 }
 
-Status MisraGriesSketch::GetCounts(
+absl::Status MisraGriesSketch::GetCounts(
     std::vector<std::pair<std::string, double>>& result) const {
   result.clear();
   result.reserve(item_counts_.size());
@@ -458,7 +458,7 @@ Status MisraGriesSketch::GetCounts(
       }
       break;
     default:
-      return tfx_bsl::errors::FailedPrecondition(absl::StrCat(
+      return absl::FailedPreconditionError(absl::StrCat(
           "unhandled input type ", InputType::Type_Name(input_type_)));
   }
   std::sort(
@@ -487,10 +487,10 @@ Status MisraGriesSketch::GetCounts(
       }
     }
   }
-  return tfx_bsl::Status::OK();
+  return absl::OkStatus();
 }
 
-Status MisraGriesSketch::Estimate(
+absl::Status MisraGriesSketch::Estimate(
     std::shared_ptr<arrow::Array>* values_and_counts_array) const {
   std::vector<std::pair<std::string, double>> sorted_pairs;
   TFX_BSL_RETURN_IF_ERROR(GetCounts(sorted_pairs));
@@ -528,7 +528,7 @@ Status MisraGriesSketch::Estimate(
           std::vector<std::string>{kValuesFieldName, kCountsFieldName});
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(struct_array_or_error.status()));
   *values_and_counts_array = std::move(struct_array_or_error).ValueOrDie();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 std::string MisraGriesSketch::Serialize() const{
@@ -557,12 +557,11 @@ std::string MisraGriesSketch::Serialize() const{
   return mg_proto.SerializeAsString();
 }
 
-Status MisraGriesSketch::Deserialize(
+absl::Status MisraGriesSketch::Deserialize(
     absl::string_view encoded, std::unique_ptr<MisraGriesSketch>* result) {
   MisraGries mg_proto;
   if (!mg_proto.ParseFromArray(encoded.data(), encoded.size()))
-    return tfx_bsl::errors::InvalidArgument(
-        "Failed to parse MisraGries sketch");
+    return absl::InvalidArgumentError("Failed to parse MisraGries sketch");
   absl::optional<std::string> invalid_utf8_placeholder;
   if (mg_proto.replace_invalid_utf8_values()) {
     invalid_utf8_placeholder = mg_proto.invalid_utf8_placeholder();
@@ -587,7 +586,7 @@ Status MisraGriesSketch::Deserialize(
   for (const auto& item : mg_proto.extra_items()) {
     (*result)->extra_items_.emplace(item);
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 double MisraGriesSketch::GetDelta() const {

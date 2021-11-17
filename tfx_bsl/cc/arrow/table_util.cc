@@ -18,13 +18,13 @@
 #include <memory>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
 #include "arrow/compute/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 
 namespace tfx_bsl {
@@ -69,24 +69,24 @@ class ArrayTypeMerger {
   explicit ArrayTypeMerger(const std::shared_ptr<DataType>& t)
       : merged_type_(t) {}
 
-  Status Merge(const std::shared_ptr<DataType>& type) {
+  absl::Status Merge(const std::shared_ptr<DataType>& type) {
     if (type->id() == Type::NA) {
-      return Status::OK();
+      return absl::OkStatus();
     }
     if (merged_type_->id() == Type::NA) {
       merged_type_ = type;
-      return Status::OK();
+      return absl::OkStatus();
     }
     if (merged_type_->Equals(type)) {
-      return Status::OK();
+      return absl::OkStatus();
     }
     // None of the two is null and they do not equal. Then at least they should
     // have the same type ID. (because list<> have the same ID as well as
     // struct<>).
     if (merged_type_->id() != type->id()) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(absl::StrCat(
           "Unable to merge incompatible type: ", merged_type_->ToString(),
-          " vs ", type->ToString());
+          " vs ", type->ToString()));
     }
     // At this point we are dealing with only list<> and struct<>.
     switch (type->id()) {
@@ -98,9 +98,9 @@ class ArrayTypeMerger {
       case Type::STRUCT:
         return MergeStructType(static_cast<const arrow::StructType&>(*type));
       default:
-        return errors::Unimplemented(
+        return absl::UnimplementedError(absl::StrCat(
             "Merging nested type other than list/struct is not supported: ",
-            type->ToString());
+            type->ToString()));
     }
   }
 
@@ -108,21 +108,21 @@ class ArrayTypeMerger {
     return std::move(merged_type_);
   }
 
-  Status MergeListType(const arrow::ListType& t) {
+  absl::Status MergeListType(const arrow::ListType& t) {
     ArrayTypeMerger m(GetListValueType(*merged_type_));
     TFX_BSL_RETURN_IF_ERROR(m.Merge(t.value_type()));
     merged_type_ = arrow::list(m.result());
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status MergeLargeListType(const arrow::LargeListType& t) {
+  absl::Status MergeLargeListType(const arrow::LargeListType& t) {
     ArrayTypeMerger m(GetListValueType(*merged_type_));
     TFX_BSL_RETURN_IF_ERROR(m.Merge(t.value_type()));
     merged_type_ = arrow::large_list(m.result());
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status MergeStructType(const arrow::StructType& s) {
+  absl::Status MergeStructType(const arrow::StructType& s) {
     const auto* merged_struct_type =
         static_cast<const arrow::StructType*>(merged_type_.get());
 
@@ -148,32 +148,33 @@ class ArrayTypeMerger {
       }
     }
     merged_type_ = arrow::struct_(std::move(fields));
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
   std::shared_ptr<DataType> merged_type_;
 };
 
-Status PromoteArrayDataToType(const std::shared_ptr<ArrayData>& array_data,
-                              const std::shared_ptr<DataType>& target_type,
-                              std::shared_ptr<ArrayData>* promoted) {
+absl::Status PromoteArrayDataToType(
+    const std::shared_ptr<ArrayData>& array_data,
+    const std::shared_ptr<DataType>& target_type,
+    std::shared_ptr<ArrayData>* promoted) {
   const auto& current_type = array_data->type;
   if (current_type->Equals(target_type)) {
     *promoted = array_data;
-    return Status::OK();
+    return absl::OkStatus();
   }
   if (current_type->id() == Type::NA) {
     std::shared_ptr<Array> array_of_null;
     TFX_BSL_ASSIGN_OR_RETURN_ARROW(
         array_of_null, arrow::MakeArrayOfNull(target_type, array_data->length));
     *promoted = array_of_null->data();
-    return Status::OK();
+    return absl::OkStatus();
   }
   if (current_type->id() != target_type->id()) {
-    return errors::FailedPrecondition(
+    return absl::FailedPreconditionError(absl::StrCat(
         "Unable to promote array to incompatible type: ",
-        current_type->ToString(), " vs ", target_type->ToString());
+        current_type->ToString(), " vs ", target_type->ToString()));
   }
   switch (target_type->id()) {
       case Type::LIST:
@@ -218,9 +219,9 @@ Status PromoteArrayDataToType(const std::shared_ptr<ArrayData>& array_data,
         break;
       }
       default:
-        return errors::Unimplemented("Not implemented");
+        return absl::UnimplementedError("Not implemented");
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Promotes `array` to `target_type`.
@@ -229,14 +230,14 @@ Status PromoteArrayDataToType(const std::shared_ptr<ArrayData>& array_data,
 // When promoting a struct<> to another struct<>, fields that are in the target
 // type but not in the current type will have an array of all nulls in the
 // place.
-Status PromoteArrayToType(const std::shared_ptr<Array>& array,
-                          const std::shared_ptr<DataType>& target_type,
-                          std::shared_ptr<Array>* promoted) {
+absl::Status PromoteArrayToType(const std::shared_ptr<Array>& array,
+                                const std::shared_ptr<DataType>& target_type,
+                                std::shared_ptr<Array>* promoted) {
   std::shared_ptr<ArrayData> promoted_data;
   TFX_BSL_RETURN_IF_ERROR(
       PromoteArrayDataToType(array->data(), target_type, &promoted_data));
   *promoted = arrow::MakeArray(promoted_data);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Represents a field (i.e. column name and type) in the merged RecordBatch.
@@ -252,9 +253,9 @@ class FieldRep {
   const std::string& field_name() const { return field_name_; }
 
   // Appends `column` to the column of the field in merged table.
-  Status AppendColumn(const std::shared_ptr<Array>& column) {
+  absl::Status AppendColumn(const std::shared_ptr<Array>& column) {
     arrays_or_nulls_.push_back(column);
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   // Appends `num_nulls` nulls to the column of the field in the merged table.
@@ -270,7 +271,7 @@ class FieldRep {
 
   // Makes a merged array out of columns and nulls appended that can form
   // the column of the field in the merged table.
-  Status ToMergedArray(std::shared_ptr<Array>* merged_array) const {
+  absl::Status ToMergedArray(std::shared_ptr<Array>* merged_array) const {
     ArrayTypeMerger m(arrow::null());
     for (const auto& variant : arrays_or_nulls_) {
       if (absl::holds_alternative<std::shared_ptr<Array>>(variant)) {
@@ -297,7 +298,7 @@ class FieldRep {
     TFX_BSL_ASSIGN_OR_RETURN_ARROW(
         *merged_array,
         Concatenate(arrays_to_concat, arrow::default_memory_pool()));
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   std::string field_name_;
@@ -306,7 +307,7 @@ class FieldRep {
 
 }  // namespace
 
-Status MergeRecordBatches(
+absl::Status MergeRecordBatches(
     const std::vector<std::shared_ptr<RecordBatch>>& record_batches,
     std::shared_ptr<RecordBatch>* result) {
   absl::flat_hash_map<std::string, int> field_index_by_field_name;
@@ -347,36 +348,36 @@ Status MergeRecordBatches(
   }
   *result = RecordBatch::Make(std::make_shared<Schema>(std::move(fields)),
                               total_num_rows, merged_arrays);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status TotalByteSize(const RecordBatch& record_batch,
-                     const bool ignore_unsupported, size_t* result) {
+absl::Status TotalByteSize(const RecordBatch& record_batch,
+                           const bool ignore_unsupported, size_t* result) {
   *result = 0;
   for (int i = 0; i < record_batch.num_columns(); ++i) {
     size_t array_size;
     auto status = GetByteSize(*record_batch.column(i), &array_size);
-    if (ignore_unsupported && status.code() == error::UNIMPLEMENTED) {
+    if (ignore_unsupported && absl::IsUnimplemented(status)) {
       continue;
     }
     TFX_BSL_RETURN_IF_ERROR(status);
     *result += array_size;
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Returns a RecordBatch that contains rows in `indices`.
-Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
-                       const std::shared_ptr<Array>& indices,
-                       std::shared_ptr<RecordBatch>* result) {
+absl::Status RecordBatchTake(const std::shared_ptr<RecordBatch>& record_batch,
+                             const std::shared_ptr<Array>& indices,
+                             std::shared_ptr<RecordBatch>* result) {
   arrow::Datum result_datum;
   TFX_BSL_ASSIGN_OR_RETURN_ARROW(result_datum,
                                  arrow::compute::Take(record_batch, indices));
   if (result_datum.kind() != arrow::Datum::RECORD_BATCH) {
-    return errors::Internal(
+    return absl::InternalError(
         absl::StrCat("Invalid return type from Take(): ", result_datum.kind()));
   }
   *result = result_datum.record_batch();
-  return Status::OK();
+  return absl::OkStatus();
 }
 }  // namespace tfx_bsl

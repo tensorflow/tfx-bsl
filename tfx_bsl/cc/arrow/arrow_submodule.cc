@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 
+#include "absl/status/status.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/arrow/sql_util_submodule.h"
@@ -26,11 +27,11 @@ namespace py = ::pybind11;
 
 std::function<
     std::shared_ptr<arrow::Array>(const std::shared_ptr<arrow::Array>&)>
-WrapUnaryArrayFunction(Status (*func)(const arrow::Array&,
-                                      std::shared_ptr<arrow::Array>*)) {
+WrapUnaryArrayFunction(absl::Status (*func)(const arrow::Array&,
+                                            std::shared_ptr<arrow::Array>*)) {
   return [func](const std::shared_ptr<arrow::Array>& array) {
     std::shared_ptr<arrow::Array> result;
-    Status s = func(*array, &result);
+    absl::Status s = func(*array, &result);
     if (!s.ok()) {
       throw std::runtime_error(s.ToString());
     }
@@ -82,7 +83,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       "GetBinaryArrayTotalByteSize",
       [](const std::shared_ptr<arrow::Array>& array) {
         size_t result;
-        Status s = GetBinaryArrayTotalByteSize(*array, &result);
+        absl::Status s = GetBinaryArrayTotalByteSize(*array, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
@@ -100,7 +101,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       [](const std::shared_ptr<arrow::Array>& values,
          const std::shared_ptr<arrow::Array>& value_set) {
         std::shared_ptr<arrow::Array> result;
-        Status s = IndexIn(values, value_set, &result);
+        absl::Status s = IndexIn(values, value_set, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
@@ -131,7 +132,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
          const std::shared_ptr<arrow::Array>& values_array,
          const bool empty_list_as_null) {
         std::shared_ptr<arrow::Array> result;
-        Status s = MakeListArrayFromParentIndicesAndValues(
+        absl::Status s = MakeListArrayFromParentIndicesAndValues(
             num_parents, parent_indices, values_array, empty_list_as_null,
             &result);
         if (!s.ok()) {
@@ -159,7 +160,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
       [](const std::shared_ptr<arrow::Array>& list_array) {
         std::shared_ptr<arrow::Array> coo;
         std::shared_ptr<arrow::Array> dense_shape;
-        Status s = CooFromListArray(list_array, &coo, &dense_shape);
+        absl::Status s = CooFromListArray(list_array, &coo, &dense_shape);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
@@ -183,7 +184,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
   m.def("FillNullLists", [](const std::shared_ptr<arrow::Array>& list_array,
                             const std::shared_ptr<arrow::Array>& fill_with) {
     std::shared_ptr<arrow::Array> result;
-    Status s = FillNullLists(list_array, fill_with, &result);
+    absl::Status s = FillNullLists(list_array, fill_with, &result);
     if (!s.ok()) {
       throw std::runtime_error(s.ToString());
     }
@@ -192,7 +193,7 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
 
   m.def("GetByteSize", [](const std::shared_ptr<arrow::Array>& array) {
     size_t result;
-    Status s = GetByteSize(*array, &result);
+    absl::Status s = GetByteSize(*array, &result);
     if (!s.ok()) {
       throw std::runtime_error(s.ToString());
     }
@@ -208,7 +209,7 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
       [](const std::vector<std::shared_ptr<arrow::RecordBatch>>&
              record_batches) {
         std::shared_ptr<arrow::RecordBatch> result;
-        Status s = MergeRecordBatches(record_batches, &result);
+        absl::Status s = MergeRecordBatches(record_batches, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
@@ -241,7 +242,8 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
       [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
          const bool ignore_unsupported) {
         size_t result;
-        Status s = TotalByteSize(*record_batch, ignore_unsupported, &result);
+        absl::Status s =
+            TotalByteSize(*record_batch, ignore_unsupported, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }
@@ -259,7 +261,7 @@ void DefineTableUtilSubmodule(pybind11::module arrow_module) {
       [](const std::shared_ptr<arrow::RecordBatch>& record_batch,
          const std::shared_ptr<arrow::Array>& indices) {
         std::shared_ptr<arrow::RecordBatch> result;
-        Status s = RecordBatchTake(record_batch, indices, &result);
+        absl::Status s = RecordBatchTake(record_batch, indices, &result);
         if (!s.ok()) {
           throw std::runtime_error(s.ToString());
         }

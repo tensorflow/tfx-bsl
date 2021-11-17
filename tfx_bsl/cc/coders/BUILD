@@ -21,13 +21,13 @@ cc_library(
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:variant",
         "@arrow",
-        "//tfx_bsl/cc/util:status",
         "//tfx_bsl/cc/util:status_util",
         "//tfx_bsl/cc/arrow:array_util",
         # In OSS, this target may appear not to exist. It is created from a patch:
         # //third_party/tensorflow_expose_example_proto.patch
         "@org_tensorflow_no_deps//tensorflow/core/example:example_proto",
         "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -36,7 +36,7 @@ cc_library(
     srcs = ["example_numpy_decoder.cc"],
     hdrs = ["example_numpy_decoder.h"],
     deps = [
-        "//tfx_bsl/cc/util:status",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@local_config_python//:numpy_headers",
         "@local_config_python//:python_headers",
@@ -60,8 +60,8 @@ cc_library(
         ":example_numpy_decoder",
         "//tfx_bsl/cc/pybind11:absl_casters",
         "//tfx_bsl/cc/pybind11:arrow_casters",
-        "//tfx_bsl/cc/util:status",
         "@arrow",
+        "@com_google_absl//absl/status",
         "@pybind11",
     ],
 )

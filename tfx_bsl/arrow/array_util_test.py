@@ -46,11 +46,11 @@ class ArrayUtilTest(parameterized.TestCase):
         f(1)
 
     for f in functions_expecting_list_array:
-      with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
+      with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED"):
         f(pa.array([1, 2, 3]))
 
     for f in functions_expecting_binary_array:
-      with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
+      with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED"):
         f(pa.array([[1, 2, 3]]))
 
   @parameterized.named_parameters(*_LIST_TYPE_PARAMETERS)
@@ -91,7 +91,7 @@ class ArrayUtilTest(parameterized.TestCase):
                                                  type=pa.int64())))
 
   def test_element_lengths_unsupported_type(self):
-    with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
+    with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED"):
       array_util.GetElementLengths(pa.array([1, 2, 3], type=pa.int32()))
 
   def test_get_array_null_bitmap_as_byte_array(self):
@@ -454,7 +454,7 @@ class FillNullListsTest(parameterized.TestCase):
         "{} vs {}".format(actual, expected))
 
   def testNonListArray(self):
-    with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
+    with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED"):
       array_util.FillNullLists(pa.array([1, 2, 3]), pa.array([4]))
 
   def testValueTypeDoesNotEqualFillType(self):
@@ -642,7 +642,7 @@ class GetByteSizeTest(parameterized.TestCase):
     self.assertEqual(array_util.GetByteSize(sliced), expected_sliced_size)
 
   def testUnsupported(self):
-    with self.assertRaisesRegex(RuntimeError, "Unimplemented"):
+    with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED"):
       array_util.GetByteSize(pa.array([], type=pa.timestamp("s")))
 
 

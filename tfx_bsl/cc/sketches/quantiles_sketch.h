@@ -18,7 +18,7 @@
 
 #include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
+#include "absl/status/status.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -34,8 +34,9 @@ class QuantilesSketch {
   //   be specified at the cost of extra memory usage. Must be >= 1.
   // num_streams: Number of quantile streams being processed at the same time.
   //   Must be >=1.
-  static Status Make(double eps, int64_t max_num_elements, int64_t num_streams,
-                     std::unique_ptr<QuantilesSketch>* result);
+  static absl::Status Make(double eps, int64_t max_num_elements,
+                           int64_t num_streams,
+                           std::unique_ptr<QuantilesSketch>* result);
   ~QuantilesSketch();
 
   // Disallow copy; allow move.
@@ -54,9 +55,9 @@ class QuantilesSketch {
   // for large int64 values).
   // Values with negative or zero weights will be ignored.
   // Nulls in the array will be skipped.
-  Status AddValues(std::shared_ptr<arrow::Array> values);
-  Status AddWeightedValues(std::shared_ptr<arrow::Array> values,
-                           std::shared_ptr<arrow::Array> weights);
+  absl::Status AddValues(std::shared_ptr<arrow::Array> values);
+  absl::Status AddWeightedValues(std::shared_ptr<arrow::Array> values,
+                                 std::shared_ptr<arrow::Array> weights);
 
   // Compacts state of the sketch if it wasn't done before and no compact
   // sketches were merged to this, otherwise it is a no-op. Compact() before
@@ -65,23 +66,23 @@ class QuantilesSketch {
   // then its size will be reduced by ~16x. Warning: Compact() affects the error
   // bound. It is recommended to multiply the desired worst-case error by 2/3 if
   // this method is going to be used.
-  Status Compact();
+  absl::Status Compact();
 
   // Serializes the sketch into a string.
-  Status Serialize(std::string& serialized) const;
+  absl::Status Serialize(std::string& serialized) const;
 
   // Deserializes the sketch from a string.
-  static Status Deserialize(absl::string_view serialized,
-                            std::unique_ptr<QuantilesSketch>* result);
+  static absl::Status Deserialize(absl::string_view serialized,
+                                  std::unique_ptr<QuantilesSketch>* result);
 
   // Merges the sketch with `other`.
-  Status Merge(const QuantilesSketch& other);
+  absl::Status Merge(const QuantilesSketch& other);
 
   // Get quantiles of the numbers added so far. `quantiles` will be a
   // FixedSizeListArray<float64> where lists represent output for each stream.
   // `num_quantiles` must be >= 2.
-  Status GetQuantiles(int64_t num_quantiles,
-                      std::shared_ptr<arrow::Array>* quantiles);
+  absl::Status GetQuantiles(int64_t num_quantiles,
+                            std::shared_ptr<arrow::Array>* quantiles);
 
  private:
   QuantilesSketch(std::unique_ptr<QuantilesSketchImpl> impl);

@@ -16,6 +16,7 @@
 #include <memory>
 #include <stdexcept>
 
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
@@ -39,7 +40,7 @@ void DefineKmvSketchClass(py::module sketch_module) {
       .def(
           "AddValues",
           [](KmvSketch& sketch, const std::shared_ptr<arrow::Array>& array) {
-            Status s = sketch.AddValues(*array);
+            absl::Status s = sketch.AddValues(*array);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -49,7 +50,7 @@ void DefineKmvSketchClass(py::module sketch_module) {
       .def(
           "Merge",
           [](KmvSketch& sketch, KmvSketch& other) {
-            Status s = sketch.Merge(other);
+            absl::Status s = sketch.Merge(other);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -77,7 +78,7 @@ void DefineKmvSketchClass(py::module sketch_module) {
           "Deserialize",
           [](absl::string_view byte_string) {
             std::unique_ptr<KmvSketch> result;
-            Status s = KmvSketch::Deserialize(byte_string, &result);
+            absl::Status s = KmvSketch::Deserialize(byte_string, &result);
             if (!s.ok()) throw std::runtime_error(s.ToString());
             return result;
           },
@@ -99,7 +100,7 @@ void DefineKmvSketchClass(py::module sketch_module) {
             Py_ssize_t size;
             PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
             std::unique_ptr<KmvSketch> result;
-            Status s =
+            absl::Status s =
                 KmvSketch::Deserialize(absl::string_view(data, size), &result);
             if (!s.ok()) throw std::runtime_error(s.ToString());
             return result;
@@ -132,7 +133,7 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
           "AddValues",
           [](MisraGriesSketch& sketch,
              const std::shared_ptr<arrow::Array>& items) {
-            Status s = sketch.AddValues(*items);
+            absl::Status s = sketch.AddValues(*items);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -144,7 +145,7 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
           [](MisraGriesSketch& sketch,
              const std::shared_ptr<arrow::Array>& items,
              const std::shared_ptr<arrow::Array>& weights) {
-            Status s = sketch.AddValues(*items, *weights);
+            absl::Status s = sketch.AddValues(*items, *weights);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -155,7 +156,7 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
       .def(
           "Merge",
           [](MisraGriesSketch& sketch, MisraGriesSketch& other) {
-            Status s = sketch.Merge(other);
+            absl::Status s = sketch.Merge(other);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -168,7 +169,7 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
           "Estimate",
           [](MisraGriesSketch& sketch) {
             std::shared_ptr<arrow::Array> result;
-            Status s = sketch.Estimate(&result);
+            absl::Status s = sketch.Estimate(&result);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -192,7 +193,8 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
           "Deserialize",
           [](absl::string_view byte_string) {
             std::unique_ptr<MisraGriesSketch> result;
-            Status s = MisraGriesSketch::Deserialize(byte_string, &result);
+            absl::Status s =
+                MisraGriesSketch::Deserialize(byte_string, &result);
             if (!s.ok()) throw std::runtime_error(s.ToString());
             return result;
           },
@@ -214,7 +216,7 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
             Py_ssize_t size;
             PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
             std::unique_ptr<MisraGriesSketch> result;
-            Status s = MisraGriesSketch::Deserialize(
+            absl::Status s = MisraGriesSketch::Deserialize(
                 absl::string_view(data, size), &result);
             if (!s.ok()) throw std::runtime_error(s.ToString());
             return result;
@@ -226,8 +228,8 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
       .def(py::init(
                [](double eps, int64_t max_num_elements, int64_t num_streams) {
                  std::unique_ptr<QuantilesSketch> result;
-                 Status s = QuantilesSketch::Make(eps, max_num_elements,
-                                                  num_streams, &result);
+                 absl::Status s = QuantilesSketch::Make(eps, max_num_elements,
+                                                        num_streams, &result);
                  if (!s.ok()) {
                    throw std::runtime_error(s.ToString());
                  }
@@ -247,7 +249,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
             std::string serialized;
             {
               py::gil_scoped_release release_gil;
-              Status s = sketch.Serialize(serialized);
+              absl::Status s = sketch.Serialize(serialized);
               if (!s.ok()) {
                 throw std::runtime_error(s.ToString());
               }
@@ -259,7 +261,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
             Py_ssize_t size;
             PyBytes_AsStringAndSize(byte_string.ptr(), &data, &size);
             std::unique_ptr<QuantilesSketch> result;
-            Status s = QuantilesSketch::Deserialize(
+            absl::Status s = QuantilesSketch::Deserialize(
                 absl::string_view(data, size), &result);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
@@ -269,7 +271,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
       .def(
           "Merge",
           [](QuantilesSketch& sketch, const QuantilesSketch& other) {
-            Status s = sketch.Merge(other);
+            absl::Status s = sketch.Merge(other);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -281,7 +283,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
           [](QuantilesSketch& sketch,
              const std::shared_ptr<arrow::Array>& values,
              const std::shared_ptr<arrow::Array>& weights) {
-            Status s = sketch.AddWeightedValues(values, weights);
+            absl::Status s = sketch.AddWeightedValues(values, weights);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -301,7 +303,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
           "AddValues",
           [](QuantilesSketch& sketch,
              const std::shared_ptr<arrow::Array>& values) {
-            Status s = sketch.AddValues(values);
+            absl::Status s = sketch.AddValues(values);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -319,7 +321,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
       .def(
           "Compact",
           [](QuantilesSketch& sketch) {
-            Status s = sketch.Compact();
+            absl::Status s = sketch.Compact();
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -338,7 +340,7 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
           "GetQuantiles",
           [](QuantilesSketch& sketch, int64_t num_quantiles) {
             std::shared_ptr<arrow::Array> result;
-            Status s = sketch.GetQuantiles(num_quantiles, &result);
+            absl::Status s = sketch.GetQuantiles(num_quantiles, &result);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }

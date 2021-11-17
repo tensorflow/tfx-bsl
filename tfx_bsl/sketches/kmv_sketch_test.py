@@ -55,7 +55,7 @@ class KmvSketchTest(parameterized.TestCase):
   def test_add_unsupported_type(self):
     values = pa.array([True, False], pa.bool_())
     sketch = sketches.KmvSketch(_NUM_BUCKETS)
-    with self.assertRaisesRegex(RuntimeError, "Unimplemented: bool"):
+    with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED: bool"):
       sketch.AddValues(values)
 
   def test_merge(self):

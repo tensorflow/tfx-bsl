@@ -22,9 +22,10 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/example/feature.pb.h"
@@ -55,22 +56,23 @@ absl::string_view KindToStr(tensorflow::Feature::KindCase kind) {
 // A ~2x improvement in the end-to-end (serialzied protos to RecordBatch)
 // performance improvement  is possible if we directly use
 // proto2::io::CodedInputSteam and bypass the creation of the Example objects.
-Status ParseExample(const absl::string_view serialized_example,
-                    tensorflow::Example* example) {
+absl::Status ParseExample(const absl::string_view serialized_example,
+                          tensorflow::Example* example) {
   if (!example->ParseFromArray(serialized_example.data(),
                                serialized_example.size())) {
-    return errors::DataLoss("Unable to parse example.");
+    return absl::DataLossError("Unable to parse example.");
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status ParseSequenceExample(const absl::string_view serialized_sequence_example,
-                            tensorflow::SequenceExample* sequence_example) {
+absl::Status ParseSequenceExample(
+    const absl::string_view serialized_sequence_example,
+    tensorflow::SequenceExample* sequence_example) {
   if (!sequence_example->ParseFromArray(serialized_sequence_example.data(),
                                         serialized_sequence_example.size())) {
-    return errors::DataLoss("Unable to parse sequence example.");
+    return absl::DataLossError("Unable to parse sequence example.");
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // LargeListBuilder and ListBuilder don't share the same base class. We create
@@ -80,10 +82,10 @@ Status ParseSequenceExample(const absl::string_view serialized_sequence_example,
 class ListBuilderInterface {
  public:
   virtual ~ListBuilderInterface() = default;
-  virtual Status Append() = 0;
-  virtual Status AppendNull() = 0;
-  virtual Status AppendNulls(int64_t num_nulls) = 0;
-  virtual Status Finish(std::shared_ptr<arrow::Array>* out) = 0;
+  virtual absl::Status Append() = 0;
+  virtual absl::Status AppendNull() = 0;
+  virtual absl::Status AppendNulls(int64_t num_nulls) = 0;
+  virtual absl::Status Finish(std::shared_ptr<arrow::Array>* out) = 0;
   virtual std::shared_ptr<arrow::ArrayBuilder> wrapped() = 0;
 };
 
@@ -95,14 +97,16 @@ class ListBuilderWrapper : public ListBuilderInterface {
       : list_builder_(
             std::make_shared<ListBuilderT>(memory_pool, values_builder)) {}
 
-  Status Append() override { return FromArrowStatus(list_builder_->Append()); }
-  Status AppendNull() override {
+  absl::Status Append() override {
+    return FromArrowStatus(list_builder_->Append());
+  }
+  absl::Status AppendNull() override {
     return FromArrowStatus(list_builder_->AppendNull());
   }
-  Status AppendNulls(int64_t num_nulls) override {
+  absl::Status AppendNulls(int64_t num_nulls) override {
     return FromArrowStatus(list_builder_->AppendNulls(num_nulls));
   }
-  Status Finish(std::shared_ptr<arrow::Array>* out) override {
+  absl::Status Finish(std::shared_ptr<arrow::Array>* out) override {
     return FromArrowStatus(list_builder_->Finish(out));
   }
   std::shared_ptr<arrow::ArrayBuilder> wrapped() override {
@@ -127,7 +131,7 @@ std::unique_ptr<ListBuilderInterface> MakeListBuilderWrapper(
 class BinaryBuilderInterface {
  public:
   virtual ~BinaryBuilderInterface() = default;
-  virtual Status Append(const std::string& str) = 0;
+  virtual absl::Status Append(const std::string& str) = 0;
   virtual std::shared_ptr<arrow::ArrayBuilder> wrapped() const = 0;
 };
 
@@ -137,7 +141,7 @@ class BinaryBuilderWrapper : public BinaryBuilderInterface {
   BinaryBuilderWrapper(arrow::MemoryPool* memory_pool)
       : binary_builder_(std::make_shared<BinaryBuilderT>(memory_pool)) {}
 
-  Status Append(const std::string& str) override {
+  absl::Status Append(const std::string& str) override {
     return FromArrowStatus(binary_builder_->Append(str));
   }
 
@@ -149,9 +153,10 @@ class BinaryBuilderWrapper : public BinaryBuilderInterface {
   std::shared_ptr<BinaryBuilderT> binary_builder_;
 };
 
-Status TfmdFeatureToArrowField(const bool is_sequence_feature,
-                               const tensorflow::metadata::v0::Feature& feature,
-                               std::shared_ptr<arrow::Field>* out) {
+absl::Status TfmdFeatureToArrowField(
+    const bool is_sequence_feature,
+    const tensorflow::metadata::v0::Feature& feature,
+    std::shared_ptr<arrow::Field>* out) {
   const FeatureType feature_type = feature.type();
   switch (feature_type) {
     case tensorflow::metadata::v0::FLOAT: {
@@ -179,11 +184,11 @@ Status TfmdFeatureToArrowField(const bool is_sequence_feature,
       break;
     }
     default:
-      return errors::InvalidArgument(
-          "Bad field type for feature: ", feature.name(),
-          " with type: ", feature_type);
+      return absl::InvalidArgumentError(
+          absl::StrCat("Bad field type for feature: ", feature.name(),
+                       " with type: ", feature_type));
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -197,7 +202,7 @@ class FeatureDecoder {
   virtual ~FeatureDecoder() {}
 
   // Called if the feature is present in the Example.
-  Status DecodeFeature(const tensorflow::Feature& feature) {
+  absl::Status DecodeFeature(const tensorflow::Feature& feature) {
     if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
       TFX_BSL_RETURN_IF_ERROR(list_builder_->AppendNull());
     } else {
@@ -205,32 +210,33 @@ class FeatureDecoder {
       TFX_BSL_RETURN_IF_ERROR(DecodeFeatureValues(feature));
     }
     if (feature_was_added_) {
-      return errors::Internal(
+      return absl::InternalError(
           "Internal error: FinishFeature() must be called before "
           "DecodeFeature() can be called again.");
     }
     feature_was_added_ = true;
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status AppendNull() { return list_builder_->AppendNull(); }
+  absl::Status AppendNull() { return list_builder_->AppendNull(); }
 
   // Called after a (possible) call to DecodeFeature. If DecodeFeature was
   // called, this will do nothing. Otherwise, it will add to the null count.
-  Status FinishFeature() {
+  absl::Status FinishFeature() {
     if (!feature_was_added_) {
       TFX_BSL_RETURN_IF_ERROR(list_builder_->AppendNull());
     }
     feature_was_added_ = false;
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status Finish(std::shared_ptr<arrow::Array>* out) {
+  absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
     return list_builder_->Finish(out);
   }
 
  protected:
-  virtual Status DecodeFeatureValues(const tensorflow::Feature& feature) = 0;
+  virtual absl::Status DecodeFeatureValues(
+      const tensorflow::Feature& feature) = 0;
 
  private:
   std::unique_ptr<ListBuilderInterface> list_builder_;
@@ -246,16 +252,17 @@ class FloatDecoder : public FeatureDecoder {
   }
 
  protected:
-  Status DecodeFeatureValues(const tensorflow::Feature& feature) override {
+  absl::Status DecodeFeatureValues(
+      const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kFloatList) {
-      return errors::InvalidArgument(
+      return absl::InvalidArgumentError(
           absl::StrCat("Feature had wrong type, expected float_list, found ",
                        KindToStr(feature.kind_case())));
     }
     for (float value : feature.float_list().value()) {
       TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
@@ -274,16 +281,17 @@ class IntDecoder : public FeatureDecoder {
   }
 
  protected:
-  Status DecodeFeatureValues(const tensorflow::Feature& feature) override {
+  absl::Status DecodeFeatureValues(
+      const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kInt64List) {
-      return errors::InvalidArgument(
+      return absl::InvalidArgumentError(
           absl::StrCat("Feature had wrong type, expected in64_list, found ",
                        KindToStr(feature.kind_case())));
     }
     for (auto value : feature.int64_list().value()) {
       TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
@@ -303,16 +311,17 @@ class BytesDecoder : public FeatureDecoder {
   }
 
  protected:
-  Status DecodeFeatureValues(const tensorflow::Feature& feature) override {
+  absl::Status DecodeFeatureValues(
+      const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kBytesList) {
-      return errors::InvalidArgument(
+      return absl::InvalidArgumentError(
           absl::StrCat("Feature had wrong type, expected bytes_list, found ",
                        KindToStr(feature.kind_case())));
     }
     for (const std::string& value : feature.bytes_list().value()) {
       TFX_BSL_RETURN_IF_ERROR(values_builder_->Append(value));
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
@@ -335,7 +344,7 @@ class FeatureListDecoder {
   virtual ~FeatureListDecoder() {}
 
   // Called if the feature list is present in the SequenceExample.
-  Status DecodeFeatureList(const tensorflow::FeatureList& feature_list) {
+  absl::Status DecodeFeatureList(const tensorflow::FeatureList& feature_list) {
     if (feature_list.feature().empty()) {
       TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->Append());
     } else {
@@ -343,38 +352,38 @@ class FeatureListDecoder {
       TFX_BSL_RETURN_IF_ERROR(DecodeFeatureListValues(feature_list));
     }
     if (feature_list_was_added_) {
-      return errors::Internal(
+      return absl::InternalError(
           "Internal error: FinishFeatureList() must be called before "
           "DecodeFeatureList() can be called again.");
     }
     feature_list_was_added_ = true;
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status AppendNull() { return outer_list_builder_->AppendNull(); }
+  absl::Status AppendNull() { return outer_list_builder_->AppendNull(); }
 
-  Status AppendInnerNulls(const int num_nulls) {
+  absl::Status AppendInnerNulls(const int num_nulls) {
     TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->Append());
     TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNulls(num_nulls));
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   // Called after a (possible) call to DecodeFeatureList. If DecodeFeatureList
   // was called this will do nothing.  Otherwise it will add to the null count.
-  Status FinishFeatureList() {
+  absl::Status FinishFeatureList() {
     if (!feature_list_was_added_) {
       TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->AppendNull());
     }
     feature_list_was_added_ = false;
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status Finish(std::shared_ptr<arrow::Array>* out) {
+  absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
     return outer_list_builder_->Finish(out);
   }
 
  protected:
-  virtual Status DecodeFeatureListValues(
+  virtual absl::Status DecodeFeatureListValues(
       const tensorflow::FeatureList& feature_list) = 0;
   std::unique_ptr<ListBuilderInterface> inner_list_builder_;
   std::unique_ptr<ListBuilderInterface> outer_list_builder_;
@@ -390,7 +399,7 @@ class FloatListDecoder : public FeatureListDecoder {
   }
 
  protected:
-  Status DecodeFeatureListValues(
+  absl::Status DecodeFeatureListValues(
       const tensorflow::FeatureList& feature_list) override {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() == tensorflow::Feature::kFloatList) {
@@ -402,12 +411,12 @@ class FloatListDecoder : public FeatureListDecoder {
       } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
         TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNull());
       } else {
-        return errors::InvalidArgument(
+        return absl::InvalidArgumentError(
             absl::StrCat("Feature had wrong type, expected float_list, found ",
                          KindToStr(feature.kind_case())));
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
@@ -427,7 +436,7 @@ class IntListDecoder : public FeatureListDecoder {
   }
 
  protected:
-  Status DecodeFeatureListValues(
+  absl::Status DecodeFeatureListValues(
       const tensorflow::FeatureList& feature_list) override {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() == tensorflow::Feature::kInt64List) {
@@ -439,12 +448,12 @@ class IntListDecoder : public FeatureListDecoder {
       } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
         TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNull());
       } else {
-        return errors::InvalidArgument(
+        return absl::InvalidArgumentError(
             absl::StrCat("Feature had wrong type, expected int64_list, found ",
                          KindToStr(feature.kind_case())));
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
@@ -464,7 +473,7 @@ class BytesListDecoder : public FeatureListDecoder {
   }
 
  protected:
-  Status DecodeFeatureListValues(
+  absl::Status DecodeFeatureListValues(
       const tensorflow::FeatureList& feature_list) override {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() == tensorflow::Feature::kBytesList) {
@@ -475,12 +484,12 @@ class BytesListDecoder : public FeatureListDecoder {
       } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
         TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNull());
       } else {
-        return errors::InvalidArgument(
+        return absl::InvalidArgumentError(
             absl::StrCat("Feature had wrong type, expected bytes_list, found ",
                          KindToStr(feature.kind_case())));
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
  private:
@@ -503,23 +512,24 @@ class UnknownTypeFeatureListDecoder {
   static UnknownTypeFeatureListDecoder* Make() {
     return new UnknownTypeFeatureListDecoder();
   }
-  Status DecodeFeatureList(const tensorflow::FeatureList& feature_list) {
+  absl::Status DecodeFeatureList(const tensorflow::FeatureList& feature_list) {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() != tensorflow::Feature::KIND_NOT_SET) {
-        return errors::Internal(
+        return absl::InternalError(
             "Attempted to decode a feature list that has a known type with the "
             "UnknownTypeFeatureListDecoder.");
       }
     }
     null_counts_.push_back(feature_list.feature().size());
     feature_list_was_added_ = true;
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   void AppendNull() { return null_counts_.push_back(-1); }
 
-  Status ConvertToTypedListDecoder(const tensorflow::Feature::KindCase& type,
-                                   FeatureListDecoder** typed_list_decoder) {
+  absl::Status ConvertToTypedListDecoder(
+      const tensorflow::Feature::KindCase& type,
+      FeatureListDecoder** typed_list_decoder) {
     switch (type) {
       case tensorflow::Feature::kInt64List:
         *typed_list_decoder = IntListDecoder::Make();
@@ -531,7 +541,7 @@ class UnknownTypeFeatureListDecoder {
         *typed_list_decoder = BytesListDecoder::Make();
         break;
       case tensorflow::Feature::KIND_NOT_SET:
-        return errors::Internal(
+        return absl::InternalError(
             "Attempted to convert an UnknownTypeFeatureListDecoder into a "
             "typed list decoder, but did not specify a valid type.");
         break;
@@ -544,24 +554,24 @@ class UnknownTypeFeatureListDecoder {
             (*typed_list_decoder)->AppendInnerNulls(null_counts_[i]));
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   // Called after a (possible) call to DecodeFeatureList. If DecodeFeatureList
   // was called this will do nothing. Otherwise it will result in a Null being
   // appended to the outer-most list in the resulting arrow array.
-  Status FinishFeatureList() {
+  absl::Status FinishFeatureList() {
     if (!feature_list_was_added_) {
       null_counts_.push_back(-1);
     }
     feature_list_was_added_ = false;
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   // Becaues the feature type is not known, write the contents out as a
   // list_type(null). Here, null indicates that the inner list is of an unknown
   // type.
-  Status Finish(std::shared_ptr<arrow::Array>* out) {
+  absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
     std::shared_ptr<arrow::NullBuilder> values_builder =
         std::make_shared<arrow::NullBuilder>(arrow::default_memory_pool());
     std::unique_ptr<ListBuilderInterface> list_builder = MakeListBuilderWrapper(
@@ -590,7 +600,7 @@ namespace {
 // SequenceExample (context features only) while processing a batch of same.
 // It can be used where no schema is available (which requires determining the
 // coder type from the example(s) seen).
-Status DecodeTopLevelFeatures(
+absl::Status DecodeTopLevelFeatures(
     const google::protobuf::Map<std::string, tensorflow::Feature>& features,
     absl::flat_hash_set<std::string>& all_features_seen,
     const int num_examples_already_processed,
@@ -632,11 +642,11 @@ Status DecodeTopLevelFeatures(
       }
     }
     if (feature_decoder) {
-      Status status = feature_decoder->DecodeFeature(feature);
+      absl::Status status = feature_decoder->DecodeFeature(feature);
       if (!status.ok()) {
-        return Status(status.code(),
-                      absl::StrCat(status.error_message(), " for feature \"",
-                                   feature_name, "\""));
+        return absl::Status(
+            status.code(), absl::StrCat(status.message(),
+                                        " for feature \"", feature_name, "\""));
       }
     }
   }
@@ -645,7 +655,7 @@ Status DecodeTopLevelFeatures(
     TFX_BSL_RETURN_IF_ERROR(p.second->FinishFeature());
   }
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // Finishes features specified by all_features_names by converting them to
@@ -653,7 +663,7 @@ Status DecodeTopLevelFeatures(
 // function can be used to finish features in Examples or context features in
 // SequenceExamples. If a feature name is provided for which there is no
 // corresponding decoder available, it will create a NullArray for that feature.
-Status FinishTopLevelFeatures(
+absl::Status FinishTopLevelFeatures(
     const absl::flat_hash_set<std::string>& all_feature_names,
     const absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>&
         feature_decoders,
@@ -675,12 +685,12 @@ Status FinishTopLevelFeatures(
     }
   }
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace
 
-static Status MakeFeatureDecoder(
+static absl::Status MakeFeatureDecoder(
     const tensorflow::metadata::v0::Feature& feature,
     std::unique_ptr<FeatureDecoder>* out) {
   const FeatureType feature_type = feature.type();
@@ -695,28 +705,28 @@ static Status MakeFeatureDecoder(
       out->reset(BytesDecoder::Make());
       break;
     default:
-      return errors::InvalidArgument(
-          "Bad field type for feature: ", feature.name(),
-          " with type: ", feature_type);
+      return absl::InvalidArgumentError(
+          absl::StrCat("Bad field type for feature: ", feature.name(),
+                       " with type: ", feature_type));
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 // static
-Status ExamplesToRecordBatchDecoder::Make(
+absl::Status ExamplesToRecordBatchDecoder::Make(
     absl::optional<absl::string_view> serialized_schema,
     std::unique_ptr<ExamplesToRecordBatchDecoder>* result) {
   if (!serialized_schema) {
     *result = absl::WrapUnique(
         new ExamplesToRecordBatchDecoder(nullptr, nullptr));
-    return Status::OK();
+    return absl::OkStatus();
   }
   auto feature_decoders = absl::make_unique<
       absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>();
   auto schema = absl::make_unique<tensorflow::metadata::v0::Schema>();
   if (!schema->ParseFromArray(serialized_schema->data(),
                               serialized_schema->size())) {
-    return errors::InvalidArgument("Unable to parse schema.");
+    return absl::InvalidArgumentError("Unable to parse schema.");
   }
   std::vector<std::shared_ptr<arrow::Field>> arrow_schema_fields;
   for (const tensorflow::metadata::v0::Feature& feature : schema->feature()) {
@@ -738,7 +748,7 @@ Status ExamplesToRecordBatchDecoder::Make(
   *result = absl::WrapUnique(new ExamplesToRecordBatchDecoder(
       arrow::schema(std::move(arrow_schema_fields)),
       std::move(feature_decoders)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 ExamplesToRecordBatchDecoder::ExamplesToRecordBatchDecoder(
@@ -751,7 +761,7 @@ ExamplesToRecordBatchDecoder::ExamplesToRecordBatchDecoder(
 
 ExamplesToRecordBatchDecoder::~ExamplesToRecordBatchDecoder() {}
 
-Status ExamplesToRecordBatchDecoder::DecodeBatch(
+absl::Status ExamplesToRecordBatchDecoder::DecodeBatch(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   return feature_decoders_
@@ -765,7 +775,7 @@ std::shared_ptr<arrow::Schema> ExamplesToRecordBatchDecoder::ArrowSchema()
   return arrow_schema_;
 }
 
-Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
+absl::Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   google::protobuf::Arena arena;
@@ -777,11 +787,12 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
       const tensorflow::Feature& feature = p.second;
       const auto it = feature_decoders_->find(feature_name);
       if (it != feature_decoders_->end()) {
-        Status status = it->second->DecodeFeature(feature);
+        absl::Status status = it->second->DecodeFeature(feature);
         if (!status.ok()) {
-          return Status(status.code(),
-                        absl::StrCat(status.error_message(), " for feature \"",
-                                     feature_name, "\""));
+          return absl::Status(
+              status.code(),
+              absl::StrCat(status.message(), " for feature \"",
+                           feature_name, "\""));
         }
       }
     }
@@ -799,10 +810,10 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
   }
   *record_batch = arrow::RecordBatch::Make(arrow_schema_,
                                            serialized_examples.size(), arrays);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
+absl::Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
     const std::vector<absl::string_view>& serialized_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   SchemalessIncrementalExamplesDecoder incremental_decoder;
@@ -816,11 +827,10 @@ Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
   return incremental_decoder.Finish(record_batch);
 }
 
-
 SchemalessIncrementalExamplesDecoder::SchemalessIncrementalExamplesDecoder() {}
 SchemalessIncrementalExamplesDecoder::~SchemalessIncrementalExamplesDecoder() {}
 
-Status SchemalessIncrementalExamplesDecoder::Add(
+absl::Status SchemalessIncrementalExamplesDecoder::Add(
     const tensorflow::Example& example) {
   return DecodeTopLevelFeatures(example.features().feature(), all_features_,
                                 num_examples_processed_++, feature_decoders_);
@@ -832,7 +842,7 @@ void SchemalessIncrementalExamplesDecoder::Reset() {
   num_examples_processed_ = 0;
 }
 
-Status SchemalessIncrementalExamplesDecoder::Finish(
+absl::Status SchemalessIncrementalExamplesDecoder::Finish(
     std::shared_ptr<arrow::RecordBatch>* result) {
   std::vector<std::shared_ptr<arrow::Array>> arrays;
   std::vector<std::shared_ptr<arrow::Field>> fields;
@@ -844,10 +854,10 @@ Status SchemalessIncrementalExamplesDecoder::Finish(
                                      num_examples_processed_, arrays);
 
   Reset();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-static Status MakeFeatureListDecoder(
+static absl::Status MakeFeatureListDecoder(
     const tensorflow::metadata::v0::Feature& feature,
     std::unique_ptr<FeatureListDecoder>* out) {
   const FeatureType feature_type = feature.type();
@@ -862,14 +872,14 @@ static Status MakeFeatureListDecoder(
       out->reset(BytesListDecoder::Make());
       break;
     default:
-      return errors::InvalidArgument(
-          "Bad field type for feature: ", feature.name(),
-          " with type: ", feature_type);
+      return absl::InvalidArgumentError(
+          absl::StrCat("Bad field type for feature: ", feature.name(),
+                       " with type: ", feature_type));
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status SequenceExamplesToRecordBatchDecoder::Make(
+absl::Status SequenceExamplesToRecordBatchDecoder::Make(
     const absl::optional<absl::string_view>& serialized_schema,
     const std::string& sequence_feature_column_name,
     std::unique_ptr<SequenceExamplesToRecordBatchDecoder>* result) {
@@ -877,7 +887,7 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
     *result = absl::WrapUnique(new SequenceExamplesToRecordBatchDecoder(
         sequence_feature_column_name, nullptr, nullptr,
         nullptr, nullptr));
-    return Status::OK();
+    return absl::OkStatus();
   }
   auto context_feature_decoders = absl::make_unique<
       absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>();
@@ -886,7 +896,7 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
   auto schema = absl::make_unique<tensorflow::metadata::v0::Schema>();
   if (!schema->ParseFromArray(serialized_schema->data(),
                               serialized_schema->size())) {
-    return errors::InvalidArgument("Unable to parse schema.");
+    return absl::InvalidArgumentError("Unable to parse schema.");
   }
   std::vector<std::shared_ptr<arrow::Field>> arrow_schema_fields;
   auto sequence_feature_schema_fields =
@@ -896,13 +906,13 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
       // This feature is a top-level feature containing sequence features, as
       // identified by the sequence_feature_column_name.
       if (feature.type() != tensorflow::metadata::v0::STRUCT) {
-        return errors::InvalidArgument(
+        return absl::InvalidArgumentError(absl::StrCat(
             "Found a feature in the schema with the "
             "sequence_feature_column_name (i.e., ",
             sequence_feature_column_name,
             ") that is not a struct. The sequence_feature_column_name should "
             "be used only for the top-level struct feature with a struct "
-            "domain that contains each sequence feature as a child.");
+            "domain that contains each sequence feature as a child."));
       }
       for (const auto& child_feature : feature.struct_domain().feature()) {
         if (sequence_feature_decoders->find(child_feature.name()) !=
@@ -962,7 +972,7 @@ Status SequenceExamplesToRecordBatchDecoder::Make(
       std::move(sequence_features_struct_type),
       std::move(context_feature_decoders),
       std::move(sequence_feature_decoders)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 SequenceExamplesToRecordBatchDecoder::SequenceExamplesToRecordBatchDecoder(
@@ -983,7 +993,7 @@ SequenceExamplesToRecordBatchDecoder::SequenceExamplesToRecordBatchDecoder(
 
 SequenceExamplesToRecordBatchDecoder::~SequenceExamplesToRecordBatchDecoder() {}
 
-Status SequenceExamplesToRecordBatchDecoder::DecodeBatch(
+absl::Status SequenceExamplesToRecordBatchDecoder::DecodeBatch(
     const std::vector<absl::string_view>& serialized_sequence_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   return arrow_schema_ ? DecodeFeatureListDecodersAvailable(
@@ -997,7 +1007,8 @@ SequenceExamplesToRecordBatchDecoder::ArrowSchema() const {
   return arrow_schema_;
 }
 
-Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
+absl::Status
+SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
     const std::vector<absl::string_view>& serialized_sequence_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   google::protobuf::Arena arena;
@@ -1011,11 +1022,12 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
       const tensorflow::Feature& context_feature = p.second;
       const auto it = context_feature_decoders_->find(context_feature_name);
       if (it != context_feature_decoders_->end()) {
-        Status status = it->second->DecodeFeature(context_feature);
+        absl::Status status = it->second->DecodeFeature(context_feature);
         if (!status.ok()) {
-          return Status(status.code(),
-                        absl::StrCat(status.error_message(), " for feature \"",
-                                     context_feature_name, "\""));
+          return absl::Status(
+              status.code(),
+              absl::StrCat(status.message(), " for feature \"",
+                           context_feature_name, "\""));
         }
       }
     }
@@ -1028,11 +1040,12 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
       const tensorflow::FeatureList& feature_list = p.second;
       const auto it = sequence_feature_decoders_->find(feature_list_name);
       if (it != sequence_feature_decoders_->end()) {
-        Status status = it->second->DecodeFeatureList(feature_list);
+        absl::Status status = it->second->DecodeFeatureList(feature_list);
         if (!status.ok()) {
-          return Status(status.code(), absl::StrCat(status.error_message(),
-                                                    " for sequence feature \"",
-                                                    feature_list_name, "\""));
+          return absl::Status(
+              status.code(),
+              absl::StrCat(status.message(), " for sequence feature \"",
+                           feature_list_name, "\""));
         }
       }
     }
@@ -1071,10 +1084,10 @@ Status SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
 
   *record_batch = arrow::RecordBatch::Make(
       arrow_schema_, serialized_sequence_examples.size(), arrays);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status
+absl::Status
 SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
     const std::vector<absl::string_view>& serialized_sequence_examples,
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
@@ -1090,7 +1103,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
   }
   TFX_BSL_RETURN_IF_ERROR(incremental_decoder.Finish(record_batch));
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 SchemalessIncrementalSequenceExamplesDecoder::
@@ -1100,7 +1113,7 @@ SchemalessIncrementalSequenceExamplesDecoder::
 SchemalessIncrementalSequenceExamplesDecoder::
     ~SchemalessIncrementalSequenceExamplesDecoder() {}
 
-Status SchemalessIncrementalSequenceExamplesDecoder::Add(
+absl::Status SchemalessIncrementalSequenceExamplesDecoder::Add(
     const tensorflow::SequenceExample& sequence_example) {
   TFX_BSL_RETURN_IF_ERROR(DecodeTopLevelFeatures(
       sequence_example.context().feature(), all_context_features_,
@@ -1205,7 +1218,7 @@ Status SchemalessIncrementalSequenceExamplesDecoder::Add(
     }  // End adding new decoder.
     // Decode the current feature list using the appropriate feature
     // decoder.
-    Status status;
+    absl::Status status;
     if (sequence_feature_decoder) {
       status =
           sequence_feature_decoder->DecodeFeatureList(sequence_feature_list);
@@ -1214,9 +1227,10 @@ Status SchemalessIncrementalSequenceExamplesDecoder::Add(
           sequence_feature_list);
     }
     if (!status.ok()) {
-      return Status(status.code(), absl::StrCat(status.error_message(),
-                                                " for sequence feature \"",
-                                                sequence_feature_name, "\""));
+      return absl::Status(
+          status.code(),
+          absl::StrCat(status.message(), " for sequence feature \"",
+                       sequence_feature_name, "\""));
     }
   }  // End processing the current feature list.
 
@@ -1239,10 +1253,10 @@ Status SchemalessIncrementalSequenceExamplesDecoder::Add(
   }
   ++num_examples_processed_;
 
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
+absl::Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
     std::shared_ptr<arrow::RecordBatch>* result) {
   std::vector<std::shared_ptr<arrow::Array>> arrays;
   std::vector<std::shared_ptr<arrow::Field>> fields;
@@ -1276,13 +1290,13 @@ Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
     const arrow::Result<std::shared_ptr<arrow::StructArray>>&
         result_or_sequence_feature_array = arrow::StructArray::Make(
             sequence_feature_arrays, sequence_feature_fields);
-    Status status =
+    absl::Status status =
         FromArrowStatus((result_or_sequence_feature_array.status()));
-    if (status != Status::OK()) {
-      return errors::Internal(
+    if (status != absl::OkStatus()) {
+      return absl::InternalError(absl::StrCat(
           "Attempt to make struct array from sequence features failed with "
           "status: ",
-          status);
+          status.message()));
     }
     arrays.push_back(result_or_sequence_feature_array.ValueOrDie());
     fields.push_back(
@@ -1302,7 +1316,7 @@ Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
       arrow::schema(fields), num_examples_processed_, arrays);
 
   Reset();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 void SchemalessIncrementalSequenceExamplesDecoder::Reset() {

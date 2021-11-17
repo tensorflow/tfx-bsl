@@ -20,7 +20,7 @@
 #include <memory>
 #include <vector>
 
-#include "tfx_bsl/cc/util/status.h"
+#include "absl/status/status.h"
 
 namespace arrow {
 class Array;
@@ -46,7 +46,7 @@ namespace tfx_bsl {
 //      considered as if it had that child as a NullArray. Child arrays are
 //      concatenated recusrively.
 // Returns an error if there's any incompatibility.
-Status MergeRecordBatches(
+absl::Status MergeRecordBatches(
     const std::vector<std::shared_ptr<arrow::RecordBatch>>& record_batches,
     std::shared_ptr<arrow::RecordBatch>* result);
 
@@ -57,13 +57,14 @@ Status MergeRecordBatches(
 // If `ignore_unsupported` is true, these functions will not return an error
 // when encountering unsupported columns and the result won't include
 // the size of them, otherwise an error will be returned.
-Status TotalByteSize(const arrow::RecordBatch& record_batch,
-                     bool ignore_unsupported, size_t* result);
+absl::Status TotalByteSize(const arrow::RecordBatch& record_batch,
+                           bool ignore_unsupported, size_t* result);
 
 // Returns a RecordBatch that contains rows in `indices`.
-Status RecordBatchTake(const std::shared_ptr<arrow::RecordBatch>& record_batch,
-                       const std::shared_ptr<arrow::Array>& indices,
-                       std::shared_ptr<arrow::RecordBatch>* result);
+absl::Status RecordBatchTake(
+    const std::shared_ptr<arrow::RecordBatch>& record_batch,
+    const std::shared_ptr<arrow::Array>& indices,
+    std::shared_ptr<arrow::RecordBatch>* result);
 }  // namespace tfx_bsl
 
 #endif  // THIRD_PARTY_PY_TENSORFLOW_DATA_VALIDATION_ARROW_CC_MERGE_H_

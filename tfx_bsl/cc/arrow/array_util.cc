@@ -16,12 +16,12 @@
 #include "arrow/array/concatenate.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
 #include "arrow/compute/api.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 
 namespace tfx_bsl {
@@ -274,10 +274,9 @@ class StringViewMemoTable {
 };
 
 template <typename BinaryArrayT>
-Status LookupIndices(
-    const BinaryArrayT& values,
-    const StringViewMemoTable& memo_table,
-    std::shared_ptr<Array>* matched_value_set_indices) {
+absl::Status LookupIndices(const BinaryArrayT& values,
+                           const StringViewMemoTable& memo_table,
+                           std::shared_ptr<Array>* matched_value_set_indices) {
   arrow::Int32Builder result_builder;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(result_builder.Reserve(values.length())));
@@ -301,11 +300,12 @@ Status LookupIndices(
   }
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(result_builder.Finish(matched_value_set_indices)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status IndexInBinaryArray(const Array& values, const Array& values_set,
-                          std::shared_ptr<Array>* matched_value_set_indices) {
+absl::Status IndexInBinaryArray(
+    const Array& values, const Array& values_set,
+    std::shared_ptr<Array>* matched_value_set_indices) {
   std::unique_ptr<StringViewMemoTable> memo_table;
   switch (values_set.type()->id()) {
     case arrow::Type::BINARY:
@@ -319,7 +319,7 @@ Status IndexInBinaryArray(const Array& values, const Array& values_set,
           static_cast<const arrow::LargeBinaryArray&>(values_set));
       break;
     default:
-      return errors::FailedPrecondition("values_set is not binary-like");
+      return absl::FailedPreconditionError("values_set is not binary-like");
   }
 
   switch (values.type()->id()) {
@@ -336,34 +336,31 @@ Status IndexInBinaryArray(const Array& values, const Array& values_set,
                         *memo_table, matched_value_set_indices));
       break;
     default:
-      return errors::FailedPrecondition("values is not binary-like");
+      return absl::FailedPreconditionError("values is not binary-like");
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace
 
-Status GetElementLengths(
-    const Array& array,
-    std::shared_ptr<Array>* list_lengths_array) {
-
+absl::Status GetElementLengths(const Array& array,
+                               std::shared_ptr<Array>* list_lengths_array) {
   ElementLengthsVisitor v;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
   *list_lengths_array = v.result();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status GetFlattenedArrayParentIndices(
+absl::Status GetFlattenedArrayParentIndices(
     const Array& array, std::shared_ptr<Array>* parent_indices_array) {
   GetFlattenedArrayParentIndicesVisitor v;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
   *parent_indices_array = v.result();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status GetArrayNullBitmapAsByteArray(
-    const Array& array,
-    std::shared_ptr<Array>* byte_array) {
+absl::Status GetArrayNullBitmapAsByteArray(const Array& array,
+                                           std::shared_ptr<Array>* byte_array) {
   arrow::UInt8Builder masks_builder;
   TFX_BSL_RETURN_IF_ERROR(
       FromArrowStatus(masks_builder.Reserve(array.length())));
@@ -382,17 +379,17 @@ Status GetArrayNullBitmapAsByteArray(
   return FromArrowStatus(masks_builder.Finish(byte_array));
 }
 
-Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
-                                   size_t* total_byte_size) {
+absl::Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
+                                         size_t* total_byte_size) {
   GetBinaryArrayTotalByteSizeVisitor v;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
   *total_byte_size = v.get_result();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status IndexIn(const std::shared_ptr<arrow::Array>& values,
-             const std::shared_ptr<arrow::Array>& value_set,
-             std::shared_ptr<arrow::Array>* matched_value_set_indices) {
+absl::Status IndexIn(const std::shared_ptr<arrow::Array>& values,
+                     const std::shared_ptr<arrow::Array>& value_set,
+                     std::shared_ptr<arrow::Array>* matched_value_set_indices) {
   // arrow::compute::Match does not support LargeBinary (as of 0.17).
   // TODO(zhuo): clean up this once tfx_bsl is built with arrow 1.0+.
   auto values_type = values->type();
@@ -406,34 +403,33 @@ Status IndexIn(const std::shared_ptr<arrow::Array>& values,
                                  arrow::compute::IndexIn(values, value_set));
   if (result.is_array()) {
     *matched_value_set_indices = result.make_array();
-    return Status::OK();
+    return absl::OkStatus();
   } else {
-    return errors::Internal(absl::StrCat("Match result Datum is not an array ",
-                                         "but an instance of type",
-                                         result.type()->name()));
+    return absl::InternalError(
+        absl::StrCat("Match result Datum is not an array ",
+                     "but an instance of type", result.type()->name()));
   }
 }
 
 // TODO(zhuo): Make this return LargeListArray once consumers can handle it.
-Status MakeListArrayFromParentIndicesAndValues(
+absl::Status MakeListArrayFromParentIndicesAndValues(
     const size_t num_parents,
     const std::shared_ptr<arrow::Array>& parent_indices,
-    const std::shared_ptr<Array>& values,
-    const bool empty_list_as_null,
+    const std::shared_ptr<Array>& values, const bool empty_list_as_null,
     std::shared_ptr<Array>* out) {
   if (parent_indices->type()->id() != arrow::Type::INT64) {
-    return errors::InvalidArgument("Parent indices array must be int64.");
+    return absl::InvalidArgumentError("Parent indices array must be int64.");
   }
   const size_t length = parent_indices->length();
   if (values->length() != length) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(absl::StrCat(
         "values array and parent indices array must be of the same length: ",
-        values->length(), " v.s. ", parent_indices->length());
+        values->length(), " v.s. ", parent_indices->length()));
   }
   const auto& parent_indices_int64 =
       *static_cast<const arrow::Int64Array*>(parent_indices.get());
   if (length != 0 && num_parents < parent_indices_int64.Value(length - 1) + 1) {
-    return errors::InvalidArgument(absl::StrCat(
+    return absl::InvalidArgumentError(absl::StrCat(
         "Found a parent index ", parent_indices_int64.Value(length - 1),
         " while num_parents was ", num_parents));
   }
@@ -475,7 +471,7 @@ Status MakeListArrayFromParentIndicesAndValues(
   *out = std::make_shared<LargeListArray>(
       arrow::large_list(values->type()), num_parents, offsets_buffer, values,
       null_bitmap_buffer, null_count, /*offset=*/0);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 namespace {
@@ -696,7 +692,7 @@ class GetByteSizeVisitor : public arrow::ArrayVisitor {
 };
 }  // namespace
 
-Status CooFromListArray(
+absl::Status CooFromListArray(
     const std::shared_ptr<arrow::Array>& list_array,
     std::shared_ptr<arrow::Array>* coo_array,
     std::shared_ptr<arrow::Array>* dense_shape_array) {
@@ -808,12 +804,12 @@ Status CooFromListArray(
 
   *coo_array = std::make_shared<arrow::Int64Array>(
       coo_length * values->length(), coo_buffer);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status FillNullLists(const std::shared_ptr<Array>& list_array,
-                     const std::shared_ptr<Array>& fill_with,
-                     std::shared_ptr<Array>* filled) {
+absl::Status FillNullLists(const std::shared_ptr<Array>& list_array,
+                           const std::shared_ptr<Array>& fill_with,
+                           std::shared_ptr<Array>* filled) {
   FillNullListsVisitor v(*fill_with);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(list_array->Accept(&v)));
   auto visit_result = v.result();
@@ -824,13 +820,13 @@ Status FillNullLists(const std::shared_ptr<Array>& list_array,
     // result equals to the input.
     *filled = list_array;
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status GetByteSize(const Array& array, size_t* result) {
+absl::Status GetByteSize(const Array& array, size_t* result) {
   GetByteSizeVisitor v;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
   *result = v.result();
-  return Status::OK();
+  return absl::OkStatus();
 }
 }  // namespace tfx_bsl

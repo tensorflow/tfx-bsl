@@ -28,7 +28,7 @@ void DefineSqlUtilSubmodule(py::module arrow_module) {
       .def(py::init([](const std::string& sql,
                        std::shared_ptr<arrow::Schema> arrow_schema) {
              std::unique_ptr<RecordBatchSQLSliceQuery> result;
-             Status s =
+             absl::Status s =
                  RecordBatchSQLSliceQuery::Make(sql, arrow_schema, &result);
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
@@ -43,7 +43,7 @@ void DefineSqlUtilSubmodule(py::module arrow_module) {
             std::vector<
                 std::vector<std::vector<std::pair<std::string, std::string>>>>
                 result;
-            Status s = slice_query->Execute(*record_batch, &result);
+            absl::Status s = slice_query->Execute(*record_batch, &result);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }

@@ -15,12 +15,12 @@
 
 #include <memory>
 
+#include "absl/status/status.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/coders/example_coder.h"
 #include "tfx_bsl/cc/coders/example_numpy_decoder.h"
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "pybind11/pytypes.h"
 #include "pybind11/stl.h"
 #include "pybind11/stl_bind.h"
@@ -38,8 +38,8 @@ void DefineCodersSubmodule(py::module main_module) {
   py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
       .def(py::init([](absl::string_view serialized_schema) {
              std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-             Status s = ExamplesToRecordBatchDecoder::Make(
-                 serialized_schema,  &result);
+             absl::Status s =
+                 ExamplesToRecordBatchDecoder::Make(serialized_schema, &result);
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
              }
@@ -48,8 +48,8 @@ void DefineCodersSubmodule(py::module main_module) {
            py::arg("serialized_schema"))
       .def(py::init([] {
              std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-             Status s = ExamplesToRecordBatchDecoder::Make(
-                 absl::nullopt, &result);
+             absl::Status s =
+                 ExamplesToRecordBatchDecoder::Make(absl::nullopt, &result);
              if (!s.ok()) {
                throw std::runtime_error(s.ToString());
              }
@@ -60,7 +60,7 @@ void DefineCodersSubmodule(py::module main_module) {
           [](ExamplesToRecordBatchDecoder* decoder,
              const std::vector<absl::string_view>& serialized_examples) {
             std::shared_ptr<arrow::RecordBatch> result;
-            Status s = decoder->DecodeBatch(serialized_examples, &result);
+            absl::Status s = decoder->DecodeBatch(serialized_examples, &result);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
             }
@@ -84,7 +84,7 @@ void DefineCodersSubmodule(py::module main_module) {
       .def(py::init([](const std::string& sequence_feature_column_name,
                        const absl::string_view serialized_schema) {
              std::unique_ptr<SequenceExamplesToRecordBatchDecoder> result;
-             Status s;
+             absl::Status s;
              if (serialized_schema.empty()) {
                s = SequenceExamplesToRecordBatchDecoder::Make(
                    absl::nullopt, sequence_feature_column_name,
@@ -107,7 +107,7 @@ void DefineCodersSubmodule(py::module main_module) {
              const std::vector<absl::string_view>&
                  serialized_sequence_examples) {
             std::shared_ptr<arrow::RecordBatch> result;
-            Status s =
+            absl::Status s =
                 decoder->DecodeBatch(serialized_sequence_examples, &result);
             if (!s.ok()) {
               throw std::runtime_error(s.ToString());
@@ -131,7 +131,7 @@ void DefineCodersSubmodule(py::module main_module) {
   m.def("ExampleToNumpyDict",
         [](absl::string_view serialized_example) -> py::object {
           PyObject* numpy_dict = nullptr;
-          Status s = ExampleToNumpyDict(serialized_example, &numpy_dict);
+          absl::Status s = ExampleToNumpyDict(serialized_example, &numpy_dict);
           if (!s.ok()) {
             throw std::runtime_error(s.ToString());
           }
@@ -152,8 +152,8 @@ void DefineCodersSubmodule(py::module main_module) {
         {
           // Release the GIL during the call to RecordBatchToExamples.
           py::gil_scoped_release release_gil;
-          Status s = RecordBatchToExamples(*record_batch, nested_features,
-                                           &serialized_examples);
+          absl::Status s = RecordBatchToExamples(*record_batch, nested_features,
+                                                 &serialized_examples);
           if (!s.ok()) {
             throw std::runtime_error(s.ToString());
           }

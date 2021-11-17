@@ -24,13 +24,14 @@
 
 #include "testing/base/public/gmock.h"
 #include <gtest/gtest.h>
+#include "absl/status/status.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
+#include "tfx_bsl/cc/util/status_util.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -83,14 +84,16 @@ void CreateArrowDoubleArrayFromVector(const std::vector<double> values,
 
 // TODO(b/199515135): Delete this when migrating to py, since output can be
 // a multimap (e.g. for floats).
-Status CreateCountsMap(const MisraGriesSketch& mg,
-                       absl::flat_hash_map<std::string, double>& counts_map) {
+absl::Status CreateCountsMap(
+    const MisraGriesSketch& mg,
+    absl::flat_hash_map<std::string, double>& counts_map) {
   std::vector<std::pair<std::string, double>> counts_vector;
+
   TFX_BSL_RETURN_IF_ERROR(mg.GetCounts(counts_vector));
   for (const auto& pair : counts_vector) {
     counts_map.insert({pair.first, pair.second});
   }
-  return tfx_bsl::Status::OK();
+  return absl::OkStatus();
 }
 
 TEST(MisraGriesSketchTest, AddSimpleBinary) {
@@ -211,7 +214,7 @@ TEST(MisraGriesSketchTest, AddSimpleBinaryWithIntWeights) {
   std::shared_ptr<arrow::Array> weight_array;
   CreateArrowIntArrayFromVector(weights, &weight_array);
 
-  Status status = mg.AddValues(*array, *weight_array);
+  absl::Status status = mg.AddValues(*array, *weight_array);
   ASSERT_FALSE(status.ok());
   ASSERT_EQ("Weight array must be float type.", status.error_message());
 }
@@ -225,7 +228,7 @@ TEST(MisraGriesSketchTest, MergeSimple) {
   ASSERT_TRUE(mg1.AddValues(*array).ok());
   MisraGriesSketch mg2 = MakeSketch(kNumBuckets);
   ASSERT_TRUE(mg2.AddValues(*array).ok());
-  Status status = mg1.Merge(mg2);
+  absl::Status status = mg1.Merge(mg2);
   ASSERT_TRUE(status.ok());
 
   absl::flat_hash_map<std::string, double> counts;

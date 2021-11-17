@@ -14,11 +14,11 @@
 #include "tfx_bsl/cc/sketches/quantiles_sketch.h"
 
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/types/optional.h"
 #include "arrow/compute/api.h"
 #include "tfx_bsl/cc/sketches/weighted_quantiles_stream.h"
 #include "tfx_bsl/cc/sketches/weighted_quantiles_summary.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 
 namespace tfx_bsl {
@@ -33,15 +33,15 @@ using Stream =
 using Summary = Stream::Summary;
 using SummaryEntry = Stream::SummaryEntry;
 
-Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
-  if ((*array)->type()->id() == arrow::Type::DOUBLE) return Status::OK();
+absl::Status MaybeCastToDoubleArray(std::shared_ptr<arrow::Array>* array) {
+  if ((*array)->type()->id() == arrow::Type::DOUBLE) return absl::OkStatus();
   std::shared_ptr<arrow::Array> result;
   TFX_BSL_ASSIGN_OR_RETURN_ARROW(
       result, arrow::compute::Cast(**array, arrow::float64(),
                                    // Allow integer truncation (int64->float64).
                                    arrow::compute::CastOptions::Unsafe()));
   *array = std::move(result);
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -84,10 +84,10 @@ class QuantilesSketchImpl {
   QuantilesSketchImpl(const QuantilesSketchImpl&) = delete;
   QuantilesSketchImpl& operator=(const QuantilesSketchImpl&) = delete;
 
-  Status AddWeightedValues(const arrow::DoubleArray& values,
-                           const arrow::DoubleArray& weights) {
+  absl::Status AddWeightedValues(const arrow::DoubleArray& values,
+                                 const arrow::DoubleArray& weights) {
     if (finalized_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to add values to a finalized sketch.");
     }
 
@@ -108,12 +108,12 @@ class QuantilesSketchImpl {
         stream.PushEntry(value, weight);
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status AddValues(const arrow::DoubleArray& values) {
+  absl::Status AddValues(const arrow::DoubleArray& values) {
     if (finalized_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to add values to a finalized sketch.");
     }
 
@@ -131,12 +131,12 @@ class QuantilesSketchImpl {
         stream.PushEntry(value, 1.0);
       }
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status Compact() {
+  absl::Status Compact() {
     if (finalized_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to compact a finalized sketch.");
     }
     if (!compacted_) {
@@ -149,12 +149,12 @@ class QuantilesSketchImpl {
       }
       compacted_ = true;
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status Serialize(std::string& serialized) const {
+  absl::Status Serialize(std::string& serialized) const {
     if (finalized_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to serialize a finalized sketch.");
     }
 
@@ -189,21 +189,22 @@ class QuantilesSketchImpl {
     }
 
     serialized = sketch_proto.SerializeAsString();
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  static Status Deserialize(absl::string_view serialized,
-                            std::unique_ptr<QuantilesSketchImpl>* result) {
+  static absl::Status Deserialize(
+      absl::string_view serialized,
+      std::unique_ptr<QuantilesSketchImpl>* result) {
     Quantiles sketch_proto;
     if (!sketch_proto.ParseFromArray(serialized.data(), serialized.size())) {
-      return errors::InvalidArgument(
+      return absl::InvalidArgumentError(
           "Failed to parse serialized Quantiles sketch.");
     }
     std::vector<std::vector<Summary>> summaries;
     std::vector<std::vector<BufferEntry>> buffer_entries;
     const size_t num_streams = sketch_proto.streams_size();
     if (num_streams < 1) {
-      return errors::InvalidArgument("Serialized sketch has no streams.");
+      return absl::InvalidArgumentError("Serialized sketch has no streams.");
     }
 
     summaries.reserve(num_streams);
@@ -251,20 +252,20 @@ class QuantilesSketchImpl {
     *result = absl::make_unique<QuantilesSketchImpl>(
         eps, max_num_elements, num_streams, compacted, std::move(summaries),
         std::move(buffer_entries));
-    return Status::OK();
+    return absl::OkStatus();
   }
 
-  Status Merge(const QuantilesSketchImpl& other) {
+  absl::Status Merge(const QuantilesSketchImpl& other) {
     if (finalized_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to merge to a finalized sketch.");
     }
     if (other.finalized_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to merge a finalized sketch.");
     }
     if (num_streams_ != other.num_streams_) {
-      return errors::FailedPrecondition(
+      return absl::FailedPreconditionError(
           "Attempting to merge sketches with different number of streams.");
     }
     for (int i = 0; i < num_streams_; i++) {
@@ -273,7 +274,7 @@ class QuantilesSketchImpl {
     if (other.compacted_) {
       compacted_ = true;
     }
-    return Status::OK();
+    return absl::OkStatus();
   }
 
   std::vector<Summary> GetFinalSummaries() {
@@ -304,17 +305,17 @@ class QuantilesSketchImpl {
 };
 
 // static
-Status QuantilesSketch::Make(double eps, int64_t max_num_elements,
-                             int64_t num_streams,
-                             std::unique_ptr<QuantilesSketch>* result) {
+absl::Status QuantilesSketch::Make(double eps, int64_t max_num_elements,
+                                   int64_t num_streams,
+                                   std::unique_ptr<QuantilesSketch>* result) {
   if (eps <= 0) {
-    return errors::InvalidArgument("eps must be positive.");
+    return absl::InvalidArgumentError("eps must be positive.");
   }
   if (max_num_elements < 1) {
-    return errors::InvalidArgument("max_num_elements must be >= 1.");
+    return absl::InvalidArgumentError("max_num_elements must be >= 1.");
   }
   if (num_streams < 1) {
-    return errors::InvalidArgument("num_streams must be >= 1.");
+    return absl::InvalidArgumentError("num_streams must be >= 1.");
   }
   // Error bound is adjusted by height of the computation graph. Note that the
   // current implementation has height of 3: one level from `AddValues`,
@@ -326,18 +327,18 @@ Status QuantilesSketch::Make(double eps, int64_t max_num_elements,
   *result = absl::WrapUnique(
       new QuantilesSketch(absl::make_unique<QuantilesSketchImpl>(
           eps / 3, max_num_elements, num_streams)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 QuantilesSketch::~QuantilesSketch() {}
 QuantilesSketch::QuantilesSketch(QuantilesSketch&&) = default;
 QuantilesSketch& QuantilesSketch::operator=(QuantilesSketch&&) = default;
 
-Status QuantilesSketch::AddWeightedValues(
+absl::Status QuantilesSketch::AddWeightedValues(
     std::shared_ptr<arrow::Array> values,
     std::shared_ptr<arrow::Array> weights) {
   if (values->length() != weights->length() * impl_->num_streams()) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         "Values size must be equal to weights size times number of streams.");
   }
   TFX_BSL_RETURN_IF_ERROR(MaybeCastToDoubleArray(&values));
@@ -347,25 +348,25 @@ Status QuantilesSketch::AddWeightedValues(
       static_cast<const arrow::DoubleArray&>(*weights));
 }
 
-Status QuantilesSketch::AddValues(std::shared_ptr<arrow::Array> values) {
+absl::Status QuantilesSketch::AddValues(std::shared_ptr<arrow::Array> values) {
   if (values->length() % impl_->num_streams() != 0) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         "Values size must be divisible by the number of streams.");
   }
   TFX_BSL_RETURN_IF_ERROR(MaybeCastToDoubleArray(&values));
   return impl_->AddValues(static_cast<const arrow::DoubleArray&>(*values));
 }
 
-Status QuantilesSketch::Compact() { return impl_->Compact(); }
+absl::Status QuantilesSketch::Compact() { return impl_->Compact(); }
 
-Status QuantilesSketch::Merge(const QuantilesSketch& other) {
+absl::Status QuantilesSketch::Merge(const QuantilesSketch& other) {
   return impl_->Merge(*other.impl_);
 }
 
-Status QuantilesSketch::GetQuantiles(int64_t num_quantiles,
-                                     std::shared_ptr<arrow::Array>* quantiles) {
+absl::Status QuantilesSketch::GetQuantiles(
+    int64_t num_quantiles, std::shared_ptr<arrow::Array>* quantiles) {
   if (num_quantiles <= 1) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         "Number of requested quantiles must be >= 2.");
   }
   // Extract final summaries and generate quantiles.
@@ -388,20 +389,20 @@ Status QuantilesSketch::GetQuantiles(int64_t num_quantiles,
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
       arrow::FixedSizeListArray::FromArrays(quantiles_flat, num_quantiles + 1)
           .Value(quantiles)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status QuantilesSketch::Serialize(std::string& serialized) const {
+absl::Status QuantilesSketch::Serialize(std::string& serialized) const {
   return impl_->Serialize(serialized);
 }
 
 // static
-Status QuantilesSketch::Deserialize(absl::string_view serialized,
-                                    std::unique_ptr<QuantilesSketch>* result) {
+absl::Status QuantilesSketch::Deserialize(
+    absl::string_view serialized, std::unique_ptr<QuantilesSketch>* result) {
   std::unique_ptr<QuantilesSketchImpl> impl;
   TFX_BSL_RETURN_IF_ERROR(QuantilesSketchImpl::Deserialize(serialized, &impl));
   *result = absl::WrapUnique(new QuantilesSketch(std::move(impl)));
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 QuantilesSketch::QuantilesSketch(std::unique_ptr<QuantilesSketchImpl> impl)

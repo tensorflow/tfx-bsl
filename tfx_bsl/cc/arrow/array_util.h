@@ -17,7 +17,7 @@
 #include <cstddef>
 #include <memory>
 
-#include "tfx_bsl/cc/util/status.h"
+#include "absl/status/status.h"
 
 namespace arrow {
 class Array;
@@ -30,7 +30,7 @@ namespace tfx_bsl {
 // Note that null and empty elements both are of length 0 and the returned array
 // does not have any null. For example
 // [[1,2,3], [], None, [4,5]] => [3, 0, 0, 2]
-Status GetElementLengths(
+absl::Status GetElementLengths(
     const arrow::Array& array,
     std::shared_ptr<arrow::Array>* list_lengths_array);
 
@@ -40,7 +40,7 @@ Status GetElementLengths(
 // Returns an Int32Array if the input is a ListArray, or Int64Array if the input
 // is a LargeListArray.
 // For example [[1,2,3], [], None, [4,5]] => [0, 0, 0, 3, 3]
-Status GetFlattenedArrayParentIndices(
+absl::Status GetFlattenedArrayParentIndices(
     const arrow::Array& array,
     std::shared_ptr<arrow::Array>* parent_indices_array);
 
@@ -48,21 +48,20 @@ Status GetFlattenedArrayParentIndices(
 // returned_array[i] == True iff array[i] is null.
 // Note that this returned array can be converted to a numpy bool array
 // copy-free.
-Status GetArrayNullBitmapAsByteArray(
-    const arrow::Array& array,
-    std::shared_ptr<arrow::Array>* byte_array);
+absl::Status GetArrayNullBitmapAsByteArray(
+    const arrow::Array& array, std::shared_ptr<arrow::Array>* byte_array);
 
 // Returns the total byte size of a BinaryArray (note that StringArray is a
 // subclass of that so is also accepted here) i.e. the length of the
 // concatenation of all the binary strings in the list), in a Python Long.
 // It might be a good idea to make this a pyarrow API.
-Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
-                                   size_t* total_byte_size);
+absl::Status GetBinaryArrayTotalByteSize(const arrow::Array& array,
+                                         size_t* total_byte_size);
 
 // IndexIn examines each slot in values against a value_set array."
-Status IndexIn(const std::shared_ptr<arrow::Array>& values,
-               const std::shared_ptr<arrow::Array>& value_set,
-               std::shared_ptr<arrow::Array>* matched_value_set_indices);
+absl::Status IndexIn(const std::shared_ptr<arrow::Array>& values,
+                     const std::shared_ptr<arrow::Array>& value_set,
+                     std::shared_ptr<arrow::Array>* matched_value_set_indices);
 
 // Makes an Arrow LargeListArray from parent indices and values.
 // For example, if num_parents = 6, parent_indices = [0, 1, 1, 3, 3] and
@@ -76,11 +75,9 @@ Status IndexIn(const std::shared_ptr<arrow::Array>& values,
 // sorted in increasing order.
 // `values_array` must be an arrow Array and its length must equal to the
 //  length of `parent_indices`.
-Status MakeListArrayFromParentIndicesAndValues(
-    size_t num_parents,
-    const std::shared_ptr<arrow::Array>& parent_indices,
-    const std::shared_ptr<arrow::Array>& values_array,
-    bool empty_list_as_null,
+absl::Status MakeListArrayFromParentIndicesAndValues(
+    size_t num_parents, const std::shared_ptr<arrow::Array>& parent_indices,
+    const std::shared_ptr<arrow::Array>& values_array, bool empty_list_as_null,
     std::shared_ptr<arrow::Array>* output_list_array);
 
 // Converts a ListArray to a COO (coordinate list) represented sparse tensor.
@@ -98,21 +95,20 @@ Status MakeListArrayFromParentIndicesAndValues(
 // if given ListArray [[1, 2], [], [3], None]
 // `coo_array` would be: [0, 1,  0, 2,  2, 1]
 // `dense_shape_array` would be: [4, 2]
-Status CooFromListArray(
-    const std::shared_ptr<arrow::Array>& list_array,
-    std::shared_ptr<arrow::Array>* coo_array,
-    std::shared_ptr<arrow::Array>* dense_shape_array);
+absl::Status CooFromListArray(const std::shared_ptr<arrow::Array>& list_array,
+                              std::shared_ptr<arrow::Array>* coo_array,
+                              std::shared_ptr<arrow::Array>* dense_shape_array);
 
 // Fills nulls in a `list_array` (ListArray or LargeListArray)
 // with `fill_with`. the type of `fill_with` must equal to the value type of
 // `list_array`.
-Status FillNullLists(const std::shared_ptr<arrow::Array>& list_array,
-                     const std::shared_ptr<arrow::Array>& fill_with,
-                     std::shared_ptr<arrow::Array>* filled);
+absl::Status FillNullLists(const std::shared_ptr<arrow::Array>& list_array,
+                           const std::shared_ptr<arrow::Array>& fill_with,
+                           std::shared_ptr<arrow::Array>* filled);
 
 // Returns the byte size of the contents of `array`. Note that this is different
 // from the byte size of the buffers that `array` consists of, because of
 // slicing offsets and buffer reservation (buffer_size != buffer_capacity).
-Status GetByteSize(const arrow::Array& array, size_t* result);
+absl::Status GetByteSize(const arrow::Array& array, size_t* result);
 }  // namespace tfx_bsl
 #endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

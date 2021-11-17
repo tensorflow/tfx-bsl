@@ -8,20 +8,9 @@ package(default_visibility = [
 licenses(["notice"])
 
 cc_library(
-    name = "status",
-    srcs = ["status.cc"],
-    hdrs = ["status.h"],
-    deps = [
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-cc_library(
     name = "status_util",
     hdrs = ["status_util.h"],
     deps = [
-        ":status",
         "@arrow",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",

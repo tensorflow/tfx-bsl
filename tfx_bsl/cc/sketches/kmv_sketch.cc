@@ -19,11 +19,12 @@
 #include <memory>
 #include <string>
 
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include <farmhash.h>
 
@@ -142,7 +143,7 @@ KmvSketch::KmvSketch(const int num_buckets)
       max_limit_(std::numeric_limits<uint64_t>::max()),
       input_type_(InputType::UNSET) {}
 
-Status KmvSketch::AddValues(const arrow::Array& arrow_array) {
+absl::Status KmvSketch::AddValues(const arrow::Array& arrow_array) {
   GetHashesVisitor v(input_type_);
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(arrow_array.Accept(&v)));
   const std::vector<uint64_t>& hash_values = v.result();
@@ -162,28 +163,28 @@ Status KmvSketch::AddValues(const arrow::Array& arrow_array) {
       max_limit_ = *hashes_.rbegin();
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
-Status KmvSketch::Merge(KmvSketch& other) {
+absl::Status KmvSketch::Merge(KmvSketch& other) {
   if (other.num_buckets_ != num_buckets_) {
-    return errors::InvalidArgument(
-        "Both sketches must have the same number of buckets: ",
-         num_buckets_, " v.s. ", other.num_buckets_);
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Both sketches must have the same number of buckets: ", num_buckets_,
+        " v.s. ", other.num_buckets_));
   }
   if (input_type_ == InputType::UNSET) {
     input_type_ = other.input_type_;
   }
   if (other.input_type_ != InputType::UNSET &&
       input_type_ != other.input_type_) {
-    return errors::InvalidArgument(
+    return absl::InvalidArgumentError(
         absl::StrFormat("Both sketches must have the same type (%s vs %s)",
                         InputType::Type_Name(input_type_),
                         InputType::Type_Name(other.input_type_)));
   }
   hashes_.insert(other.hashes_.begin(), other.hashes_.end());
   if (hashes_.size() < num_buckets_) {
-    return Status::OK();
+    return absl::OkStatus();
   }
   // Keep the smallest n elements of hashes_, where n = num_buckets_.
   auto first_hash_to_remove = hashes_.begin();
@@ -191,7 +192,7 @@ Status KmvSketch::Merge(KmvSketch& other) {
   hashes_.erase(first_hash_to_remove, hashes_.end());
   // Set max_limit_ to the largest hash.
   max_limit_ = *hashes_.rbegin();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 uint64_t KmvSketch::Estimate() const {
@@ -218,17 +219,17 @@ std::string KmvSketch::Serialize() const {
   return kmv_proto.SerializeAsString();
 }
 
-Status KmvSketch::Deserialize(absl::string_view encoded,
-                              std::unique_ptr<KmvSketch>* result) {
+absl::Status KmvSketch::Deserialize(absl::string_view encoded,
+                                    std::unique_ptr<KmvSketch>* result) {
   Kmv kmv_proto;
   if (!kmv_proto.ParseFromArray(encoded.data(), encoded.size()))
-    return tfx_bsl::errors::InvalidArgument("Failed to parse Kmv sketch");
+    return absl::InvalidArgumentError("Failed to parse Kmv sketch");
   const auto proto_hashes = kmv_proto.hashes();
   *result = std::make_unique<KmvSketch>(kmv_proto.num_buckets());
   (*result)->hashes_.insert(proto_hashes.begin(), proto_hashes.end());
   (*result)->max_limit_ = kmv_proto.max_limit();
   (*result)->input_type_ = kmv_proto.input_type();
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 InputType::Type KmvSketch::GetInputType() const {

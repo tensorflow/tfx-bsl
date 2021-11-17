@@ -20,7 +20,7 @@
 #include "zetasql/public/evaluator.h"
 #include "zetasql/public/evaluator_table_iterator.h"
 #include "zetasql/public/simple_catalog.h"
-#include "tfx_bsl/cc/util/status.h"
+#include "absl/status/status.h"
 #include "pybind11/pybind11.h"
 
 namespace arrow {
@@ -33,14 +33,14 @@ namespace tfx_bsl {
 
 class RecordBatchSQLSliceQuery {
  public:
-  static Status Make(const std::string& sql,
-                     std::shared_ptr<arrow::Schema> arrow_schema,
-                     std::unique_ptr<RecordBatchSQLSliceQuery>* result);
+  static absl::Status Make(const std::string& sql,
+                           std::shared_ptr<arrow::Schema> arrow_schema,
+                           std::unique_ptr<RecordBatchSQLSliceQuery>* result);
   ~RecordBatchSQLSliceQuery();
 
   // Creates slice keys for each row in a RecordBatch, according to a SQL
   // statement.
-  Status Execute(
+  absl::Status Execute(
       const arrow::RecordBatch& record_batch,
       std::vector<
           std::vector<std::vector<std::pair<std::string, std::string>>>>*

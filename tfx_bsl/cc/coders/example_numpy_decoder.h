@@ -19,7 +19,7 @@ limitations under the License.
 
 #include <Python.h>
 
-#include "tfx_bsl/cc/util/status.h"
+#include "absl/status/status.h"
 
 namespace tfx_bsl {
 // Parses serialized tf.example and decodes it into Dict[str, np.ndarray]
@@ -28,8 +28,8 @@ namespace tfx_bsl {
 // b) if the input serialized proto cannot be converted to string type
 // c) if the input cannot be parsed as a tf.Example proto
 // d) if the result ndarray cannot be added to the Dict.
-Status ExampleToNumpyDict(absl::string_view serialized_proto,
-                          PyObject** result);
+absl::Status ExampleToNumpyDict(absl::string_view serialized_proto,
+                                PyObject** result);
 }  // namespace tfx_bsl
 
 #endif  // TENSORFLOW_DATA_VALIDATION_CODERS_CC_FAST_EXAMPLE_DECODER_H_

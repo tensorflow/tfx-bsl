@@ -20,8 +20,8 @@ limitations under the License.
 #include <string>
 
 #include "numpy/arrayobject.h"
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
-#include "tfx_bsl/cc/util/status.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/example/feature.pb.h"
 
@@ -30,15 +30,15 @@ namespace tfx_bsl {
 using ::tensorflow::Example;
 using ::tensorflow::Feature;
 
-Status ExampleToNumpyDict(absl::string_view serialized_proto,
-                          PyObject** result) {
+absl::Status ExampleToNumpyDict(absl::string_view serialized_proto,
+                                PyObject** result) {
   // Import numpy. (This is actually a macro, and "ret" is the return value
   // if import fails.)
-  import_array1(/*ret=*/errors::Internal("Unable to import numpy."));
+  import_array1(/*ret=*/absl::InternalError("Unable to import numpy."));
   Example example;
   if (!example.ParseFromArray(serialized_proto.data(),
                               serialized_proto.size())) {
-    return errors::DataLoss("Failed to parse input proto.");
+    return absl::DataLossError("Failed to parse input proto.");
   }
 
   // Initialize Python result dict.
@@ -94,17 +94,17 @@ Status ExampleToNumpyDict(absl::string_view serialized_proto,
         break;
       }
       default: {
-        return errors::DataLoss("Invalid value list in input proto.");
+        return absl::DataLossError("Invalid value list in input proto.");
       }
     }
     const int err = PyDict_SetItemString(
         *result, feature_name.data(), feature_values_ndarray);
     Py_XDECREF(feature_values_ndarray);
     if (err == -1) {
-      return errors::Internal("Failed to insert item into Dict.");
+      return absl::InternalError("Failed to insert item into Dict.");
     }
   }
-  return Status::OK();
+  return absl::OkStatus();
 }
 
 }  // namespace tfx_bsl

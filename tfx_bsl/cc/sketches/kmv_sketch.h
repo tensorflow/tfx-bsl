@@ -20,10 +20,10 @@
 #include <set>
 #include <string>
 
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/sketches/sketches.pb.h"
-#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
 namespace sketches {
@@ -49,18 +49,18 @@ class KmvSketch {
   // Updates the sketch with an Arrow array of values, returning an error if the
   // value type of this sketch is set and different from the value type implied
   // by the input, or of the input is of an unhandled type.
-  Status AddValues(const arrow::Array& array);
+  absl::Status AddValues(const arrow::Array& array);
   // Merges another KMV sketch into this sketch. Returns error if the other
   // sketch has a different number of buckets than this sketch, or if both
   // sketches have distinct set value types.
-  Status Merge(KmvSketch& other);
+  absl::Status Merge(KmvSketch& other);
   // Estimates the number of distinct elements.
   uint64_t Estimate() const;
   // Serializes the sketch into a string.
   std::string Serialize() const;
   // Deserializes the string to a KmvSketch object.
-  static Status Deserialize(absl::string_view encoded,
-                            std::unique_ptr<KmvSketch>* result);
+  static absl::Status Deserialize(absl::string_view encoded,
+                                  std::unique_ptr<KmvSketch>* result);
   // Get the input type of this sketch.
   tfx_bsl::sketches::InputType::Type GetInputType() const;
 

@@ -18,32 +18,27 @@
 #include "absl/base/optimization.h"
 #include "absl/status/status.h"
 #include "arrow/api.h"
-#include "tfx_bsl/cc/util/status.h"
 
 namespace tfx_bsl {
 // Creates a tfx_bsl::Status from an arrow::Status.
-inline Status FromArrowStatus(::arrow::Status arrow_status) {
-  if (ABSL_PREDICT_TRUE(arrow_status.ok())) return Status::OK();
+inline absl::Status FromArrowStatus(::arrow::Status arrow_status) {
+  if (ABSL_PREDICT_TRUE(arrow_status.ok())) return absl::OkStatus();
 
   if (arrow_status.IsNotImplemented()) {
-    return errors::Unimplemented(arrow_status.message());
+    return absl::UnimplementedError(arrow_status.message());
   }
 
-  return errors::Internal(absl::StrCat("Arrow error ",
-                                       arrow_status.CodeAsString(), " : ",
-                                       arrow_status.message()));
+  return absl::InternalError(absl::StrCat("Arrow error ",
+                                          arrow_status.CodeAsString(), " : ",
+                                          arrow_status.message()));
 }
 
-// Creates a tfx_bsl::Status from an absl::Status.
-inline Status FromAbslStatus(::absl::Status absl_status) {
-  if (absl_status.ok()) {
-    return Status::OK();
-  }
-
-  return errors::Internal(
-      absl::StrCat("Absl error ", absl::StatusCodeToString(absl_status.code()),
-                   " : ", absl_status.message()));
-}
+// For propagating errors when calling a function.
+#define TFX_BSL_RETURN_IF_ERROR(...)                       \
+  do {                                                     \
+    const absl::Status _status = (__VA_ARGS__);            \
+    if (ABSL_PREDICT_FALSE(!_status.ok())) return _status; \
+  } while (0)
 
 #define _ASSIGN_OR_RETURN_ARROW_NAME(x, y) x##y
 
