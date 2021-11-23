@@ -334,7 +334,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 class _RaggedTensorHandler(_TypeHandler):
   """Handles ragged tensor."""
 
-  __slots__ = ["_values_arrow_type", "_row_partition_dtype"]
+  __slots__ = ["_values_arrow_type", "_row_partition_dtype", "_unbatched_shape"]
 
   def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
                options: TensorsToRecordBatchConverter.Options):
@@ -345,21 +345,31 @@ class _RaggedTensorHandler(_TypeHandler):
     # pylint: disable=protected-access
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec._dtype)
     self._row_partition_dtype = type_spec._row_splits_dtype
+    self._unbatched_shape = type_spec._shape.as_list()[1:]
 
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+    # Unnest all outer ragged dimensions keeping the offsets.
+    nested_offsets = []
+    while isinstance(tensor,
+                     (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue)):
+      nested_offsets.append(np.asarray(tensor.row_splits))
+      tensor = tensor.values
 
-    def _create_nested_list(tensor: TensorAlike) -> pa.Array:
-      """Recursively constructs nested arrow arrays from a tensor."""
-      if isinstance(tensor,
-                    (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue)):
-        values = tensor.values
-        return pa.LargeListArray.from_arrays(
-            offsets=np.asarray(tensor.row_splits),
-            values=_create_nested_list(values))
-      else:
-        return pa.array(np.asarray(tensor), self._values_arrow_type)
+    # Calculate the number of inner uniform dimension elements per one first
+    # ragged dimension element.
+    inner_dimension_elements = np.product(tensor.shape[1:], dtype=np.int64)
 
-    return [_create_nested_list(tensor)]
+    result = pa.array(np.ravel(tensor), self._values_arrow_type)
+    # Nest values. The innermost sequence of offsets must be adjusted by the
+    # number of uniform dimension elements.
+    nested_offsets_iter = reversed(nested_offsets)
+    result = pa.LargeListArray.from_arrays(
+        offsets=next(nested_offsets_iter) * inner_dimension_elements,
+        values=result)
+    for offsets in nested_offsets_iter:
+      result = pa.LargeListArray.from_arrays(offsets=offsets, values=result)
+
+    return [result]
 
   def arrow_fields(self) -> List[pa.Field]:
     # TODO(b/159717195): clean up protected-access
@@ -379,7 +389,12 @@ class _RaggedTensorHandler(_TypeHandler):
         if self._row_partition_dtype == tf.int32 else
         schema_pb2.TensorRepresentation.RowPartitionDType.INT64)
     result.ragged_tensor.row_partition_dtype = row_partition_dtype
-
+    for dim in self._unbatched_shape:
+      # Create uniform_row_length partitions only.
+      if dim is not None:
+        result.ragged_tensor.partition.append(
+            schema_pb2.TensorRepresentation.RaggedTensor.Partition(
+                uniform_row_length=dim))
     return result
 
   @staticmethod
@@ -394,10 +409,11 @@ class _RaggedTensorHandler(_TypeHandler):
     if type_spec._ragged_rank < 1:
       # We don't support RaggedTensors that are not ragged. They are
       # essentially dense tensors and should be converted to them and be
-      # handled by the DenseTensorHandler (if implemented).
+      # handled by the DenseTensorHandler.
       return False
-    if len(type_spec._shape) - type_spec._ragged_rank > 1:
-      # We currently do not handle leaf value tensors that are not 1-D.
+    if (any(type_spec._shape[1:type_spec._ragged_rank + 1]) or
+        not all(type_spec._shape[type_spec._ragged_rank + 1:])):
+      # We only support inner uniform dimensions.
       return False
     return type_spec._dtype != tf.bool
 

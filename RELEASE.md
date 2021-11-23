@@ -4,6 +4,9 @@
 
 ## Major Features and Improvements
 
+*   `TensorsToRecordBatchConverter` can now handle `tf.RaggedTensor`s with
+    uniform inner dimensions.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

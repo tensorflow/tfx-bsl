@@ -346,6 +346,103 @@ _CONVERT_TEST_CASES = [
                          type=pa.large_list(pa.large_binary())),
         }),
     dict(
+        testcase_name="ragged_tensors_uniform_dims",
+        type_specs={
+            "rt1":
+                tf.RaggedTensorSpec(
+                    tf.TensorShape([3, None, 2]),
+                    tf.int64,
+                    ragged_rank=1,
+                    row_splits_dtype=tf.int64),
+            "rt2":
+                tf.RaggedTensorSpec(
+                    tf.TensorShape([3, None, 2, 3]),
+                    tf.string,
+                    ragged_rank=1,
+                    row_splits_dtype=tf.int64),
+            "rt3":
+                tf.RaggedTensorSpec(
+                    tf.TensorShape([3, None, None, 2]),
+                    tf.float32,
+                    ragged_rank=2,
+                    row_splits_dtype=tf.int64),
+        },
+        expected_schema={
+            "rt1": pa.large_list(pa.int64()),
+            "rt2": pa.large_list(pa.large_binary()),
+            "rt3": pa.large_list(pa.large_list(pa.float32())),
+        },
+        expected_tensor_representations={
+            "rt1":
+                """ragged_tensor {
+                        feature_path {
+                          step: "rt1"
+                        }
+                        row_partition_dtype: INT64
+                        partition {
+                          uniform_row_length: 2
+                        }
+                      }""",
+            "rt2":
+                """ragged_tensor {
+                        feature_path {
+                          step: "rt2"
+                        }
+                        row_partition_dtype: INT64
+                        partition {
+                          uniform_row_length: 2
+                        }
+                        partition {
+                          uniform_row_length: 3
+                        }
+                      }""",
+            "rt3":
+                """ragged_tensor {
+                        feature_path {
+                          step: "rt3"
+                        }
+                        row_partition_dtype: INT64
+                        partition {
+                          uniform_row_length: 2
+                        }
+                      }""",
+        },
+        tensor_input={
+            "rt1":
+                tf.RaggedTensor.from_row_splits(
+                    values=np.asarray([[1, 3], [5, 4], [9, 7]], dtype=np.int64),
+                    row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64)),
+            "rt2":
+                tf.RaggedTensor.from_row_splits(
+                    values=np.asarray(
+                        [[[b"x", b"a", b"a"], [b"x", b"c", b"a"]],
+                         [[b"y", b"a", b"a"], [b"y", b"c", b"a"]],
+                         [[b"z", b"a", b"a"], [b"z", b"c", b"a"]]],
+                        dtype=np.str),
+                    row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64)),
+            "rt3":
+                tf.RaggedTensor.from_row_splits(
+                    values=tf.RaggedTensor.from_row_splits(
+                        values=np.asarray([[1.0, 3.0], [5.0, 4.0], [9.0, 7.0]],
+                                          dtype=np.float32),
+                        row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64)),
+                    row_splits=np.asarray([0, 0, 2, 3], dtype=np.int64)),
+        },
+        expected_record_batch={
+            "rt1":
+                pa.array([[1, 3, 5, 4], [], [9, 7]],
+                         type=pa.large_list(pa.int64())),
+            "rt2":
+                pa.array([[
+                    b"x", b"a", b"a", b"x", b"c", b"a", b"y", b"a", b"a", b"y",
+                    b"c", b"a"
+                ], [], [b"z", b"a", b"a", b"z", b"c", b"a"]],
+                         type=pa.large_list(pa.large_binary())),
+            "rt3":
+                pa.array([[], [[1.0, 3.0, 5.0, 4.0], []], [[9.0, 7.0]]],
+                         type=pa.large_list(pa.large_list(pa.float32()))),
+        }),
+    dict(
         testcase_name="sparse_tensor_no_value",
         type_specs={
             "sp1": tf.SparseTensorSpec([None, None], tf.int32),
@@ -555,9 +652,9 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
               ragged_rank=2,
               row_splits_dtype=tf.int64)),
       dict(
-          testcase_name="2d_leaf_value",
+          testcase_name="ragged_outer_uniform_dim",
           spec=tf.RaggedTensorSpec(
-              shape=[2, None, None],
+              shape=[3, 2, None],
               dtype=tf.int32,
               ragged_rank=1,
               row_splits_dtype=tf.int64)),
