@@ -24,6 +24,7 @@
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 #include "tfx_bsl/cc/coders/coders_submodule.h"
 #include "tfx_bsl/cc/sketches/sketches_submodule.h"
+#include "tfx_bsl/cc/statistics/statistics_submodule.h"
 #include "pybind11/pybind11.h"
 
 #ifndef TFX_BSL_USE_ARROW_C_ABI
@@ -48,6 +49,7 @@ PYBIND11_MODULE(
   DefineArrowSubmodule(m);
   DefineCodersSubmodule(m);
   DefineSketchesSubmodule(m);
+  DefineStatisticsSubmodule(m);
 }
 
 }  // namespace tfx_bsl
