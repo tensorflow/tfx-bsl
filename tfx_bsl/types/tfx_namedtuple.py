@@ -54,6 +54,7 @@ def namedtuple(typename, field_names, *, rename=False):
 
 class TypedNamedTuple:
   """Wrapper around `typing.NamedTuple` to provide PySpark compatibility."""
+  __slots__ = ()
 
   def __new__(cls, typename, fields=None):
     result = typing.NamedTuple(typename, fields)
