@@ -342,10 +342,9 @@ class _RaggedTensorHandler(_TypeHandler):
     super().__init__(tensor_name, type_spec)
 
     # TODO(b/159717195): clean up protected-access
-    # pylint: disable=protected-access
-    self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec._dtype)
-    self._row_partition_dtype = type_spec._row_splits_dtype
-    self._unbatched_shape = type_spec._shape.as_list()[1:]
+    self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec._dtype)  # pylint: disable=protected-access
+    self._row_partition_dtype = type_spec._row_splits_dtype  # pylint: disable=protected-access
+    self._unbatched_shape = type_spec._shape.as_list()[1:]  # pylint: disable=protected-access
 
   def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
     # Unnest all outer ragged dimensions keeping the offsets.
@@ -373,9 +372,8 @@ class _RaggedTensorHandler(_TypeHandler):
 
   def arrow_fields(self) -> List[pa.Field]:
     # TODO(b/159717195): clean up protected-access
-    # pylint: disable=protected-access
-    arrow_type = _tf_dtype_to_arrow_type(self._type_spec._dtype)
-    for _ in range(self._type_spec._ragged_rank):
+    arrow_type = _tf_dtype_to_arrow_type(self._type_spec._dtype)  # pylint: disable=protected-access
+    for _ in range(self._type_spec._ragged_rank):  # pylint:disable=protected-access
       arrow_type = pa.large_list(arrow_type)
     return [
         pa.field(self._tensor_name, arrow_type)
@@ -416,6 +414,7 @@ class _RaggedTensorHandler(_TypeHandler):
       # We only support inner uniform dimensions.
       return False
     return type_spec._dtype != tf.bool
+    # pylint:enable=protected-access
 
 
 class _SparseTensorHandler(_TypeHandler):
