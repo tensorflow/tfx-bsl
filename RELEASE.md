@@ -6,6 +6,9 @@
 
 ## Bug Fixes and Other Changes
 
+*   Fixes a bug when `TensorsToRecordBatchConverter` could not handle
+    `tf.RaggedTensor`s with uniform inner dimensions in TF 1.15.
+
 ## Breaking Changes
 
 ## Deprecations

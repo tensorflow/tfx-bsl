@@ -583,10 +583,6 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
 
     if tf.__version__ >= "2":
       convert_and_check(tensor_input, test_values_conversion=False)
-    # TODO(b/207694248): Remove broad disabling for TF 1.5 once test cases are
-    # adjusted.
-    elif any(isinstance(x, tf.RaggedTensor) for x in tensor_input.values()):
-      raise absltest.SkipTest("Test is temporarily disabled for TF<2.")
 
     if tf.executing_eagerly():
       values_input = {

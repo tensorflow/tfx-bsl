@@ -163,6 +163,7 @@ class _TypeHandler(abc.ABC):
         actual_spec = tf.RaggedTensorSpec(
             tensor.shape,
             tensor.values.dtype,
+            ragged_rank=tensor.ragged_rank,
             row_splits_dtype=tensor.row_splits.dtype)
       else:
         raise TypeError("Only ndarrays, SparseTensorValues and "
@@ -409,8 +410,9 @@ class _RaggedTensorHandler(_TypeHandler):
       # essentially dense tensors and should be converted to them and be
       # handled by the DenseTensorHandler.
       return False
-    if (any(type_spec._shape[1:type_spec._ragged_rank + 1]) or
-        not all(type_spec._shape[type_spec._ragged_rank + 1:])):
+    shape = type_spec._shape.as_list()
+    if (any(shape[1:type_spec._ragged_rank + 1]) or
+        not all(shape[type_spec._ragged_rank + 1:])):
       # We only support inner uniform dimensions.
       return False
     return type_spec._dtype != tf.bool
