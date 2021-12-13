@@ -29,25 +29,18 @@ namespace {
 using proto2::TextFormat;
 using tensorflow::metadata::v0::DatasetFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatisticsList;
+using tfx_bsl::statistics::AccumulatorOptions;
 using tfx_bsl::statistics::DatasetListAccumulator;
 
 // Helper for tests.
-absl::StatusOr<std::unique_ptr<DatasetFeatureStatisticsList>> MergeAtVersion(
-    const std::vector<DatasetFeatureStatistics>& shards, int target_version) {
-  DatasetListAccumulator acc = DatasetListAccumulator();
+absl::StatusOr<std::unique_ptr<DatasetFeatureStatisticsList>> Merge(
+    const std::vector<DatasetFeatureStatistics>& shards,
+    const AccumulatorOptions& opts = AccumulatorOptions::Defaults()) {
+  DatasetListAccumulator acc = DatasetListAccumulator(opts);
   for (const auto& shard : shards) {
     TFX_BSL_RETURN_IF_ERROR(acc.MergeShard(shard));
   }
-  return acc.GetAtVersion(target_version);
-}
-
-TEST(MergeUtilTest, ZeroInputsEmptyOutput) {
-  std::vector<DatasetFeatureStatistics> input;
-  DatasetFeatureStatisticsList expected;
-  auto output_or = MergeAtVersion(input, 0 /* version */);
-  ASSERT_OK(output_or.status());
-  DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::EqualsProto(expected));
+  return acc.Get();
 }
 
 TEST(MergeUtilTest, MergesTwoSlices) {
@@ -76,7 +69,7 @@ TEST(MergeUtilTest, MergesTwoSlices) {
                                   "weighted_num_examples: 0.5 "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -102,7 +95,7 @@ TEST(MergeUtilTest, MergesSingleShardedSlice) {
                                   "weighted_num_examples: 0.5 "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -120,7 +113,7 @@ TEST(MergeUtilTest, InconsistentNumExamplesIsAnError) {
       TextFormat::ParseFromString("name: 'slice1' "
                                   "num_examples: 2 ",
                                   &slice2));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_FALSE(output_or.ok());
 }
 
@@ -135,7 +128,7 @@ TEST(MergeUtilTest, InconsistentWeightedNumExamplesIsAnError) {
       TextFormat::ParseFromString("name: 'slice1' "
                                   "weighted_num_examples: 2 ",
                                   &slice2));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_FALSE(output_or.ok());
 }
 
@@ -170,7 +163,7 @@ TEST(MergeUtilTest, MergesDistinctFeaturesByName) {
                                   "} "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -224,7 +217,7 @@ TEST(MergeUtilTest, MergesDistinctFeaturesByPath) {
                                   "} "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -275,7 +268,7 @@ TEST(MergeUtilTest, MergesSameFeaturesByPath) {
                                   "} "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -303,7 +296,7 @@ TEST(MergeUtilTest, InconsistentFeatureTypesIsAnError) {
                                   "  type: FLOAT "
                                   "} ",
                                   &slice2));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_FALSE(output_or.ok());
 }
 
@@ -330,7 +323,7 @@ TEST(MergeUtilTest, InconsistentStatsOneofIsAnError) {
                                   "  } "
                                   "} ",
                                   &slice2));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_FALSE(output_or.ok());
 }
 
@@ -385,7 +378,7 @@ TEST(MergeUtilTest, MergesDistinctCrossFeatures) {
                                   "} "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -439,7 +432,7 @@ TEST(MergeUtilTest, MergesSameCrossFeatures) {
                                   "} "
                                   "} ",
                                   &expected));
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_OK(output_or.status());
   DatasetFeatureStatisticsList output = **output_or;
   EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
@@ -476,7 +469,28 @@ TEST(MergeUtilTest, InconsistentCrossStatsIsAnError) {
                                   "} ",
                                   &slice2));
 
-  auto output_or = MergeAtVersion({slice1, slice2}, 0);
+  auto output_or = Merge({slice1, slice2});
   ASSERT_FALSE(output_or.ok());
 }
+
+TEST(MergeUtilTest, VersionNonzeroError) {
+  auto output_or = Merge({}, AccumulatorOptions(1, true));
+  ASSERT_FALSE(output_or.ok());
+}
+
+TEST(MergeUtilTest, EmptyPlaceholderTrue) {
+  auto output_or = Merge({}, AccumulatorOptions(0, true));
+  ASSERT_OK(output_or.status());
+  DatasetFeatureStatisticsList expected;
+  ASSERT_TRUE(TextFormat::ParseFromString("datasets: {} ", &expected));
+  EXPECT_THAT(**output_or, testing::EqualsProto(expected));
+}
+
+TEST(MergeUtilTest, EmptyPlaceholderFalse) {
+  auto output_or = Merge({}, AccumulatorOptions(0, false));
+  ASSERT_OK(output_or.status());
+  DatasetFeatureStatisticsList expected;
+  EXPECT_THAT(**output_or, testing::EqualsProto(expected));
+}
+
 }  // namespace

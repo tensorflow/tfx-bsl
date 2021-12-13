@@ -134,7 +134,7 @@ absl::Status MergeCrossFeatureStatistics(
     return absl::InvalidArgumentError(
         "CrossFeatureStatistics shards with different cross_stats");
   }
-  // TODO(202910677): Consider strictness here too.
+  // TODO(b/202910677): Consider strictness here too.
   switch (merge_from.cross_stats_case()) {
     case CrossFeatureStatistics::CROSS_STATS_NOT_SET:
       break;
@@ -279,7 +279,8 @@ class MutableDatasetListViewImpl : public MutableDatasetListView {
 };
 }  // namespace
 
-DatasetListAccumulator::DatasetListAccumulator() {
+DatasetListAccumulator::DatasetListAccumulator(const AccumulatorOptions options)
+    : options_(options) {
   auto value = std::make_unique<DatasetFeatureStatisticsList>();
   std::unique_ptr<MutableDatasetListView> view(
       new MutableDatasetListViewImpl(value.get()));
@@ -288,9 +289,13 @@ DatasetListAccumulator::DatasetListAccumulator() {
 }
 
 absl::StatusOr<std::unique_ptr<DatasetFeatureStatisticsList>>
-DatasetListAccumulator::GetAtVersion(int target_version) {
+DatasetListAccumulator::Get() {
   if (value_ == nullptr)
-    return absl::InvalidArgumentError("GetAtVersion called more than once");
+    return absl::InvalidArgumentError("Get called more than once");
+  if (options_.target_version != 0)
+    return absl::UnimplementedError("Version > 0 unsupported.");
+  if (options_.include_empty_placeholder && value_->datasets().empty())
+    value_->add_datasets();
   return std::move(value_);
 }
 

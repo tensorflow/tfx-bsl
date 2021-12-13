@@ -17,6 +17,7 @@
 #include <stdexcept>
 
 #include "absl/status/status.h"
+#include "absl/types/optional.h"
 #include "tfx_bsl/cc/statistics/merge_util.h"
 #include "pybind11/attr.h"
 #include "pybind11/pytypes.h"
@@ -28,13 +29,20 @@ namespace py = pybind11;
 
 using tensorflow::metadata::v0::DatasetFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatisticsList;
+using tfx_bsl::statistics::AccumulatorOptions;
 using tfx_bsl::statistics::DatasetListAccumulator;
 
 void DefineDatasetListAccumulatorClass(py::module stats_module) {
   // TODO(b/202910677): I'm having trouble getting native proto casters working
   // in tfx_bsl. Until then, serialize at the boundary.
   py::class_<DatasetListAccumulator>(stats_module, "DatasetListAccumulator")
-      .def(py::init())
+      .def(py::init([](int target_version, bool include_empty_placeholder) {
+             AccumulatorOptions opts =
+                 AccumulatorOptions(target_version, include_empty_placeholder);
+             return DatasetListAccumulator(opts);
+           }),
+           py::arg("target_version") = 0,
+           py::arg("include_empty_placeholder") = true)
       .def(
           "MergeDatasetFeatureStatistics",
           [](DatasetListAccumulator& acc, const std::string& shard_serialized) {
@@ -51,20 +59,20 @@ void DefineDatasetListAccumulatorClass(py::module stats_module) {
           py::doc("Merges a collection of DatasetFeatureStatistics shards into "
                   "a single DatasetFeatureStatistics."),
           py::call_guard<py::gil_scoped_release>())
-      .def("GetAtVersion",
-           [](DatasetListAccumulator& acc, const int version) {
+      .def("Get",
+           [](DatasetListAccumulator& acc) {
              absl::StatusOr<std::unique_ptr<DatasetFeatureStatisticsList>>
                    result_or;
              {
                py::gil_scoped_release release_gil;
-               result_or = acc.GetAtVersion(version);
+               result_or = acc.Get();
                if (!result_or.ok()) {
                  throw std::runtime_error(result_or.status().ToString());
                }
              }
              return py::bytes((*result_or)->SerializeAsString());
            }),
-      py::doc("Retrieve a DatasetFeatureStatisticsList at the target version.");
+      py::doc("Retrieve a merged DatasetFeatureStatisticsList.");
 }
 }  // namespace
 

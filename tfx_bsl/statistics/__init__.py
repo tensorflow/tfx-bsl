@@ -19,7 +19,6 @@
 # See b/148667210 for why the ImportError is ignored.
 try:
   from tfx_bsl.cc.tfx_bsl_extension.statistics import DatasetListAccumulator
-  from tfx_bsl.statistics import merge_dataset_feature_statistics
 except ImportError as err:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.statistics. "

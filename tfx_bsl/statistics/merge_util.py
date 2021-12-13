@@ -34,7 +34,7 @@ def merge_dataset_feature_statistics(
   acc = statistics.DatasetListAccumulator()
   for stats_proto in stats_protos:
     acc.MergeDatasetFeatureStatistics(stats_proto.SerializeToString())
-  res_str = acc.GetAtVersion(0)
+  res_str = acc.Get()
   result = statistics_pb2.DatasetFeatureStatisticsList()
   result.ParseFromString(res_str)
   return result

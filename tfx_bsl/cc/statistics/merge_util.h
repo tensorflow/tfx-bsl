@@ -47,18 +47,35 @@ class MutableDatasetListView {
       const tensorflow::metadata::v0::DatasetFeatureStatistics& dataset) = 0;
 };
 
+// Options for DatasetListAccumulator.
+class AccumulatorOptions {
+ public:
+  AccumulatorOptions(int target_version, bool include_empty_placeholder)
+      : target_version(target_version),
+        include_empty_placeholder(include_empty_placeholder) {}
+
+  static inline AccumulatorOptions Defaults() {
+    return AccumulatorOptions(0, true);
+  }
+  // The DatasetFeatureStatisticsList version to return. Currently only version
+  // zero is supported.
+  int target_version;
+  // If true, include an empty DatasetFeatureStatistics in otherwise empty
+  // outputs.
+  bool include_empty_placeholder;
+};
+
 // DatasetListAccumulator accumulates sharded DatasetFeatureStatistics into
 // a single DatasetFeatureStatisticsList, and handles conversion to a target
 // version. This class owns its underlying DatasetFeatureStatisticsList value.
 class DatasetListAccumulator {
  public:
-  DatasetListAccumulator();
-
+  explicit DatasetListAccumulator(const AccumulatorOptions options);
   // Retrieve the merger result. This releases ownership of the underlying
   // DatasetFeatureStatisticsList, and can be called at most once.
   absl::StatusOr<
       std::unique_ptr<tensorflow::metadata::v0::DatasetFeatureStatisticsList>>
-  GetAtVersion(int target_version);
+  Get();
 
   // Merge with a DatasetFeatureStatistics shard, updating in place.
   absl::Status MergeShard(
@@ -68,6 +85,7 @@ class DatasetListAccumulator {
   std::unique_ptr<tensorflow::metadata::v0::DatasetFeatureStatisticsList>
       value_;
   std::unique_ptr<MutableDatasetListView> view_;
+  const AccumulatorOptions options_;
 };
 
 }  // namespace statistics
