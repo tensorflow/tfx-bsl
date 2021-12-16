@@ -46,6 +46,7 @@ function setup_environment() {
   export WHEEL_BIN="${PYTHON_DIR}"/bin/wheel
   ${PIP_BIN} install --upgrade pip
   ${PIP_BIN} install wheel --upgrade
+  # We use old numpy version for compatibility with TF 1.15. (b/206845101)
   ${PIP_BIN} install "numpy>=1.16,<1.20"
   pip3 install auditwheel
 }

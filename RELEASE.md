@@ -8,6 +8,7 @@
 
 *   Fixes a bug when `TensorsToRecordBatchConverter` could not handle
     `tf.RaggedTensor`s with uniform inner dimensions in TF 1.15.
+*   Depends on `numpy>=1.16,<2`.
 
 ## Breaking Changes
 
