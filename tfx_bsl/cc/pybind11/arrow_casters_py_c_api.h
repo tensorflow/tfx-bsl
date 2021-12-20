@@ -35,7 +35,10 @@ struct type_caster<std::shared_ptr<arrow::Array>> {
                        _<std::shared_ptr<arrow::Array>>());
 
   bool load(handle src, bool unused_implicit_conversion) {
-    return arrow::py::unwrap_array(src.ptr(), &value).ok();
+    auto arrow_result = arrow::py::unwrap_array(src.ptr());
+    if (!arrow_result.ok()) return false;
+    value = std::move(arrow_result).ValueOrDie();
+    return true;
   }
 
   static handle cast(const std::shared_ptr<arrow::Array>& src,
@@ -52,7 +55,10 @@ struct type_caster<std::shared_ptr<arrow::Schema>> {
                        _<std::shared_ptr<arrow::Schema>>());
 
   bool load(handle src, bool unused_implicit_conversion) {
-    return arrow::py::unwrap_schema(src.ptr(), &value).ok();
+    auto arrow_result = arrow::py::unwrap_schema(src.ptr());
+    if (!arrow_result.ok()) return false;
+    value = std::move(arrow_result).ValueOrDie();
+    return true;
   }
 
   static handle cast(const std::shared_ptr<arrow::Schema>& src,
