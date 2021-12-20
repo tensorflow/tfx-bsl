@@ -610,7 +610,7 @@ class GetByteSizeVisitor : public arrow::ArrayVisitor {
 
   arrow::Status Visit(const arrow::StructArray& array) {
     result_ += GetNullBitmapByteSize(array);
-    const int num_children = array.struct_type()->num_children();
+    const int num_children = array.struct_type()->num_fields();
     for (int i = 0; i < num_children; ++i) {
       // We don't need to pass on the offsets and lengths to the child
       // visitor because StructArray::field() handles it.
