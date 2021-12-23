@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "tfx_bsl/cc/coders/example_coder.h"
-
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -26,6 +24,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
+#include "tfx_bsl/cc/coders/example_coder.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/example/feature.pb.h"
@@ -246,9 +245,8 @@ class FeatureDecoder {
 class FloatDecoder : public FeatureDecoder {
  public:
   static FloatDecoder* Make() {
-    return new FloatDecoder(
-        std::make_shared<arrow::FloatBuilder>(
-                        arrow::float32(), arrow::default_memory_pool()));
+    return new FloatDecoder(std::make_shared<arrow::FloatBuilder>(
+        arrow::float32(), arrow::default_memory_pool()));
   }
 
  protected:
@@ -267,8 +265,7 @@ class FloatDecoder : public FeatureDecoder {
 
  private:
   FloatDecoder(const std::shared_ptr<arrow::FloatBuilder>& values_builder)
-      : FeatureDecoder(values_builder),
-        values_builder_(values_builder) {}
+      : FeatureDecoder(values_builder), values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::FloatBuilder> values_builder_;
 };
@@ -277,7 +274,7 @@ class IntDecoder : public FeatureDecoder {
  public:
   static IntDecoder* Make() {
     return new IntDecoder(std::make_shared<arrow::Int64Builder>(
-                              arrow::int64(), arrow::default_memory_pool()));
+        arrow::int64(), arrow::default_memory_pool()));
   }
 
  protected:
@@ -296,8 +293,7 @@ class IntDecoder : public FeatureDecoder {
 
  private:
   IntDecoder(const std::shared_ptr<arrow::Int64Builder>& values_builder)
-      : FeatureDecoder(values_builder),
-        values_builder_(values_builder) {}
+      : FeatureDecoder(values_builder), values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::Int64Builder> values_builder_;
 };
@@ -337,9 +333,8 @@ class FeatureListDecoder {
   FeatureListDecoder(const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
       : inner_list_builder_(MakeListBuilderWrapper(
             values_builder, arrow::default_memory_pool())),
-        outer_list_builder_(
-            MakeListBuilderWrapper(inner_list_builder_->wrapped(),
-                                   arrow::default_memory_pool())),
+        outer_list_builder_(MakeListBuilderWrapper(
+            inner_list_builder_->wrapped(), arrow::default_memory_pool())),
         feature_list_was_added_(false) {}
   virtual ~FeatureListDecoder() {}
 
@@ -393,9 +388,8 @@ class FeatureListDecoder {
 class FloatListDecoder : public FeatureListDecoder {
  public:
   static FloatListDecoder* Make() {
-    return new FloatListDecoder(
-        std::make_shared<arrow::FloatBuilder>(
-                        arrow::float32(), arrow::default_memory_pool()));
+    return new FloatListDecoder(std::make_shared<arrow::FloatBuilder>(
+        arrow::float32(), arrow::default_memory_pool()));
   }
 
  protected:
@@ -421,8 +415,7 @@ class FloatListDecoder : public FeatureListDecoder {
 
  private:
   FloatListDecoder(const std::shared_ptr<arrow::FloatBuilder>& values_builder)
-      : FeatureListDecoder(values_builder),
-        values_builder_(values_builder) {}
+      : FeatureListDecoder(values_builder), values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::FloatBuilder> values_builder_;
 };
@@ -430,9 +423,8 @@ class FloatListDecoder : public FeatureListDecoder {
 class IntListDecoder : public FeatureListDecoder {
  public:
   static IntListDecoder* Make() {
-    return new IntListDecoder(
-        std::make_shared<arrow::Int64Builder>(
-                        arrow::int64(), arrow::default_memory_pool()));
+    return new IntListDecoder(std::make_shared<arrow::Int64Builder>(
+        arrow::int64(), arrow::default_memory_pool()));
   }
 
  protected:
@@ -458,8 +450,7 @@ class IntListDecoder : public FeatureListDecoder {
 
  private:
   IntListDecoder(const std::shared_ptr<arrow::Int64Builder>& values_builder)
-      : FeatureListDecoder(values_builder),
-        values_builder_(values_builder) {}
+      : FeatureListDecoder(values_builder), values_builder_(values_builder) {}
 
   std::shared_ptr<arrow::Int64Builder> values_builder_;
 };
@@ -574,8 +565,8 @@ class UnknownTypeFeatureListDecoder {
   absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
     std::shared_ptr<arrow::NullBuilder> values_builder =
         std::make_shared<arrow::NullBuilder>(arrow::default_memory_pool());
-    std::unique_ptr<ListBuilderInterface> list_builder = MakeListBuilderWrapper(
-        values_builder, arrow::default_memory_pool());
+    std::unique_ptr<ListBuilderInterface> list_builder =
+        MakeListBuilderWrapper(values_builder, arrow::default_memory_pool());
     for (int i = 0; i < null_counts_.size(); ++i) {
       if (null_counts_[i] == -1) {
         TFX_BSL_RETURN_IF_ERROR(list_builder->AppendNull());
@@ -623,8 +614,7 @@ absl::Status DecodeTopLevelFeatures(
           feature_decoder = FloatDecoder::Make();
           break;
         case tensorflow::Feature::kBytesList:
-          feature_decoder =
-              BytesDecoder::Make();
+          feature_decoder = BytesDecoder::Make();
           break;
         case tensorflow::Feature::KIND_NOT_SET:
           // Leave feature_decoder as nullptr.
@@ -644,9 +634,9 @@ absl::Status DecodeTopLevelFeatures(
     if (feature_decoder) {
       absl::Status status = feature_decoder->DecodeFeature(feature);
       if (!status.ok()) {
-        return absl::Status(
-            status.code(), absl::StrCat(status.message(),
-                                        " for feature \"", feature_name, "\""));
+        return absl::Status(status.code(),
+                            absl::StrCat(status.message(), " for feature \"",
+                                         feature_name, "\""));
       }
     }
   }
@@ -717,8 +707,8 @@ absl::Status ExamplesToRecordBatchDecoder::Make(
     absl::optional<absl::string_view> serialized_schema,
     std::unique_ptr<ExamplesToRecordBatchDecoder>* result) {
   if (!serialized_schema) {
-    *result = absl::WrapUnique(
-        new ExamplesToRecordBatchDecoder(nullptr, nullptr));
+    *result =
+        absl::WrapUnique(new ExamplesToRecordBatchDecoder(nullptr, nullptr));
     return absl::OkStatus();
   }
   auto feature_decoders = absl::make_unique<
@@ -738,12 +728,11 @@ absl::Status ExamplesToRecordBatchDecoder::Make(
       // different environments, the first feature will be taken.
       continue;
     }
-    TFX_BSL_RETURN_IF_ERROR(MakeFeatureDecoder(
-        feature, &(*feature_decoders)[feature.name()]));
-    arrow_schema_fields.emplace_back();
     TFX_BSL_RETURN_IF_ERROR(
-        TfmdFeatureToArrowField(/*is_sequence_feature=*/false,
-                                feature, &arrow_schema_fields.back()));
+        MakeFeatureDecoder(feature, &(*feature_decoders)[feature.name()]));
+    arrow_schema_fields.emplace_back();
+    TFX_BSL_RETURN_IF_ERROR(TfmdFeatureToArrowField(
+        /*is_sequence_feature=*/false, feature, &arrow_schema_fields.back()));
   }
   *result = absl::WrapUnique(new ExamplesToRecordBatchDecoder(
       arrow::schema(std::move(arrow_schema_fields)),
@@ -789,10 +778,9 @@ absl::Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
       if (it != feature_decoders_->end()) {
         absl::Status status = it->second->DecodeFeature(feature);
         if (!status.ok()) {
-          return absl::Status(
-              status.code(),
-              absl::StrCat(status.message(), " for feature \"",
-                           feature_name, "\""));
+          return absl::Status(status.code(),
+                              absl::StrCat(status.message(), " for feature \"",
+                                           feature_name, "\""));
         }
       }
     }
@@ -885,8 +873,7 @@ absl::Status SequenceExamplesToRecordBatchDecoder::Make(
     std::unique_ptr<SequenceExamplesToRecordBatchDecoder>* result) {
   if (!serialized_schema) {
     *result = absl::WrapUnique(new SequenceExamplesToRecordBatchDecoder(
-        sequence_feature_column_name, nullptr, nullptr,
-        nullptr, nullptr));
+        sequence_feature_column_name, nullptr, nullptr, nullptr, nullptr));
     return absl::OkStatus();
   }
   auto context_feature_decoders = absl::make_unique<
@@ -948,13 +935,11 @@ absl::Status SequenceExamplesToRecordBatchDecoder::Make(
     }
     // If the feature is not the top-level sequence feature, it is a context
     // feature.
-    TFX_BSL_RETURN_IF_ERROR(
-        MakeFeatureDecoder( feature,
-                           &(*context_feature_decoders)[feature.name()]));
+    TFX_BSL_RETURN_IF_ERROR(MakeFeatureDecoder(
+        feature, &(*context_feature_decoders)[feature.name()]));
     arrow_schema_fields.emplace_back();
-    TFX_BSL_RETURN_IF_ERROR(
-        TfmdFeatureToArrowField(/*is_sequence_feature=*/false,
-                                feature, &arrow_schema_fields.back()));
+    TFX_BSL_RETURN_IF_ERROR(TfmdFeatureToArrowField(
+        /*is_sequence_feature=*/false, feature, &arrow_schema_fields.back()));
   }
   std::shared_ptr<arrow::StructType> sequence_features_struct_type = nullptr;
   if (!(*sequence_feature_schema_fields).empty()) {
@@ -1024,10 +1009,9 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
       if (it != context_feature_decoders_->end()) {
         absl::Status status = it->second->DecodeFeature(context_feature);
         if (!status.ok()) {
-          return absl::Status(
-              status.code(),
-              absl::StrCat(status.message(), " for feature \"",
-                           context_feature_name, "\""));
+          return absl::Status(status.code(),
+                              absl::StrCat(status.message(), " for feature \"",
+                                           context_feature_name, "\""));
         }
       }
     }
@@ -1060,7 +1044,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
   for (const std::shared_ptr<arrow::Field>& field : arrow_schema_->fields()) {
     if (field->name() == sequence_feature_column_name_) {
       for (const std::shared_ptr<arrow::Field>& child_field :
-           field->type()->children()) {
+           field->type()->fields()) {
         FeatureListDecoder& decoder =
             *sequence_feature_decoders_->at(child_field->name());
         sequence_feature_arrays.emplace_back();
@@ -1260,9 +1244,9 @@ absl::Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
     std::shared_ptr<arrow::RecordBatch>* result) {
   std::vector<std::shared_ptr<arrow::Array>> arrays;
   std::vector<std::shared_ptr<arrow::Field>> fields;
-  TFX_BSL_RETURN_IF_ERROR(FinishTopLevelFeatures(
-      all_context_features_, context_feature_decoders_,
-      num_examples_processed_, &arrays, &fields));
+  TFX_BSL_RETURN_IF_ERROR(
+      FinishTopLevelFeatures(all_context_features_, context_feature_decoders_,
+                             num_examples_processed_, &arrays, &fields));
 
   std::vector<std::shared_ptr<arrow::Array>> sequence_feature_arrays;
   std::vector<std::shared_ptr<arrow::Field>> sequence_feature_fields;
@@ -1312,8 +1296,8 @@ absl::Status SchemalessIncrementalSequenceExamplesDecoder::Finish(
         arrow::field(sequence_feature_column_name_, arrays.back()->type()));
   }
 
-  *result = arrow::RecordBatch::Make(
-      arrow::schema(fields), num_examples_processed_, arrays);
+  *result = arrow::RecordBatch::Make(arrow::schema(fields),
+                                     num_examples_processed_, arrays);
 
   Reset();
   return absl::OkStatus();

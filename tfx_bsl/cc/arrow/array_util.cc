@@ -27,10 +27,10 @@
 namespace tfx_bsl {
 namespace {
 using ::arrow::Array;
-using ::arrow::LargeListArray;
-using ::arrow::ListArray;
 using ::arrow::Int32Builder;
 using ::arrow::Int64Builder;
+using ::arrow::LargeListArray;
+using ::arrow::ListArray;
 
 std::unique_ptr<Int32Builder> GetOffsetsBuilder(const arrow::ListArray&) {
   return absl::make_unique<Int32Builder>();
@@ -186,9 +186,10 @@ class FillNullListsVisitor : public arrow::ArrayVisitor {
     if (begin != end) {
       array_fragments.push_back(array.Slice(begin, end - begin));
     }
-    // TODO(zhuo): use the concatenate() that returns a Result<>.
-    return arrow::Concatenate(array_fragments, arrow::default_memory_pool(),
-                              &result_);
+    ARROW_ASSIGN_OR_RAISE(
+        result_,
+        arrow::Concatenate(array_fragments, arrow::default_memory_pool()));
+    return arrow::Status::OK();
   }
 
   const Array& fill_with_;
@@ -212,12 +213,10 @@ class GetBinaryArrayTotalByteSizeVisitor : public arrow::ArrayVisitor {
     return VisitInternal(large_string_array);
   }
 
-  size_t get_result() const {
-    return result_;
-  }
+  size_t get_result() const { return result_; }
 
  private:
-  template<typename BinaryLikeArray>
+  template <typename BinaryLikeArray>
   arrow::Status VisitInternal(const BinaryLikeArray& array) {
     result_ = array.value_offset(array.length()) - array.value_offset(0);
     return arrow::Status::OK();
@@ -239,7 +238,7 @@ bool IsBinaryType(const arrow::DataType& t) {
 // is determined by table insertion order of the first occurence of a value.
 class StringViewMemoTable {
  public:
-  template<typename BinaryArrayT>
+  template <typename BinaryArrayT>
   StringViewMemoTable(const BinaryArrayT& values) : null_index_(-1) {
     lookup_table_.reserve(values.length());
     int size = 0;
@@ -249,9 +248,8 @@ class StringViewMemoTable {
         continue;
       }
       auto value = values.GetView(i);
-      auto iter_and_inserted =
-        lookup_table_.insert(std::make_pair(
-            absl::string_view(value.data(), value.size()), size));
+      auto iter_and_inserted = lookup_table_.insert(
+          std::make_pair(absl::string_view(value.data(), value.size()), size));
       if (iter_and_inserted.second) ++size;
     }
   }
@@ -262,9 +260,7 @@ class StringViewMemoTable {
     return iter->second;
   }
 
-  int null_index() const {
-    return null_index_;
-  }
+  int null_index() const { return null_index_; }
 
  private:
   // slot index of null value. -1 if null value does not exist in the table.
@@ -541,7 +537,7 @@ class RowSplitsRep {
     return absl::get<absl::Span<const PayloadT>>(rep_);
   }
 
-  template<typename PayloadT>
+  template <typename PayloadT>
   size_t MaxLengthInternal() const {
     auto row_splits = this->get<PayloadT>();
     size_t max_length = 0;
@@ -552,7 +548,7 @@ class RowSplitsRep {
     return max_length;
   }
 
-  template<typename PayloadT>
+  template <typename PayloadT>
   int64_t LookupAndUpdateInternal(const int64_t v, size_t* idx) const {
     auto row_splits = this->get<PayloadT>();
     // Note that row_splits does not always start with 0, as the ListArray
@@ -577,10 +573,8 @@ class GetByteSizeVisitor : public arrow::ArrayVisitor {
 
   size_t result() const { return result_; }
 
-#define VISIT_TYPE_WITH(TYPE, VISIT_FUNC)                       \
-  arrow::Status Visit(const TYPE& array) override { \
-    return VISIT_FUNC(array);                 \
-  }
+#define VISIT_TYPE_WITH(TYPE, VISIT_FUNC) \
+  arrow::Status Visit(const TYPE& array) override { return VISIT_FUNC(array); }
 
   VISIT_TYPE_WITH(arrow::Int8Array, NumericArrayImpl)
   VISIT_TYPE_WITH(arrow::Int16Array, NumericArrayImpl)
@@ -645,7 +639,7 @@ class GetByteSizeVisitor : public arrow::ArrayVisitor {
     return (GetArrayLength(array) + 7) / 8;
   }
 
-  template<typename ListLikeT>
+  template <typename ListLikeT>
   arrow::Status ListLikeImpl(const ListLikeT& array) {
     const size_t length = GetArrayLength(array);
     // Size of the offsets.
@@ -664,7 +658,7 @@ class GetByteSizeVisitor : public arrow::ArrayVisitor {
     return arrow::Status::OK();
   }
 
-  template<typename BinaryLikeT>
+  template <typename BinaryLikeT>
   arrow::Status BinaryLikeImpl(const BinaryLikeT& array) {
     const size_t length = GetArrayLength(array);
     const auto* offsets = array.raw_value_offsets();
@@ -718,7 +712,7 @@ absl::Status CooFromListArray(
   while (true) {
     bool is_list_array = true;
     switch (values->type()->id()) {
-      case arrow::Type::LIST:  {
+      case arrow::Type::LIST: {
         ListArray* list_array = static_cast<ListArray*>(values.get());
         RowSplitsRep row_splits(*list_array);
         nested_row_splits.push_back(row_splits);
@@ -775,8 +769,8 @@ absl::Status CooFromListArray(
   // Note that elements in this vector is non-decreasing as we go through the
   // values in order. That's why it persists outside the loop and gets updated
   // by lookup_and_update().
-  std::vector<size_t> current_owning_sublist_indices(
-      nested_row_splits.size(), 0);
+  std::vector<size_t> current_owning_sublist_indices(nested_row_splits.size(),
+                                                     0);
   for (size_t i = 0; i < values->length(); ++i) {
     int64_t* current_coo = coo_flat + i * coo_length;
     int64_t current_idx = i;
