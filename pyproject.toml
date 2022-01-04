@@ -18,5 +18,6 @@ requires = [
   "wheel",
   # Required for using org_tensorflow bazel repository.
   # We deliberately use old numpy version for compatibility with TF 1.15.
+  # (b/206845101)
   "numpy>=1.16,<1.20",
 ]
