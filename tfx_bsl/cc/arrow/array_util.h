@@ -18,6 +18,7 @@
 #include <memory>
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 
 namespace arrow {
 class Array;
@@ -110,5 +111,11 @@ absl::Status FillNullLists(const std::shared_ptr<arrow::Array>& list_array,
 // from the byte size of the buffers that `array` consists of, because of
 // slicing offsets and buffer reservation (buffer_size != buffer_capacity).
 absl::Status GetByteSize(const arrow::Array& array, size_t* result);
+
+
+// Given an array of type binary, large-binary, string, or large-string, returns
+// the count of valid UTF8 values. Arrays of other types return a non-OK
+// status.
+absl::StatusOr<size_t> CountValidUtf8(arrow::Array& array);
 }  // namespace tfx_bsl
 #endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

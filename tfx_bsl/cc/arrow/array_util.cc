@@ -17,12 +17,14 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "absl/types/variant.h"
 #include "arrow/api.h"
 #include "arrow/compute/api.h"
 #include "tfx_bsl/cc/util/status_util.h"
+#include "tfx_bsl/cc/util/utf8.h"
 
 namespace tfx_bsl {
 namespace {
@@ -823,4 +825,58 @@ absl::Status GetByteSize(const Array& array, size_t* result) {
   *result = v.result();
   return absl::OkStatus();
 }
+
+
+namespace {
+
+// Return the count of valid UTF-8 strings in input, skipping nulls.
+template <typename T>
+size_t CountValid(const arrow::BaseBinaryArray<T>& array) {
+  size_t valid = 0;
+  for (int i = 0; i < array.length(); i++) {
+    if (array.IsNull(i)) {
+      continue;
+    }
+    const auto value = array.GetView(i);
+    const auto item = absl::string_view(value.data(), value.size());
+    if (IsValidUtf8(item)) ++valid;
+  }
+  return valid;
+}
+
+class ValidateVisitor : public arrow::ArrayVisitor {
+ public:
+  arrow::Status Visit(const arrow::BinaryArray& array) override {
+    valid_count_ = CountValid(array);
+    return arrow::Status::OK();
+  }
+  arrow::Status Visit(const arrow::LargeBinaryArray& array) override {
+    valid_count_ = CountValid(array);
+    return arrow::Status::OK();
+  }
+  arrow::Status Visit(const arrow::StringArray& array) override {
+    valid_count_ = CountValid(array);
+    return arrow::Status::OK();
+  }
+  arrow::Status Visit(const arrow::LargeStringArray& array) override {
+    valid_count_ = CountValid(array);
+    return arrow::Status::OK();
+  }
+
+  size_t ValidCount() const {
+    return valid_count_;
+  }
+
+ private:
+  size_t valid_count_ = 0;
+};
+
+}  // namespace
+
+absl::StatusOr<size_t> CountValidUtf8(arrow::Array& array) {
+  ValidateVisitor v;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
+  return v.ValidCount();
+}
+
 }  // namespace tfx_bsl

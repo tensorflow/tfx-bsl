@@ -682,5 +682,47 @@ class ToSingletonListArrayTest(parameterized.TestCase):
         "expected: {}; got: {}".format(expected_result, result))
 
 
+_COUNT_VALID_UTF8_TEST_CASES = [
+    dict(
+        testcase_name="all_valid_string_array",
+        array=pa.array(["a", "b", "c"], type="string"),
+        expected_count=3,
+    ),
+    dict(
+        testcase_name="all_valid_binary_array",
+        array=pa.array([b"a", b"b", b"c"], type="binary"),
+        expected_count=3,
+    ),
+    dict(
+        testcase_name="skips_none",
+        array=pa.array([b"a", None, b"c"], type="binary"),
+        expected_count=2,
+    ),
+    dict(
+        testcase_name="some_valid_binary_array",
+        array=pa.array([b"a", b"b", b"\xfc\xa1\xa1\xa1\xa1\xa1"],
+                       type="binary"),
+        expected_count=2,
+    ),
+    dict(
+        testcase_name="invalid_type",
+        array=pa.array([1, 2, 3]),
+        expected_error="UNIMPLEMENTED: int64",
+    ),
+]
+
+
+class CountValidUtf8(parameterized.TestCase):
+
+  @parameterized.named_parameters(*_COUNT_VALID_UTF8_TEST_CASES)
+  def test_count_utf8(self, array, expected_count=None, expected_error=None):
+    if expected_error:
+      with self.assertRaisesRegex(RuntimeError, expected_error):
+        array_util.CountValidUTF8(array)
+    else:
+      count = array_util.CountValidUTF8(array)
+      self.assertEqual(expected_count, count)
+
+
 if __name__ == "__main__":
   absltest.main()

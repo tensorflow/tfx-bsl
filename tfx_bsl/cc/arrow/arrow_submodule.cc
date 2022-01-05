@@ -13,7 +13,12 @@
 // limitations under the License.
 #include "tfx_bsl/cc/arrow/arrow_submodule.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
 #include "tfx_bsl/cc/arrow/sql_util_submodule.h"
@@ -199,6 +204,19 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
     }
     return result;
   });
+
+  m.def(
+      "CountValidUTF8",
+      [](const std::shared_ptr<arrow::Array>& array) {
+        absl::StatusOr<size_t> count_or = CountValidUtf8(*array);
+        if (!count_or.ok()) {
+          throw std::runtime_error(count_or.status().ToString());
+        }
+        return *count_or;
+      },
+      py::doc("Returns the count of valid utf8 strings from a (large) string "
+              "or binary array."),
+      py::call_guard<py::gil_scoped_release>());
 }
 
 void DefineTableUtilSubmodule(pybind11::module arrow_module) {

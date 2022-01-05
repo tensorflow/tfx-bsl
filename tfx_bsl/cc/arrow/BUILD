@@ -13,10 +13,12 @@ cc_library(
     hdrs = ["array_util.h"],
     deps = [
         "//tfx_bsl/cc/util:status_util",
+        "//tfx_bsl/cc/util:utf8",
         "@arrow",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@com_google_absl//absl/types:variant",
@@ -102,6 +104,7 @@ cc_library(
         "//tfx_bsl/cc/pybind11:arrow_casters",
         "@arrow",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@pybind11",
     ],
 )

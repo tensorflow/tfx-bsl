@@ -30,6 +30,7 @@ try:
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import CooFromListArray
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import FillNullLists
   from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import GetByteSize
+  from tfx_bsl.cc.tfx_bsl_extension.arrow.array_util import CountValidUTF8
 except ImportError:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.arrow.array_util. "
