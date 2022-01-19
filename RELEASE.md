@@ -9,6 +9,9 @@
 *   Fixes a bug when `TensorsToRecordBatchConverter` could not handle
     `tf.RaggedTensor`s with uniform inner dimensions in TF 1.15.
 *   Depends on `numpy>=1.16,<2`.
+*   Depends on `abs-py>=0.9,<2.0.0`.
+*   Depends on
+    `tensorflow>=1.15.5,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,<3`.
 
 ## Breaking Changes
 

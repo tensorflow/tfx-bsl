@@ -161,14 +161,14 @@ setup(
     # Make sure to sync the versions of common dependencies (absl-py, numpy,
     # six, and protobuf) with TF.
     install_requires=[
-        'absl-py>=0.9,<0.13',
+        'absl-py>=0.9,<2.0.0',
         'apache-beam[gcp]>=2.34,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
         'pandas>=1.0,<2',
         'protobuf>=3.13,<4',
         'pyarrow>=1,<6',
-        'tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,<3',
+        'tensorflow>=1.15.5,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,<3',
         'tensorflow-metadata' + select_constraint(
             default='>=1.5.0,<1.6.0',
             nightly='>=1.6.0.dev',
