@@ -114,8 +114,8 @@ absl::Status GetByteSize(const arrow::Array& array, size_t* result);
 
 
 // Given an array of type binary, large-binary, string, or large-string, returns
-// the count of valid UTF8 values. Arrays of other types return a non-OK
+// the count of invalid UTF8 values. Arrays of other types return a non-OK
 // status.
-absl::StatusOr<size_t> CountValidUtf8(arrow::Array& array);
+absl::StatusOr<size_t> CountInvalidUtf8(arrow::Array& array);
 }  // namespace tfx_bsl
 #endif  // TFX_BSL_CC_ARROW_ARRAY_UTIL_H_

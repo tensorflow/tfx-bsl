@@ -829,54 +829,54 @@ absl::Status GetByteSize(const Array& array, size_t* result) {
 
 namespace {
 
-// Return the count of valid UTF-8 strings in input, skipping nulls.
+// Return the count of invalid UTF-8 strings in input, skipping nulls.
 template <typename T>
-size_t CountValid(const arrow::BaseBinaryArray<T>& array) {
-  size_t valid = 0;
+size_t CountInvalid(const arrow::BaseBinaryArray<T>& array) {
+  size_t invalid = 0;
   for (int i = 0; i < array.length(); i++) {
     if (array.IsNull(i)) {
       continue;
     }
     const auto value = array.GetView(i);
     const auto item = absl::string_view(value.data(), value.size());
-    if (IsValidUtf8(item)) ++valid;
+    if (!IsValidUtf8(item)) ++invalid;
   }
-  return valid;
+  return invalid;
 }
 
 class ValidateVisitor : public arrow::ArrayVisitor {
  public:
   arrow::Status Visit(const arrow::BinaryArray& array) override {
-    valid_count_ = CountValid(array);
+    invalid_count_ = CountInvalid(array);
     return arrow::Status::OK();
   }
   arrow::Status Visit(const arrow::LargeBinaryArray& array) override {
-    valid_count_ = CountValid(array);
+    invalid_count_ = CountInvalid(array);
     return arrow::Status::OK();
   }
   arrow::Status Visit(const arrow::StringArray& array) override {
-    valid_count_ = CountValid(array);
+    invalid_count_ = CountInvalid(array);
     return arrow::Status::OK();
   }
   arrow::Status Visit(const arrow::LargeStringArray& array) override {
-    valid_count_ = CountValid(array);
+    invalid_count_ = CountInvalid(array);
     return arrow::Status::OK();
   }
 
-  size_t ValidCount() const {
-    return valid_count_;
+  size_t InvalidCount() const {
+    return invalid_count_;
   }
 
  private:
-  size_t valid_count_ = 0;
+  size_t invalid_count_ = 0;
 };
 
 }  // namespace
 
-absl::StatusOr<size_t> CountValidUtf8(arrow::Array& array) {
+absl::StatusOr<size_t> CountInvalidUtf8(arrow::Array& array) {
   ValidateVisitor v;
   TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(array.Accept(&v)));
-  return v.ValidCount();
+  return v.InvalidCount();
 }
 
 }  // namespace tfx_bsl

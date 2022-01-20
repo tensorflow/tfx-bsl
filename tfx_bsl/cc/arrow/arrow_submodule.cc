@@ -206,15 +206,15 @@ void DefineArrayUtilSubmodule(py::module arrow_module) {
   });
 
   m.def(
-      "CountValidUTF8",
+      "CountInvalidUTF8",
       [](const std::shared_ptr<arrow::Array>& array) {
-        absl::StatusOr<size_t> count_or = CountValidUtf8(*array);
+        absl::StatusOr<size_t> count_or = CountInvalidUtf8(*array);
         if (!count_or.ok()) {
           throw std::runtime_error(count_or.status().ToString());
         }
         return *count_or;
       },
-      py::doc("Returns the count of valid utf8 strings from a (large) string "
+      py::doc("Returns the count of invalid utf8 strings from a (large) string "
               "or binary array."),
       py::call_guard<py::gil_scoped_release>());
 }

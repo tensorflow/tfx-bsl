@@ -682,27 +682,27 @@ class ToSingletonListArrayTest(parameterized.TestCase):
         "expected: {}; got: {}".format(expected_result, result))
 
 
-_COUNT_VALID_UTF8_TEST_CASES = [
+_COUNT_INVALID_UTF8_TEST_CASES = [
     dict(
         testcase_name="all_valid_string_array",
         array=pa.array(["a", "b", "c"], type="string"),
-        expected_count=3,
+        expected_count=0,
     ),
     dict(
         testcase_name="all_valid_binary_array",
         array=pa.array([b"a", b"b", b"c"], type="binary"),
-        expected_count=3,
+        expected_count=0,
     ),
     dict(
         testcase_name="skips_none",
         array=pa.array([b"a", None, b"c"], type="binary"),
-        expected_count=2,
+        expected_count=0,
     ),
     dict(
         testcase_name="some_valid_binary_array",
         array=pa.array([b"a", b"b", b"\xfc\xa1\xa1\xa1\xa1\xa1"],
                        type="binary"),
-        expected_count=2,
+        expected_count=1,
     ),
     dict(
         testcase_name="invalid_type",
@@ -712,15 +712,15 @@ _COUNT_VALID_UTF8_TEST_CASES = [
 ]
 
 
-class CountValidUtf8(parameterized.TestCase):
+class CountInvalidUtf8(parameterized.TestCase):
 
-  @parameterized.named_parameters(*_COUNT_VALID_UTF8_TEST_CASES)
+  @parameterized.named_parameters(*_COUNT_INVALID_UTF8_TEST_CASES)
   def test_count_utf8(self, array, expected_count=None, expected_error=None):
     if expected_error:
       with self.assertRaisesRegex(RuntimeError, expected_error):
-        array_util.CountValidUTF8(array)
+        array_util.CountInvalidUTF8(array)
     else:
-      count = array_util.CountValidUTF8(array)
+      count = array_util.CountInvalidUTF8(array)
       self.assertEqual(expected_count, count)
 
 
