@@ -26,6 +26,7 @@ from absl import logging
 import apache_beam as beam
 from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.transforms import resources
 from apache_beam.utils import retry
 from apache_beam.utils import shared
 import googleapiclient
@@ -96,6 +97,40 @@ class RunInferenceImpl(beam.PTransform):
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     self._inference_spec_type = inference_spec_type
 
+  def _make_close_to_resources(self):
+    """Proximity resources not otherwise known (or visible) to Beam."""
+
+    if _using_in_process_inference(self._inference_spec_type):
+      # The model is expected to be loaded once per worker (as opposed to
+      # once per thread), due to the use of beam.Shared in pertinent DoFns.
+      #
+      # The exact value of this constant is not important; it aims to signify
+      # that there might be a non-trivial number of model loads.
+      #
+      # TODO(katsiapis): Auto(tune) this.
+      estimated_num_workers = 100
+
+      # TODO(katsiapis): Compute the actual on-disk model size.
+      model_size_bytes = 64 << 20  # 64MB.
+
+      return (self._inference_spec_type.saved_model_spec.model_path +
+              f'[{model_size_bytes * estimated_num_workers}]')
+    else:
+      # The model is available remotely, so the size of the RPC traffic is
+      # proportional to the size of the input.
+      #
+      # The exact value of this constant is not important; it aims to signify
+      # that there might be a non-trivial amount of RPC traffic.
+      #
+      # TODO(katsiapis): Auto(tune) this.
+      estimated_rpc_traffic_size_bytes = 1 << 40  # 1TB.
+
+      # TODO(katsiapis): Is it possible to query the AI platform to see what
+      # zones the model is available in, so that we can instead provide a
+      # descriptor along the lines of: f'zone1|zone2|...|zoneN[size]'?
+      del estimated_rpc_traffic_size_bytes
+      return ''
+
   def infer_output_type(self, input_type):
     tuple_types = getattr(input_type, 'tuple_types', None)
     if tuple_types and len(tuple_types) == 2:
@@ -117,6 +152,17 @@ class RunInferenceImpl(beam.PTransform):
         examples
         | 'MaybeAddNoneKey' >> maybe_add_none_key
         | 'BatchExamples' >> beam.BatchElements())
+
+    # TODO(katsiapis): Replace the try-except with an if 'is_registered' after
+    # TFX_BSL depends on apache-beam>=2.37 (which introduces the improved API).
+    try:
+      _ = resources.ResourceHint.get_by_name('close_to_resources')
+      batched_keyed_examples |= (
+          'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
+              close_to_resources=self._make_close_to_resources()))
+    except KeyError:
+      # 'close_to_resources' functionality not (yet?) available (BEAM-13690).
+      pass
 
     # pylint: disable=no-value-for-parameter
     operation_type = _get_operation_type(self._inference_spec_type)
@@ -454,7 +500,7 @@ class _BatchRemotePredictDoFn(_BaseBatchDoFn):
       raise NotImplementedError(
           'RemotePredict supports raw and serialized tf.train.Example and '
           'raw and serialized tf.SequenceExample (the latter only when '
-          'use_serialization_config is strue)')
+          'use_serialization_config is true)')
 
   def _run_inference(
       self, examples: List[_INPUT_TYPE], serialized_examples: List[bytes]

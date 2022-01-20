@@ -28,6 +28,7 @@ from googleapiclient import discovery
 from googleapiclient import http
 import tensorflow as tf
 from tfx_bsl.beam import run_inference
+from tfx_bsl.beam import test_helpers
 from tfx_bsl.public.proto import model_spec_pb2
 
 from google.protobuf import text_format
@@ -55,6 +56,9 @@ class RunInferenceFixture(tf.test.TestCase):
               }
               """, tf.train.Example()),
     ]
+
+  def _make_beam_pipeline(self):
+    return beam.Pipeline(**test_helpers.make_test_beam_pipeline_kwargs())
 
   def _get_output_data_dir(self, sub_dir=None):
     test_dir = self._testMethodName
@@ -195,7 +199,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
 
   def _run_inference_with_beam(self, example_path, inference_spec_type,
                                prediction_log_path):
-    with beam.Pipeline() as pipeline:
+    with self._make_beam_pipeline() as pipeline:
       key = 'TheKey'
       if _randbool():
         def verify_key(k, v):
@@ -406,7 +410,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     inference_spec_type = model_spec_pb2.InferenceSpecType(
         saved_model_spec=model_spec_pb2.SavedModelSpec(
             model_path=model_path, signature_name=['classify_sum']))
-    pipeline = beam.Pipeline()
+    pipeline = self._make_beam_pipeline()
     _ = (
         pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
@@ -479,7 +483,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       identity = beam.Map(lambda x: x)
       maybe_pair_with_key = identity
       maybe_verify_key = identity
-    self.pipeline = beam.Pipeline()
+    self.pipeline = self._make_beam_pipeline()
     self.pcoll = (
         self.pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
@@ -558,11 +562,11 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       try:
         self._set_up_pipeline(inference_spec_type)
         self._run_inference_with_beam()
-      except ValueError as exc:
+      except (ValueError, RuntimeError) as exc:
         actual_error_msg = str(exc)
-        self.assertTrue(actual_error_msg.startswith(error_msg))
+        self.assertIn(error_msg, actual_error_msg)
       else:
-        self.fail('Test was expected to throw ValueError exception')
+        self.fail('Test was expected to throw an exception')
 
   def test_exception_raised_when_project_id_is_empty(self):
     inference_spec_type = model_spec_pb2.InferenceSpecType(
@@ -607,7 +611,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         }
         """, tf.train.Example())
 
-      self.pipeline = beam.Pipeline()
+      self.pipeline = self._make_beam_pipeline()
       self.pcoll = (
           self.pipeline
           | 'CreateExamples' >> beam.Create([example])

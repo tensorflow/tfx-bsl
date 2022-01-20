@@ -29,6 +29,12 @@ _INPUT_TYPE = Union[tf.train.Example, tf.train.SequenceExample, bytes]
 _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 
 
+# TODO(b/131873699): Add support for the following features:
+#   - tf.train.SequenceExample as Input for RemotePredict.
+#   - beam.Shared() initialization via Fingerprint for models CSE.
+#   - Models as SideInput.
+#   - Separate output PCollection for inference errors.
+#   - TPU models.
 @beam.ptransform_fn
 @beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
 @beam.typehints.with_output_types(Union[_OUTPUT_TYPE, Tuple[_K, _OUTPUT_TYPE]])
@@ -44,12 +50,6 @@ def RunInference(  # pylint: disable=invalid-name
     2. Remote inference by using a service endpoint. Used when
       `ai_platform_prediction_model_spec` field is set in
       `inference_spec_type`.
-
-  TODO(b/131873699): Add support for the following features:
-    1. tf.train.SequenceExample as Input for RemotePredict.
-    2. beam.Shared() initialization via Fingerprint for models CSE.
-    3. Models as SideInput.
-    4. TPU models.
 
   Args:
     examples: A PCollection containing examples of the following possible kinds,
