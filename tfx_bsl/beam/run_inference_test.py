@@ -450,6 +450,20 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self.assertGreaterEqual(
         load_model_latency_milli_secs['distributions'][0].result.sum, 0)
 
+  def testModelSizeBytes(self):
+    self.assertEqual(
+        1 << 30,
+        run_inference.RunInferenceImpl._model_size_bytes(
+            '/the/non-existent-or-inaccesible-file'))
+
+    model_path = self._get_output_data_dir('model')
+    self._build_predict_model(model_path)
+    # The actual model_size is ~2K, but it might fluctuate a bit (eg due to
+    # TF version changes).
+    model_size = run_inference.RunInferenceImpl._model_size_bytes(model_path)
+    self.assertGreater(model_size, 1000)
+    self.assertLess(model_size, 5000)
+
 
 class RunRemoteInferenceTest(RunInferenceFixture):
 

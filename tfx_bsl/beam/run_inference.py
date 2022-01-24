@@ -15,6 +15,8 @@
 
 import abc
 import base64
+from concurrent import futures
+import functools
 import importlib
 import os
 import platform
@@ -97,7 +99,32 @@ class RunInferenceImpl(beam.PTransform):
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     self._inference_spec_type = inference_spec_type
 
-  def _make_close_to_resources(self):
+  # LINT.IfChange(close_to_resources)
+  @staticmethod
+  def _model_size_bytes(path: str) -> int:
+    # We might be unable to compute the size of the model during pipeline
+    # construction, but the model might still be accessible during pipeline
+    # execution. In such cases we will provide a default value for the model
+    # size. In general, it is a lot more costly to underestimate the size of
+    # the model than to overestimate it.
+    default_model_size = 1 << 30  # 1 GB.
+
+    def file_size(directory, file):
+      return max(tf.io.gfile.stat(os.path.join(directory, file)).length, 0)
+
+    try:
+      result = 0
+      with futures.ThreadPoolExecutor() as executor:
+        for directory, _, files in tf.io.gfile.walk(path):
+          result += sum(
+              executor.map(functools.partial(file_size, directory), files))
+      if result == 0:
+        result = default_model_size
+      return result
+    except OSError:
+      return default_model_size
+
+  def _make_close_to_resources(self) -> str:
     """Proximity resources not otherwise known (or visible) to Beam."""
 
     if _using_in_process_inference(self._inference_spec_type):
@@ -109,12 +136,9 @@ class RunInferenceImpl(beam.PTransform):
       #
       # TODO(katsiapis): Auto(tune) this.
       estimated_num_workers = 100
-
-      # TODO(katsiapis): Compute the actual on-disk model size.
-      model_size_bytes = 64 << 20  # 64MB.
-
-      return (self._inference_spec_type.saved_model_spec.model_path +
-              f'[{model_size_bytes * estimated_num_workers}]')
+      model_path = self._inference_spec_type.saved_model_spec.model_path
+      model_size_bytes = self._model_size_bytes(model_path)
+      return f'{model_path}[{model_size_bytes * estimated_num_workers}]'
     else:
       # The model is available remotely, so the size of the RPC traffic is
       # proportional to the size of the input.
@@ -123,13 +147,14 @@ class RunInferenceImpl(beam.PTransform):
       # that there might be a non-trivial amount of RPC traffic.
       #
       # TODO(katsiapis): Auto(tune) this.
-      estimated_rpc_traffic_size_bytes = 1 << 40  # 1TB.
+      estimated_rpc_traffic_size_bytes = 1 << 40  # 1 TB.
 
       # TODO(katsiapis): Is it possible to query the AI platform to see what
       # zones the model is available in, so that we can instead provide a
       # descriptor along the lines of: f'zone1|zone2|...|zoneN[size]'?
       del estimated_rpc_traffic_size_bytes
       return ''
+  # LINT.ThenChange(../../../../learning/serving/contrib/servables/tensorflow/flume/bulk-inference.h:close_to_resources)
 
   def infer_output_type(self, input_type):
     tuple_types = getattr(input_type, 'tuple_types', None)
