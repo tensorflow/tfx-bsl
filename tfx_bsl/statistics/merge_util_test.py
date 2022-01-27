@@ -19,7 +19,7 @@ from absl.testing import absltest
 from tensorflow_metadata.proto.v0 import statistics_pb2
 
 
-class MergeTest(absltest.TestCase):
+class MergeDatasetFeatureStatisticsTest(absltest.TestCase):
 
   # Basic tests that the python bindings work; more coverage is in
   # merge_util_test.cc
@@ -31,6 +31,25 @@ class MergeTest(absltest.TestCase):
     result = merge_util.merge_dataset_feature_statistics(values)
     expected = statistics_pb2.DatasetFeatureStatisticsList()
     expected.datasets.extend(values)
+    self.assertEqual(expected, result)
+
+
+class MergeDatasetFeatureStatisticsListTest(absltest.TestCase):
+
+  # Basic tests that the python bindings work; more coverage is in
+  # merge_util_test.cc
+  def test_merges_two_inputs(self):
+    values = [
+        statistics_pb2.DatasetFeatureStatisticsList(
+            datasets=[statistics_pb2.DatasetFeatureStatistics(name="slice1")]),
+        statistics_pb2.DatasetFeatureStatisticsList(
+            datasets=[statistics_pb2.DatasetFeatureStatistics(name="slice2")])
+    ]
+    result = merge_util.merge_dataset_feature_statistics_list(values)
+    expected = statistics_pb2.DatasetFeatureStatisticsList(datasets=[
+        statistics_pb2.DatasetFeatureStatistics(name="slice1"),
+        statistics_pb2.DatasetFeatureStatistics(name="slice2")
+    ])
     self.assertEqual(expected, result)
 
 if __name__ == "__main__":
