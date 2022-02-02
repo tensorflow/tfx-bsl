@@ -194,7 +194,7 @@ class CsvTFXIO(_CsvTFXIOBase):
     """Initializes a CSV TFXIO.
 
     Args:
-      file_pattern: A file glob pattern to read TFRecords from.
+      file_pattern: A file glob pattern to read csv files from.
       column_names: List of csv column names. Order must match the order in the
         CSV file.
       telemetry_descriptors: A set of descriptors that identify the component
