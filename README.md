@@ -98,10 +98,11 @@ pip install dist/*.whl
 If NumPy is not installed on your system, install it now by following [these
 directions](https://www.scipy.org/scipylib/download.html).
 
-#### Install Bazel
+#### Install Bazel 4.X
 
 If Bazel is not installed on your system, install it now by following [these
-directions](https://bazel.build/versions/master/docs/install.html).
+directions](https://bazel.build/versions/master/docs/install.html). You must
+install version 4.X.
 
 
 ### 2. Clone the `tfx_bsl` repository
