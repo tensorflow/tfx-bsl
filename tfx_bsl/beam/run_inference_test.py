@@ -76,6 +76,34 @@ class RunInferenceFixture(tf.test.TestCase):
       for example in self._predict_examples:
         output_file.write(example.SerializeToString())
 
+  def _build_predict_model(self, model_path):
+    """Exports the dummy sum predict model."""
+
+    with tf.compat.v1.Graph().as_default():
+      input_tensors = {
+          'x':
+              tf.compat.v1.io.FixedLenFeature([1],
+                                              dtype=tf.float32,
+                                              default_value=0)
+      }
+      serving_receiver = (
+          tf.compat.v1.estimator.export.build_parsing_serving_input_receiver_fn(
+              input_tensors)())
+      output_tensors = {'y': serving_receiver.features['x'] * 2}
+      sess = tf.compat.v1.Session()
+      sess.run(tf.compat.v1.initializers.global_variables())
+      signature_def = tf.compat.v1.estimator.export.PredictOutput(
+          output_tensors).as_signature_def(serving_receiver.receiver_tensors)
+      builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(model_path)
+      builder.add_meta_graph_and_variables(
+          sess, [tf.compat.v1.saved_model.tag_constants.SERVING],
+          signature_def_map={
+              tf.compat.v1.saved_model.signature_constants
+              .DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                  signature_def,
+          })
+      builder.save()
+
 
 class RunOfflineInferenceTest(RunInferenceFixture):
 
@@ -102,32 +130,6 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     with tf.io.TFRecordWriter(example_path) as output_file:
       for example in self._multihead_examples:
         output_file.write(example.SerializeToString())
-
-  def _build_predict_model(self, model_path):
-    """Exports the dummy sum predict model."""
-
-    with tf.compat.v1.Graph().as_default():
-      input_tensors = {
-          'x': tf.compat.v1.io.FixedLenFeature(
-              [1], dtype=tf.float32, default_value=0)
-      }
-      serving_receiver = (
-          tf.compat.v1.estimator.export.build_parsing_serving_input_receiver_fn(
-              input_tensors)())
-      output_tensors = {'y': serving_receiver.features['x'] * 2}
-      sess = tf.compat.v1.Session()
-      sess.run(tf.compat.v1.initializers.global_variables())
-      signature_def = tf.compat.v1.estimator.export.PredictOutput(
-          output_tensors).as_signature_def(serving_receiver.receiver_tensors)
-      builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(model_path)
-      builder.add_meta_graph_and_variables(
-          sess, [tf.compat.v1.saved_model.tag_constants.SERVING],
-          signature_def_map={
-              tf.compat.v1.saved_model.signature_constants
-              .DEFAULT_SERVING_SIGNATURE_DEF_KEY:
-                  signature_def,
-          })
-      builder.save()
 
   def _build_regression_signature(self, input_tensor, output_tensor):
     """Helper function for building a regression SignatureDef."""
