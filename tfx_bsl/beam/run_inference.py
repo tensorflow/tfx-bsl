@@ -124,10 +124,12 @@ class RunInferenceImpl(beam.PTransform):
     except OSError:
       return default_model_size
 
-  def _make_close_to_resources(self) -> str:
+  @staticmethod
+  def _make_close_to_resources(
+      inference_spec_type: model_spec_pb2.InferenceSpecType) -> str:
     """Proximity resources not otherwise known (or visible) to Beam."""
 
-    if _using_in_process_inference(self._inference_spec_type):
+    if _using_in_process_inference(inference_spec_type):
       # The model is expected to be loaded once per worker (as opposed to
       # once per thread), due to the use of beam.Shared in pertinent DoFns.
       #
@@ -136,8 +138,8 @@ class RunInferenceImpl(beam.PTransform):
       #
       # TODO(katsiapis): Auto(tune) this.
       estimated_num_workers = 100
-      model_path = self._inference_spec_type.saved_model_spec.model_path
-      model_size_bytes = self._model_size_bytes(model_path)
+      model_path = inference_spec_type.saved_model_spec.model_path
+      model_size_bytes = RunInferenceImpl._model_size_bytes(model_path)
       return f'{model_path}[{model_size_bytes * estimated_num_workers}]'
     else:
       # The model is available remotely, so the size of the RPC traffic is
@@ -154,12 +156,12 @@ class RunInferenceImpl(beam.PTransform):
       # descriptor along the lines of: f'zone1|zone2|...|zoneN[size]'?
       del estimated_rpc_traffic_size_bytes
       return ''
-  # LINT.ThenChange(../../../../learning/serving/contrib/servables/tensorflow/flume/bulk-inference.h:close_to_resources)
+  # LINT.ThenChange(../../../../learning/serving/contrib/servables/tensorflow/flume/bulk-inference.cc:close_to_resources)
 
   def infer_output_type(self, input_type):
     tuple_types = getattr(input_type, 'tuple_types', None)
     if tuple_types and len(tuple_types) == 2:
-      return Tuple[tuple_types[0], _OUTPUT_TYPE]
+      return beam.typehints.Tuple[tuple_types[0], _OUTPUT_TYPE]
     else:
       return _OUTPUT_TYPE
 
@@ -167,24 +169,22 @@ class RunInferenceImpl(beam.PTransform):
     logging.info('RunInference on model: %s', self._inference_spec_type)
 
     if self.infer_output_type(examples.element_type) is _OUTPUT_TYPE:
-      maybe_add_none_key = beam.Map(lambda x: (None, x))
-      maybe_drop_none_key = beam.MapTuple(lambda _, v: v)
-    else:
-      identity = beam.Map(lambda x: x)
-      maybe_add_none_key = identity
-      maybe_drop_none_key = identity
-    batched_keyed_examples = (
-        examples
-        | 'MaybeAddNoneKey' >> maybe_add_none_key
-        | 'BatchExamples' >> beam.BatchElements())
+      return (
+          examples
+          | 'PairWithNone' >> beam.Map(lambda x: (None, x))
+          | 'ApplyOnKeyedInput' >> RunInferenceImpl(self._inference_spec_type)
+          | 'DropNone' >> beam.Values())
+
+    batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
 
     # TODO(katsiapis): Replace the try-except with an if 'is_registered' after
-    # TFX_BSL depends on apache-beam>=2.37 (which introduces the improved API).
+    # TFX_BSL depends on apache-beam>=2.36 (which introduces the improved API).
     try:
       _ = resources.ResourceHint.get_by_name('close_to_resources')
-      batched_keyed_examples |= (
+      batched_examples |= (
           'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
-              close_to_resources=self._make_close_to_resources()))
+              close_to_resources=self._make_close_to_resources(
+                  self._inference_spec_type)))
     except KeyError:
       # 'close_to_resources' functionality not (yet?) available (BEAM-13690).
       pass
@@ -192,22 +192,19 @@ class RunInferenceImpl(beam.PTransform):
     # pylint: disable=no-value-for-parameter
     operation_type = _get_operation_type(self._inference_spec_type)
     if operation_type == _OperationType.CLASSIFICATION:
-      result = batched_keyed_examples | 'Classify' >> _Classify(
+      result = batched_examples | 'Classify' >> _Classify(
           self._inference_spec_type)
     elif operation_type == _OperationType.REGRESSION:
-      result = batched_keyed_examples | 'Regress' >> _Regress(
+      result = batched_examples | 'Regress' >> _Regress(
           self._inference_spec_type)
     elif operation_type == _OperationType.MULTI_INFERENCE:
-      result = (
-          batched_keyed_examples
-          | 'MultiInference' >> _MultiInference(self._inference_spec_type))
+      result = batched_examples | 'MultiInference' >> _MultiInference(
+          self._inference_spec_type)
     elif operation_type == _OperationType.PREDICTION:
-      result = batched_keyed_examples | 'Predict' >> _Predict(
+      result = batched_examples | 'Predict' >> _Predict(
           self._inference_spec_type)
     else:
       raise ValueError('Unsupported operation_type %s' % operation_type)
-
-    result |= 'MaybeDropNoneKey' >> maybe_drop_none_key
 
     return result
 
@@ -523,9 +520,9 @@ class _BatchRemotePredictDoFn(_BaseBatchDoFn):
         else tf.train.Example)
     if not all(isinstance(e, allowed_types) for e in examples):
       raise NotImplementedError(
-          'RemotePredict supports raw and serialized tf.train.Example and '
-          'raw and serialized tf.SequenceExample (the latter only when '
-          'use_serialization_config is true)')
+          'RemotePredict supports raw and serialized tf.train.Example, raw and '
+          'serialized tf.SequenceExample and raw bytes (the '
+          'latter three only when use_serialization_config is true)')
 
   def _run_inference(
       self, examples: List[_INPUT_TYPE], serialized_examples: List[bytes]

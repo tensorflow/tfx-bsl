@@ -35,7 +35,7 @@ from google.protobuf import text_format
 from tensorflow_serving.apis import prediction_log_pb2
 
 
-_randbool = lambda: random.randint(0, 1)
+_rand_bool = lambda: random.randint(0, 1)
 
 
 class RunInferenceFixture(tf.test.TestCase):
@@ -202,27 +202,27 @@ class RunOfflineInferenceTest(RunInferenceFixture):
   def _run_inference_with_beam(self, example_path, inference_spec_type,
                                prediction_log_path):
     with self._make_beam_pipeline() as pipeline:
-      key = 'TheKey'
-      if _randbool():
+      if _rand_bool():
+        key = 'TheKey'
         def verify_key(k, v):
           if k != key:
             raise RuntimeError('Wrong Key %s' % k)
           return v
-        maybe_pair_with_key = beam.Map(lambda x: (key, x))
-        maybe_verify_key = beam.MapTuple(verify_key)
+        maybe_pair_with_key = 'PairWithKey' >> beam.Map(lambda x: (key, x))
+        maybe_verify_key = 'VerifyKey' >> beam.MapTuple(verify_key)
       else:
         identity = beam.Map(lambda x: x)
-        maybe_pair_with_key = identity
-        maybe_verify_key = identity
+        maybe_pair_with_key = 'NoPairWithKey' >> identity
+        maybe_verify_key = 'NoVerifyKey' >> identity
       _ = (
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
           | 'MaybeDecode' >> beam.Map(
-              lambda x: x if _randbool() else tf.train.Example.FromString(x))
-          | 'MaybePairWithKey' >> maybe_pair_with_key
-          | 'RunInference'
-          >> run_inference.RunInferenceImpl(inference_spec_type)
-          | 'MaybeVerifyKey' >> maybe_verify_key
+              lambda x: x if _rand_bool() else tf.train.Example.FromString(x))
+          | maybe_pair_with_key
+          | 'RunInference' >> run_inference.RunInferenceImpl(
+              inference_spec_type)
+          | maybe_verify_key
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
               coder=beam.coders.ProtoCoder(prediction_log_pb2.PredictionLog)))
@@ -417,7 +417,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
         | 'MaybeDecode' >> beam.Map(
-            lambda x: x if _randbool() else tf.train.Example.FromString(x))
+            lambda x: x if _rand_bool() else tf.train.Example.FromString(x))
         | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
     run_result = pipeline.run()
     run_result.wait_until_finish()
@@ -487,27 +487,26 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     return json.dumps(response_dict)
 
   def _set_up_pipeline(self, inference_spec_type):
-    key = 'TheKey'
-    if _randbool():
+    if _rand_bool():
+      key = 'TheKey'
       def verify_key(k, v):
         if k != key:
           raise RuntimeError('Wrong Key %s' % k)
         return v
-      maybe_pair_with_key = beam.Map(lambda x: (key, x))
-      maybe_verify_key = beam.MapTuple(verify_key)
+      maybe_pair_with_key = 'PairWithKey' >> beam.Map(lambda x: (key, x))
+      maybe_verify_key = 'VerifyKey' >> beam.MapTuple(verify_key)
     else:
       identity = beam.Map(lambda x: x)
-      maybe_pair_with_key = identity
-      maybe_verify_key = identity
+      maybe_pair_with_key = 'NoPairWithKey' >> identity
+      maybe_verify_key = 'NoVerifyKey' >> identity
     self.pipeline = self._make_beam_pipeline()
     self.pcoll = (
         self.pipeline
-        | 'ReadExamples' >> beam.io.ReadFromTFRecord(self.example_path)
-        | 'MaybeDecode' >> beam.Map(
-            lambda x: x if _randbool() else tf.train.Example.FromString(x))
-        | 'MaybePairWithKey' >> maybe_pair_with_key
+        | 'ReadExamples' >> beam.io.ReadFromTFRecord(
+            self.example_path, coder=beam.coders.ProtoCoder(tf.train.Example))
+        | maybe_pair_with_key
         | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
-        | 'MaybeVerifyKey' >> maybe_verify_key)
+        | maybe_verify_key)
 
   def _run_inference_with_beam(self):
     self.pipeline_result = self.pipeline.run()
@@ -683,7 +682,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         feature { key: "x" value { bytes_list { value: "JLK7ljk3" }}}
         feature { key: "y" value { int64_list { value: [1, 2] }}}
       }
-      """, tf.train.SequenceExample())
+      """, tf.train.SequenceExample()),
     ]
     serialized_examples = [e.SerializeToString() for e in examples]
     inference_spec_type = model_spec_pb2.InferenceSpecType(
