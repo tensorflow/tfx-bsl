@@ -35,6 +35,9 @@ _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 #   - Models as SideInput.
 #   - Separate output PCollection for inference errors.
 #   - TPU models.
+#   - Investigate and add support for 'LocalServer' functionality, to enable
+#     executing inference server with RPC interface to be launched alongside
+#     each Beam worker (b/195136883).
 @beam.ptransform_fn
 @beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
 @beam.typehints.with_output_types(Union[_OUTPUT_TYPE, Tuple[_K, _OUTPUT_TYPE]])
