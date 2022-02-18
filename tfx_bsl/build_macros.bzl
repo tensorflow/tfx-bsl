@@ -123,6 +123,7 @@ def tfx_bsl_pybind_extension(
             "//tfx_bsl:macos": [
                 # TODO: the -w suppresses a wall of harmless warnings about hidden typeinfo symbols
                 # not being exported.  There should be a better way to deal with this.
+                # "-Wl,-rename_section,__TEXT,text_env,__TEXT,__text",
                 "-Wl,-w",
                 "-Wl,-exported_symbols_list,$(location %s)" % exported_symbols_file,
             ],
