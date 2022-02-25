@@ -339,3 +339,48 @@ def ReadTfRecord(pipeline: beam.Pipeline,
                       f, coder=beam.coders.BytesCoder()))
 
   return pcolls | "FlattenPCollsFromPatterns" >> beam.Flatten()
+
+
+class OverridableRecordBasedTFXIO(RecordBasedTFXIO):
+  """A TFXIO that takes user defined `BeamSource`.
+
+  For a `RecordBasedTFXIO`, the `BeamSource` is comprised of two PTransforms --
+  `raw_record_beam_source` and `raw_record_to_record_batch`.
+  Both are required to be overridden by the user.
+
+  raw_record_beam_source is a PTransform that produces raw records as a
+  PCollection[bytes].
+  raw_record_to_record_batch is a PTransform that converts raw records to
+  PCollection[RecordBatch] taking batch size as initialization argument.
+  """
+
+  def __init__(
+      self,
+      telemetry_descriptors: Optional[List[Text]],
+      logical_format: Text,
+      physical_format: Text,
+      raw_record_beam_source: beam.PTransform,
+      raw_record_to_record_batch: beam.PTransform,
+  ):
+    super().__init__(telemetry_descriptors, logical_format, physical_format)
+    self._raw_record_beam_source = raw_record_beam_source
+    self._raw_record_to_record_batch = raw_record_to_record_batch
+
+  def _RawRecordBeamSourceInternal(self):
+    return self._raw_record_beam_source()
+
+  def _RawRecordToRecordBatchInternal(self, batch_size: Optional[int] = None):
+    return self._raw_record_to_record_batch(batch_size)
+
+  def _ArrowSchemaNoRawRecordColumn(self):
+    raise NotImplementedError
+
+  def _ProjectImpl(self, tensor_names: List[Text]):
+    raise NotImplementedError
+
+  def TensorFlowDataset(self,
+                        options: dataset_options.TensorFlowDatasetOptions):
+    raise NotImplementedError
+
+  def TensorRepresentations(self):
+    raise NotImplementedError

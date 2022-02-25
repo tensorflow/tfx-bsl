@@ -16,6 +16,8 @@
 import os
 import tempfile
 
+from typing import Any
+
 from absl import flags
 import apache_beam as beam
 from apache_beam.testing import util as beam_test_util
@@ -30,15 +32,16 @@ from absl.testing import parameterized
 FLAGS = flags.FLAGS
 
 
+def _WriteTfRecord(path, records):
+  with tf.io.TFRecordWriter(path) as w:
+    for r in records:
+      w.write(r)
+
+
 class RecordBasedTfxioTest(parameterized.TestCase):
 
   def testReadTfRecord(self):
     tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
-    def _WriteTfRecord(path, records):
-      with tf.io.TFRecordWriter(path) as w:
-        for r in records:
-          w.write(r)
-
     file1 = os.path.join(tmp_dir, "tfrecord1")
     file1_records = [b"aa", b"bb"]
     _WriteTfRecord(file1, file1_records)
@@ -111,6 +114,50 @@ class RecordBasedTfxioTest(parameterized.TestCase):
     self.assertTrue(
         output_record_batch.column(output_record_batch.num_columns - 1)
         .equals(expected_raw_record_column))
+
+  def testOverridableRecordBasedTFXIO(self):
+    tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
+    file1 = os.path.join(tmp_dir, "tfrecord1")
+    file1_records = [b"aa", b"bb"]
+    _WriteTfRecord(file1, file1_records)
+
+    def _CheckRecords(actual, expected):
+      for a, e in zip(actual, expected):
+        self.assertDictEqual(a.to_pydict(), e)
+
+    @beam.typehints.with_input_types(Any)
+    @beam.typehints.with_output_types(bytes)
+    def _RawRecordBeamSource(pipeline: Any):
+      return pipeline | beam.io.ReadFromTFRecord(file1 + "*")
+
+    @beam.typehints.with_input_types(bytes)
+    @beam.typehints.with_output_types(pa.RecordBatch)
+    def _RawRecordsToRecordBatch(pcoll, batch_size):
+      batch_size = 1 if not batch_size else batch_size
+
+      class _CreateRBDoFn(beam.DoFn):
+
+        def process(self, examples):
+          return [
+              pa.RecordBatch.from_arrays([pa.array(examples)], ["column_name"])
+          ]
+
+      return (pcoll | beam.BatchElements(batch_size)
+              | beam.ParDo(_CreateRBDoFn()))
+
+    tfxio = record_based_tfxio.OverridableRecordBasedTFXIO(
+        telemetry_descriptors=None,
+        logical_format="tfrecord",
+        physical_format="tf_example",
+        raw_record_beam_source=beam.ptransform_fn(_RawRecordBeamSource),
+        raw_record_to_record_batch=beam.ptransform_fn(_RawRecordsToRecordBatch))
+
+    expected = [{"column_name": [b"aa"]}, {"column_name": [b"bb"]}]
+    with beam.Pipeline() as p:
+      record_pcoll = p | tfxio.BeamSource()
+      beam_test_util.assert_that(
+          record_pcoll,
+          lambda actual: _CheckRecords(actual, expected))
 
 
 if __name__ == "__main__":
