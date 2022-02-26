@@ -30,23 +30,23 @@
 
 namespace tfx_bsl {
 namespace statistics {
+
+FeatureId PathToFeatureId(const tensorflow::metadata::v0::Path& path) {
+  return {std::vector<std::string>(path.step().begin(), path.step().end()),
+          true};
+}
+
 namespace {
 using tensorflow::metadata::v0::CrossFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatisticsList;
 using tensorflow::metadata::v0::FeatureNameStatistics;
-using FeatureId = std::pair<std::vector<std::string>, bool>;
 using SliceKey = std::string;
-
-FeatureId GetFeatureId(const tensorflow::metadata::v0::Path& path) {
-  return {std::vector<std::string>(path.step().begin(), path.step().end()),
-          true};
-}
 
 FeatureId GetFeatureId(const std::string& name) { return {{name}, false}; }
 
 FeatureId GetFeatureId(const FeatureNameStatistics& feature_stats) {
-  if (feature_stats.has_path()) return GetFeatureId(feature_stats.path());
+  if (feature_stats.has_path()) return PathToFeatureId(feature_stats.path());
   return GetFeatureId(feature_stats.name());
 }
 
@@ -172,8 +172,8 @@ class MutableDatasetViewImpl : public MutableDatasetView {
     }
     for (const auto& cross_feature : dataset.cross_features()) {
       std::pair<FeatureId, FeatureId> id = {
-          GetFeatureId(cross_feature.path_x()),
-          GetFeatureId(cross_feature.path_y())};
+          PathToFeatureId(cross_feature.path_x()),
+          PathToFeatureId(cross_feature.path_y())};
       TFX_BSL_RETURN_IF_ERROR(MergeCrossFeatureStatistics(
           cross_feature, GetOrCreateCrossFeature(id)));
     }

@@ -28,6 +28,11 @@ namespace statistics {
 // TODO(b/202910677): Clearly document what's allowed for sharding, once it's
 // finalized.
 
+// TODO(b/215448985): Unexpose these once verification is done.
+using FeatureId = std::pair<std::vector<std::string>, bool>;
+
+FeatureId PathToFeatureId(const tensorflow::metadata::v0::Path& path);
+
 class MutableDatasetView {
  public:
   virtual ~MutableDatasetView() = default;
