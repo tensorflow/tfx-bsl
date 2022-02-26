@@ -142,7 +142,7 @@ def CanonicalizeRecordBatch(
       arrays.append(array_util.ToSingletonListArray(column_array))
     else:
       arrays.append(column_array)
-  # TODO(pachristopher): Consider using a list of record batches instead of a
+  # TODO(b/221454980): Consider using a list of record batches instead of a
   # single record batch to avoid having list arrays larger than 2^31 elements.
   return pa.RecordBatch.from_arrays(
       arrays, record_batch_with_primitive_arrays.schema.names)
