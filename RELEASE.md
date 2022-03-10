@@ -4,6 +4,9 @@
 
 ## Major Features and Improvements
 
+*   Introduced `RunInferencePerModel` PTransform, which is a vectorized variant
+    of `RunInference` (useful for ensembles).
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

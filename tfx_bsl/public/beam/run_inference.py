@@ -14,7 +14,7 @@
 # Lint as: python3
 """Publich API of batch inference."""
 
-from typing import Tuple, TypeVar, Union
+from typing import Iterable, Tuple, TypeVar, Union
 
 import apache_beam as beam
 import tensorflow as tf
@@ -90,5 +90,69 @@ def RunInference(  # pylint: disable=invalid-name
     A PCollection (possibly keyed) containing prediction logs.
   """
   return (
-      examples |
+      examples
+      |
       'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_output_types(Union[Tuple[_OUTPUT_TYPE, ...],
+                                        Tuple[_K, Tuple[_OUTPUT_TYPE, ...]]])
+def RunInferencePerModel(  # pylint: disable=invalid-name
+    examples: beam.pvalue.PCollection,
+    inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType]
+) -> beam.pvalue.PCollection:
+  """Vectorized variant of RunInference (useful for ensembles).
+
+  Args:
+    examples: A PCollection containing examples of the following possible kinds,
+      each with their corresponding return type.
+        - PCollection[Example]                  -> PCollection[
+                                                     Tuple[PredictionLog, ...]]
+            * Works with Classify, Regress, MultiInference, Predict and
+              RemotePredict.
+
+        - PCollection[SequenceExample]          -> PCollection[
+                                                     Tuple[PredictionLog, ...]]
+            * Works with Predict and (serialized) RemotePredict.
+
+        - PCollection[bytes]                    -> PCollection[
+                                                     Tuple[PredictionLog, ...]]
+            * For serialized Example: Works with Classify, Regress,
+              MultiInference, Predict and RemotePredict.
+            * For everything else: Works with Predict and RemotePredict.
+
+        - PCollection[Tuple[K, Example]]        -> PCollection[
+                                                     Tuple[K,
+                                                           Tuple[PredictionLog,
+                                                                 ...]]]
+            * Works with Classify, Regress, MultiInference, Predict and
+              RemotePredict.
+
+        - PCollection[Tuple[K, SequenceExample]] -> PCollection[
+                                                     Tuple[K,
+                                                           Tuple[PredictionLog,
+                                                                 ...]]]
+            * Works with Predict and (serialized) RemotePredict.
+
+        - PCollection[Tuple[K, bytes]]           -> PCollection[
+                                                     Tuple[K,
+                                                           Tuple[PredictionLog,
+                                                                 ...]]]
+            * For serialized Example: Works with Classify, Regress,
+              MultiInference, Predict and RemotePredict.
+            * For everything else: Works with Predict and RemotePredict.
+
+    inference_spec_types: A flat iterable of Model inference endpoints.
+      Inference will happen in a fused fashion (ie without data
+      materialization), sequentially across Models within a Beam thread (but
+      in parallel across threads and workers).
+
+  Returns:
+    A PCollection (possibly keyed) containing a Tuple of prediction logs. The
+    Tuple of prediction logs is 1-1 aligned with inference_spec_types.
+  """
+  return (examples
+          | 'RunInferencePerModelImpl' >>
+          run_inference.RunInferencePerModelImpl(inference_spec_types))

@@ -700,5 +700,53 @@ class RunRemoteInferenceTest(RunInferenceFixture):
         [{'b64': base64.b64encode(se).decode()} for se in serialized_examples])
 
 
+class RunInferencePerModelTest(RunInferenceFixture):
+
+  def test_basic(self):
+    examples = [
+        text_format.Parse(
+            """
+              features {
+                feature { key: "x" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example()),
+        text_format.Parse(
+            """
+              features {
+                feature { key: "x" value { float_list { value: 1 }}}
+              }
+              """, tf.train.Example())
+    ]
+    model_paths = [self._get_output_data_dir(m) for m in ('model1', 'model2')]
+    for model_path in model_paths:
+      self._build_predict_model(model_path)
+    specs = [
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(model_path=p))
+        for p in model_paths
+    ]
+    with self._make_beam_pipeline() as pipeline:
+      predictions = (
+          pipeline
+          | beam.Create(examples)
+          | run_inference.RunInferencePerModelImpl(specs)
+          | beam.MapTuple(
+              lambda _, p2: p2.predict_log.response.outputs['y'].float_val[0]))
+      assert_that(predictions, equal_to([0.0, 2.0]))
+
+      predictions_table = (
+          pipeline
+          |
+          'CreateTable' >> beam.Create([(i, e) for i, e in enumerate(examples)])
+          | 'RunInferencePerModelTable' >>
+          run_inference.RunInferencePerModelImpl(specs)
+          | beam.MapTuple(lambda k, v:  # pylint: disable=g-long-lambda
+                          (k, v[1].predict_log.response.outputs['y'].float_val[
+                              0])))
+      assert_that(
+          predictions_table,
+          equal_to([(0, 0.0), (1, 2.0)]),
+          label='AssertTable')
+
 if __name__ == '__main__':
   tf.test.main()

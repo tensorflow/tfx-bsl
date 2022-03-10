@@ -169,6 +169,8 @@ class RunInferenceImpl(beam.PTransform):
     logging.info('RunInference on model: %s', self._inference_spec_type)
 
     if self.infer_output_type(examples.element_type) is _OUTPUT_TYPE:
+      # The input is not a KV, so pair with a dummy key, run the inference, and
+      # drop the dummy key afterwards.
       return (
           examples
           | 'PairWithNone' >> beam.Map(lambda x: (None, x))
@@ -177,17 +179,12 @@ class RunInferenceImpl(beam.PTransform):
 
     batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
 
-    # TODO(katsiapis): Replace the try-except with an if 'is_registered' after
-    # TFX_BSL depends on apache-beam>=2.36 (which introduces the improved API).
-    try:
-      _ = resources.ResourceHint.get_by_name('close_to_resources')
+    # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
+    if resources.ResourceHint.is_registered('close_to_resources'):
       batched_examples |= (
           'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
               close_to_resources=self._make_close_to_resources(
                   self._inference_spec_type)))
-    except KeyError:
-      # 'close_to_resources' functionality not (yet?) available (BEAM-13690).
-      pass
 
     # pylint: disable=no-value-for-parameter
     operation_type = _get_operation_type(self._inference_spec_type)
@@ -206,6 +203,62 @@ class RunInferenceImpl(beam.PTransform):
     else:
       raise ValueError('Unsupported operation_type %s' % operation_type)
 
+    return result
+
+
+@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_output_types(Union[Tuple[_OUTPUT_TYPE, ...],
+                                        Tuple[_K, Tuple[_OUTPUT_TYPE, ...]]])
+class RunInferencePerModelImpl(beam.PTransform):
+  """Implementation of the vectorized variant of the RunInference API."""
+
+  def __init__(
+      self, inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType]):
+    self._inference_spec_types = tuple(inference_spec_types)
+
+  def infer_output_type(self, input_type):
+    output_type = beam.typehints.Tuple[(_OUTPUT_TYPE,) *
+                                       len(self._inference_spec_types)]
+    tuple_types = getattr(input_type, 'tuple_types', None)
+    if tuple_types and len(tuple_types) == 2:
+      return beam.typehints.Tuple[tuple_types[0], output_type]
+    else:
+      return output_type
+
+  def expand(self, examples: beam.PCollection) -> beam.PCollection:
+
+    # TODO(b/217442215): Obviate the need for this block (and instead rely
+    # solely on the one within RunInferenceImpl::expand).
+    # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
+    if resources.ResourceHint.is_registered('close_to_resources'):
+      examples |= (
+          'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
+              close_to_resources=','.join([
+                  RunInferenceImpl._make_close_to_resources(s)  # pylint: disable=protected-access
+                  for s in self._inference_spec_types
+              ])))
+
+    tuple_types = getattr(examples.element_type, 'tuple_types', None)
+    if tuple_types is None or len(tuple_types) != 2:
+      # The input is not a KV, so pair with a dummy key, run the inferences, and
+      # drop the dummy key afterwards.
+      return (examples
+              | 'PairWithNone' >> beam.Map(lambda x: (None, x))
+              | 'ApplyOnKeyedInput' >> RunInferencePerModelImpl(
+                  self._inference_spec_types)
+              | 'DropNone' >> beam.Values())
+
+    @beam.ptransform_fn
+    def Iteration(pcoll, inference_spec_type):  # pylint: disable=invalid-name
+      return (pcoll
+              | 'PairWithInput' >> beam.Map(lambda x: (x, x[1]))
+              | 'RunInferenceImpl' >> RunInferenceImpl(inference_spec_type)
+              | 'ExtendResults' >> beam.MapTuple(lambda k, v: k + (v,)))
+
+    result = examples
+    for i, inference_spec_type in enumerate(self._inference_spec_types):
+      result |= f'Model[{i}]' >> Iteration(inference_spec_type)  # pylint: disable=no-value-for-parameter
+    result |= 'ExtractResults' >> beam.Map(lambda tup: (tup[0], tuple(tup[2:])))
     return result
 
 
