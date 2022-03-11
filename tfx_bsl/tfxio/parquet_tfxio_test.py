@@ -10,6 +10,7 @@ from absl.testing import absltest
 from apache_beam.testing import util as beam_testing_util
 from google.protobuf import text_format
 from tensorflow_metadata.proto.v0 import schema_pb2
+from tfx_bsl.tfxio import telemetry_test_util
 
 from tfx_bsl.tfxio.parquet_tfxio import ParquetTFXIO
 
@@ -21,6 +22,7 @@ _ROWS = {
     "float_feature": [[2.0], [3.0]],
     "string_feature": [["abc"], ["xyz"]]
 }
+_NUM_ROWS = len(next(_ROWS))
 
 _SCHEMA = text_format.Parse(
     """
@@ -118,7 +120,8 @@ class ParquetRecordTest(absltest.TestCase):
     """Tests inferring of tensor representation."""
     tfxio = ParquetTFXIO(file_pattern=self._example_file,
                          column_names=_COLUMN_NAMES,
-                         schema=_UNORDERED_SCHEMA)
+                         schema=_UNORDERED_SCHEMA,
+                         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
     self.assertEqual(
         {
             "int_feature":
@@ -147,10 +150,14 @@ class ParquetRecordTest(absltest.TestCase):
       self.assertIn("float_feature", dict_of_tensors)
       self.assertIn("string_feature", dict_of_tensors)
 
-    with beam.Pipeline() as p:
-      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=2)
-                           )  # TODO: genralize batch size
-      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline = beam.Pipeline()
+    record_batch_pcoll = (pipeline | tfxio.BeamSource(batch_size=_NUM_ROWS))
+    beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline_result = pipeline.run()
+    pipeline_result.wait_until_finish()
+    telemetry_test_util.ValidateMetrics(self, pipeline_result,
+                                        _TELEMETRY_DESCRIPTORS, 'parquet',
+                                        'parquet')
 
   def testExplicitTensorRepresentations(self):
     """Tests when the tensor representation is explicitely provided in the schema."""
@@ -172,14 +179,16 @@ class ParquetRecordTest(absltest.TestCase):
 
     tfxio = ParquetTFXIO(file_pattern=self._example_file,
                          column_names=_COLUMN_NAMES,
-                         schema=schema)
+                         schema=schema,
+                         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
     self.assertEqual(tensor_representations, tfxio.TensorRepresentations())
 
   def testProjection(self):
     """Test projecting of a TFXIO."""
     tfxio = ParquetTFXIO(file_pattern=self._example_file,
                          column_names=_COLUMN_NAMES,
-                         schema=_UNORDERED_SCHEMA)
+                         schema=_UNORDERED_SCHEMA,
+                         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
 
     projected_tfxio = tfxio.Project(["int_feature"])
 
@@ -207,15 +216,20 @@ class ParquetRecordTest(absltest.TestCase):
       self.assertLen(dict_of_tensors, 1)
       self.assertIn("int_feature", dict_of_tensors)
 
-    with beam.Pipeline() as p:
-      record_batch_pcoll = (p | projected_tfxio.BeamSource(batch_size=2)
-                           )  # TODO: genralize batch size
-      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline = beam.Pipeline()
+    record_batch_pcoll = (pipeline | projected_tfxio.BeamSource(batch_size=_NUM_ROWS))
+    beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline_result = pipeline.run()
+    pipeline_result.wait_until_finish()
+    telemetry_test_util.ValidateMetrics(self, pipeline_result,
+                                        _TELEMETRY_DESCRIPTORS, 'parquet',
+                                        'parquet')
 
   def testOptionalSchema(self):
     """Tests when the schema is not provided."""
     tfxio = ParquetTFXIO(file_pattern=self._example_file,
-                         column_names=_COLUMN_NAMES)
+                         column_names=_COLUMN_NAMES,
+                         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
 
     with self.assertRaisesRegex(ValueError, ".*TFMD schema not provided.*"):
       tfxio.ArrowSchema()
@@ -225,9 +239,14 @@ class ParquetRecordTest(absltest.TestCase):
       record_batch = record_batch_list[0]
       self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
 
-    with beam.Pipeline() as p:
-      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=2))
-      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline = beam.Pipeline()
+    record_batch_pcoll = (pipeline | tfxio.BeamSource(batch_size=_NUM_ROWS))
+    beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+    pipeline_result = pipeline.run()
+    pipeline_result.wait_until_finish()
+    telemetry_test_util.ValidateMetrics(self, pipeline_result,
+                                        _TELEMETRY_DESCRIPTORS, 'parquet',
+                                        'parquet')
 
   def testUnorderedSchema(self):
     """Tests various valid schemas."""
@@ -241,8 +260,7 @@ class ParquetRecordTest(absltest.TestCase):
       self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
 
     with beam.Pipeline() as p:
-      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=2)
-                           )  # TODO: genralize batch size
+      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=_NUM_ROWS))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
   def _ValidateRecordBatch(self, record_batch, expected_arrow_schema):

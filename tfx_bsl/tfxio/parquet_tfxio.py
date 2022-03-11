@@ -23,8 +23,10 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 
 from tfx_bsl.coders import csv_decoder
 
-from tfx_bsl.tfxio import dataset_options, tensor_adapter, tensor_representation_util
+from tfx_bsl.tfxio import dataset_options, tensor_adapter, tensor_representation_util, telemetry
 from tfx_bsl.tfxio.tfxio import TFXIO
+
+PARQUET_FORMAT = "parquet"
 
 
 class ParquetTFXIO(TFXIO):
@@ -35,7 +37,8 @@ class ParquetTFXIO(TFXIO):
                column_names: List[Text],
                min_bundle_size: int = 0,
                schema: Optional[schema_pb2.Schema] = None,
-               validate: Optional[bool] = True):
+               validate: Optional[bool] = True,
+               telemetry_descriptors: Optional[List[Text]] = None):
     """Initializes a Parquet TFXIO.
 
     Args:
@@ -55,6 +58,7 @@ class ParquetTFXIO(TFXIO):
     self._min_bundle_size = min_bundle_size
     self._validate = validate
     self._schema = schema
+    self._telemetry_descriptors = telemetry_descriptors
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
 
@@ -69,7 +73,11 @@ class ParquetTFXIO(TFXIO):
               min_bundle_size=self._min_bundle_size,
               validate=self._validate,
               columns=self._column_names)
-          | "ToRecordBatch" >> beam.FlatMap(self._TableToRecordBatch, batch_size))
+          | "ToRecordBatch" >> beam.FlatMap(self._TableToRecordBatch, batch_size)
+          | "CollectRecordBatchTelemetry" >>
+          telemetry.ProfileRecordBatches(self._telemetry_descriptors,
+                                         PARQUET_FORMAT,
+                                         PARQUET_FORMAT))
 
     return beam.ptransform_fn(_PTransformFn)()
 
