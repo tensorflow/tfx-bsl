@@ -85,7 +85,7 @@ class ParquetTFXIO(TFXIO):
       self,
       table: pa.Table,
       batch_size: Optional[int] = None) -> List[pa.RecordBatch]:
-    return table.to_batches(self, max_chunksize=batch_size)
+    return table.to_batches(max_chunksize=batch_size)
 
   def ArrowSchema(self) -> pa.Schema:
     schema = self._schema
@@ -129,5 +129,6 @@ class ParquetTFXIO(TFXIO):
     """
     projected_schema = self._ProjectTfmdSchema(tensor_names)
     result = copy.copy(self)
+    result._column_names = tensor_names  # pylint: disable=protected-access
     result._schema = projected_schema  # pylint: disable=protected-access
     return result

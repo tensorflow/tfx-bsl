@@ -100,7 +100,7 @@ _EXPECTED_COLUMN_VALUES = {
 
 def _WriteInputs(filename):
   df = pd.DataFrame(_ROWS)
-  table = pa.Table.from_pandas(df)
+  table = pa.Table.from_pandas(df, schema=_EXPECTED_ARROW_SCHEMA)
   pq.write_table(table, filename)
 
 
@@ -138,7 +138,7 @@ class ParquetRecordTest(absltest.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(record_batch)
+      self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
       self.assertTrue(record_batch.schema.equals(tfxio.ArrowSchema()))
       tensor_adapter = tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
@@ -190,19 +190,25 @@ class ParquetRecordTest(absltest.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(record_batch)
+      self._ValidateRecordBatch(record_batch, _EXPECTED_PROJECTED_ARROW_SCHEMA)
       expected_schema = projected_tfxio.ArrowSchema()
-      self.assertTrue(
-          record_batch.schema.equals(expected_schema),
-          "actual: {}; expected: {}".format(record_batch.schema,
-                                            expected_schema))
+      self.assertListEqual(
+          record_batch.schema.names,
+          expected_schema.names,
+          "actual: {}; expected: {}".format(record_batch.schema.names,
+                                            expected_schema.names))
+      self.assertListEqual(
+          record_batch.schema.types,
+          expected_schema.types,
+          "actual: {}; expected: {}".format(record_batch.schema.types,
+                                            expected_schema.types))
       tensor_adapter = projected_tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
       self.assertLen(dict_of_tensors, 1)
       self.assertIn("int_feature", dict_of_tensors)
 
     with beam.Pipeline() as p:
-      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=2)
+      record_batch_pcoll = (p | projected_tfxio.BeamSource(batch_size=2)
                            )  # TODO: genralize batch size
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
@@ -214,9 +220,14 @@ class ParquetRecordTest(absltest.TestCase):
     with self.assertRaisesRegex(ValueError, ".*TFMD schema not provided.*"):
       tfxio.ArrowSchema()
 
-    with self.assertRaisesRegex(ValueError, ".*TFMD schema not provided.*"):
-      with beam.Pipeline() as p:
-        (p | tfxio.BeamSource(batch_size=2))
+    def _AssertFn(record_batch_list):
+      self.assertLen(record_batch_list, 1)
+      record_batch = record_batch_list[0]
+      self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
+
+    with beam.Pipeline() as p:
+      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=2))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
   def testUnorderedSchema(self):
     """Tests various valid schemas."""
@@ -227,20 +238,27 @@ class ParquetRecordTest(absltest.TestCase):
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
-      self._ValidateRecordBatch(record_batch)
+      self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
 
     with beam.Pipeline() as p:
       record_batch_pcoll = (p | tfxio.BeamSource(batch_size=2)
                            )  # TODO: genralize batch size
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
-  def _ValidateRecordBatch(self, record_batch):
+  def _ValidateRecordBatch(self, record_batch, expected_arrow_schema):
     self.assertIsInstance(record_batch, pa.RecordBatch)
     self.assertEqual(record_batch.num_rows, 2)
-    expected_schema = _EXPECTED_ARROW_SCHEMA
-    self.assertTrue(
-        record_batch.schema.equals(expected_schema),
-        "Expected: {} ; got {}".format(expected_schema, record_batch.schema))
+    # when reading the parquet files and then transforming them to RecordBatches,
+    # metadata is populated, specifically the pandas metadata.
+    # We do not assert that metadata.
+    self.assertListEqual(
+        record_batch.schema.names,
+        expected_arrow_schema.names,
+        "Expected: {} ; got {}".format(expected_arrow_schema.names, record_batch.schema.names))
+    self.assertListEqual(
+        record_batch.schema.types,
+        expected_arrow_schema.types,
+        "Expected: {} ; got {}".format(expected_arrow_schema.types, record_batch.schema.types))
     for i, field in enumerate(record_batch.schema):
       self.assertTrue(
           record_batch.column(i).equals(_EXPECTED_COLUMN_VALUES[field.name]),
