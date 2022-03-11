@@ -202,13 +202,11 @@ class ParquetRecordTest(absltest.TestCase):
       self._ValidateRecordBatch(record_batch, _EXPECTED_PROJECTED_ARROW_SCHEMA)
       expected_schema = projected_tfxio.ArrowSchema()
       self.assertListEqual(
-          record_batch.schema.names,
-          expected_schema.names,
+          record_batch.schema.names, expected_schema.names,
           "actual: {}; expected: {}".format(record_batch.schema.names,
                                             expected_schema.names))
       self.assertListEqual(
-          record_batch.schema.types,
-          expected_schema.types,
+          record_batch.schema.types, expected_schema.types,
           "actual: {}; expected: {}".format(record_batch.schema.types,
                                             expected_schema.types))
       tensor_adapter = projected_tfxio.TensorAdapter()
@@ -217,7 +215,8 @@ class ParquetRecordTest(absltest.TestCase):
       self.assertIn("int_feature", dict_of_tensors)
 
     pipeline = beam.Pipeline()
-    record_batch_pcoll = (pipeline | projected_tfxio.BeamSource(batch_size=_NUM_ROWS))
+    record_batch_pcoll = (pipeline |
+                          projected_tfxio.BeamSource(batch_size=_NUM_ROWS))
     beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
     pipeline_result = pipeline.run()
     pipeline_result.wait_until_finish()
@@ -270,13 +269,13 @@ class ParquetRecordTest(absltest.TestCase):
     # metadata is populated, specifically the pandas metadata.
     # We do not assert that metadata.
     self.assertListEqual(
-        record_batch.schema.names,
-        expected_arrow_schema.names,
-        "Expected: {} ; got {}".format(expected_arrow_schema.names, record_batch.schema.names))
+        record_batch.schema.names, expected_arrow_schema.names,
+        "Expected: {} ; got {}".format(expected_arrow_schema.names,
+                                       record_batch.schema.names))
     self.assertListEqual(
-        record_batch.schema.types,
-        expected_arrow_schema.types,
-        "Expected: {} ; got {}".format(expected_arrow_schema.types, record_batch.schema.types))
+        record_batch.schema.types, expected_arrow_schema.types,
+        "Expected: {} ; got {}".format(expected_arrow_schema.types,
+                                       record_batch.schema.types))
     for i, field in enumerate(record_batch.schema):
       self.assertTrue(
           record_batch.column(i).equals(_EXPECTED_COLUMN_VALUES[field.name]),

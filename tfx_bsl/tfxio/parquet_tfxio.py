@@ -67,17 +67,14 @@ class ParquetTFXIO(TFXIO):
     def _PTransformFn(pcoll_or_pipeline: Any):
       """Converts raw records to RecordBatches."""
       return (
-          pcoll_or_pipeline
-          | "ParquetBeamSource" >> beam.io.ReadFromParquetBatched(
-              file_pattern=self._file_pattern,
-              min_bundle_size=self._min_bundle_size,
-              validate=self._validate,
-              columns=self._column_names)
-          | "ToRecordBatch" >> beam.FlatMap(self._TableToRecordBatch, batch_size)
-          | "CollectRecordBatchTelemetry" >>
-          telemetry.ProfileRecordBatches(self._telemetry_descriptors,
-                                         PARQUET_FORMAT,
-                                         PARQUET_FORMAT))
+          pcoll_or_pipeline | "ParquetBeamSource" >>
+          beam.io.ReadFromParquetBatched(file_pattern=self._file_pattern,
+                                         min_bundle_size=self._min_bundle_size,
+                                         validate=self._validate,
+                                         columns=self._column_names) |
+          "ToRecordBatch" >> beam.FlatMap(self._TableToRecordBatch, batch_size)
+          | "CollectRecordBatchTelemetry" >> telemetry.ProfileRecordBatches(
+              self._telemetry_descriptors, PARQUET_FORMAT, PARQUET_FORMAT))
 
     return beam.ptransform_fn(_PTransformFn)()
 
