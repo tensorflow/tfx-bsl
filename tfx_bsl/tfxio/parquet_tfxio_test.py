@@ -22,7 +22,7 @@ _ROWS = {
     "float_feature": [[2.0], [3.0]],
     "string_feature": [["abc"], ["xyz"]]
 }
-_NUM_ROWS = len(next(_ROWS))
+_NUM_ROWS = len(next(iter(_ROWS)))
 
 _SCHEMA = text_format.Parse(
     """

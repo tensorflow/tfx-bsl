@@ -26,7 +26,7 @@ from tfx_bsl.coders import csv_decoder
 from tfx_bsl.tfxio import dataset_options, tensor_adapter, tensor_representation_util, telemetry
 from tfx_bsl.tfxio.tfxio import TFXIO
 
-PARQUET_FORMAT = "parquet"
+_PARQUET_FORMAT = "parquet"
 
 
 class ParquetTFXIO(TFXIO):
@@ -47,11 +47,15 @@ class ParquetTFXIO(TFXIO):
       min_bundle_size: the minimum size in bytes, to be considered when
         splitting the parquet input into bundles.
       schema: An optional TFMD Schema describing the dataset. If schema is
-        provided, it will determine the data type of the csv columns. Otherwise,
-        the each column's data type will be inferred by the csv decoder. The
-        schema should contain exactly the same features as column_names.
+        provided, it will determine the data type of the parquet columns. Otherwise,
+        the each column's data type will be inferred by the decoder.
       validate: Boolean flag to verify that the files exist during the pipeline
         creation time.
+      telemetry_descriptors: A set of descriptors that identify the component
+        that is instantiating this TFXIO. These will be used to construct the
+        namespace to contain metrics for profiling and are therefore expected to
+        be identifiers of the component itself and not individual instances of
+        source use.
     """
     self._file_pattern = file_pattern
     self._column_names = column_names
@@ -65,7 +69,7 @@ class ParquetTFXIO(TFXIO):
     @beam.typehints.with_input_types(Any)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(pcoll_or_pipeline: Any):
-      """Converts raw records to RecordBatches."""
+      """Reads Parquet tables and converts to RecordBatches."""
       return (
           pcoll_or_pipeline | "ParquetBeamSource" >>
           beam.io.ReadFromParquetBatched(file_pattern=self._file_pattern,
@@ -74,7 +78,7 @@ class ParquetTFXIO(TFXIO):
                                          columns=self._column_names) |
           "ToRecordBatch" >> beam.FlatMap(self._TableToRecordBatch, batch_size)
           | "CollectRecordBatchTelemetry" >> telemetry.ProfileRecordBatches(
-              self._telemetry_descriptors, PARQUET_FORMAT, PARQUET_FORMAT))
+              self._telemetry_descriptors, _PARQUET_FORMAT, _PARQUET_FORMAT))
 
     return beam.ptransform_fn(_PTransformFn)()
 
@@ -93,11 +97,10 @@ class ParquetTFXIO(TFXIO):
     return table.to_batches(max_chunksize=batch_size)
 
   def ArrowSchema(self) -> pa.Schema:
-    schema = self._schema
-    if schema is None:
+    if self._schema is None:
       raise ValueError("TFMD schema not provided. Unable to derive an "
                        "Arrow schema")
-    return csv_decoder.GetArrowSchema(self._column_names, schema)
+    return csv_decoder.GetArrowSchema(self._column_names, self._schema)
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     result = (tensor_representation_util.GetTensorRepresentationsFromSchema(
@@ -110,8 +113,6 @@ class ParquetTFXIO(TFXIO):
   def _ProjectTfmdSchema(self, column_names: List[Text]) -> schema_pb2.Schema:
     """Creates a tensorflow Schema from the current one with only the given columns"""
 
-    # The columns in the schema will remain the same, because the csv decoder
-    # will need to decode all columns no matter what.
     result = schema_pb2.Schema()
     result.CopyFrom(self._schema)
 
