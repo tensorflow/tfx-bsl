@@ -18,7 +18,9 @@ from typing import Optional, List, Text, Any
 
 import apache_beam as beam
 import pyarrow as pa
+import pyarrow.parquet as pq
 import tensorflow as tf
+from apache_beam.io.filesystems import FileSystems
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 from tfx_bsl.coders import csv_decoder
@@ -98,9 +100,14 @@ class ParquetTFXIO(TFXIO):
 
   def ArrowSchema(self) -> pa.Schema:
     if self._schema is None:
-      raise ValueError("TFMD schema not provided. Unable to derive an "
-                       "Arrow schema")
+      return self._InferArrowSchema()
     return csv_decoder.GetArrowSchema(self._column_names, self._schema)
+
+  def _InferArrowSchema(self):
+    match_result = FileSystems.match([self._file_pattern])[0]
+    files_metadata = match_result.metadata_list[0]
+    with FileSystems.open(files_metadata.path) as f:
+      return pq.read_schema(f)
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     result = (tensor_representation_util.GetTensorRepresentationsFromSchema(

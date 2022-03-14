@@ -230,13 +230,13 @@ class ParquetRecordTest(absltest.TestCase):
                          column_names=_COLUMN_NAMES,
                          telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
 
-    with self.assertRaisesRegex(ValueError, ".*TFMD schema not provided.*"):
-      tfxio.ArrowSchema()
+    self.assertEqual(tfxio.ArrowSchema(), _EXPECTED_ARROW_SCHEMA)
 
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
       record_batch = record_batch_list[0]
       self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
+
 
     pipeline = beam.Pipeline()
     record_batch_pcoll = (pipeline | tfxio.BeamSource(batch_size=_NUM_ROWS))
