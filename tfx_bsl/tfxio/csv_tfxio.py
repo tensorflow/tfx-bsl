@@ -182,7 +182,7 @@ class CsvTFXIO(_CsvTFXIOBase):
   def __init__(self,
                file_pattern: Text,
                column_names: List[Text],
-               telemetry_descriptors: List[Text],
+               telemetry_descriptors: Optional[List[Text]] = None,
                validate: Optional[bool] = True,
                delimiter: Optional[Text] = ",",
                skip_blank_lines: Optional[bool] = True,
