@@ -37,6 +37,7 @@ class ParquetTFXIO(TFXIO):
   def __init__(self,
                file_pattern: Text,
                column_names: List[Text],
+               *,
                min_bundle_size: int = 0,
                schema: Optional[schema_pb2.Schema] = None,
                validate: Optional[bool] = True,
