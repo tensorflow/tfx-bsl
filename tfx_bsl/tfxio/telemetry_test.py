@@ -73,7 +73,10 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
             _GetMetricName("num_cells[STRING]"): 3,
             _GetMetricName("num_cells[INT]"): 4,
             _GetMetricName("num_cells[FLOAT]"): 4,
-        }),
+        },
+        telemetry_descriptors=["test", "component"],
+        expected_namespace="tfx.test.component.io",
+    ),
     dict(
         testcase_name="deeply_nested_list",
         record_batch=pa.RecordBatch.from_arrays(
@@ -147,22 +150,27 @@ class TelemetryTest(parameterized.TestCase):
           (msg + ": ") if msg else "", expected, beam_distribution_result))
 
   @parameterized.named_parameters(*_PROFILE_RECORD_BATCHES_TEST_CASES)
-  def testProfileRecordBatches(self, record_batch, expected_distributions,
-                               expected_counters):
+  def testProfileRecordBatches(self,
+                               record_batch,
+                               expected_distributions,
+                               expected_counters,
+                               telemetry_descriptors=None,
+                               expected_namespace="tfx.UNKNOWN_COMPONENT.io"):
     p = beam.Pipeline()
-    _ = (p
-         # Slice the input into two pieces to make sure profiling can handle
-         # sliced RecordBatches.
-         | "CreateTestData" >> beam.Create([record_batch.slice(0, 1),
-                                            record_batch.slice(1)])
-         | "Profile" >> telemetry.ProfileRecordBatches(
-             ["test", "component"], _LOGICAL_FORMAT, _PHYSICAL_FORMAT, 1.0))
+    _ = (
+        p
+        # Slice the input into two pieces to make sure profiling can handle
+        # sliced RecordBatches.
+        | "CreateTestData" >> beam.Create(
+            [record_batch.slice(0, 1),
+             record_batch.slice(1)])
+        | "Profile" >> telemetry.ProfileRecordBatches(
+            telemetry_descriptors, _LOGICAL_FORMAT, _PHYSICAL_FORMAT, 1.0))
     runner = p.run()
     runner.wait_until_finish()
     all_metrics = runner.metrics()
     maintained_metrics = all_metrics.query(
-        beam.metrics.metric.MetricsFilter().with_namespace(
-            "tfx.test.component.io"))
+        beam.metrics.metric.MetricsFilter().with_namespace(expected_namespace))
 
     counters = maintained_metrics[beam.metrics.metric.MetricResults.COUNTERS]
     self.assertLen(counters, len(expected_counters))
@@ -179,18 +187,27 @@ class TelemetryTest(parameterized.TestCase):
           dist.result, expected_distributions[dist.key.metric.name],
           dist.key.metric.name)
 
-  def testProfileRawRecords(self):
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="no_descriptors",
+          telemetry_descriptors=None,
+          expected_namespace="tfx.UNKNOWN_COMPONENT.io"),
+      dict(
+          testcase_name="with_descriptors",
+          telemetry_descriptors=["test", "component"],
+          expected_namespace="tfx.test.component.io"))
+  def testProfileRawRecords(self, telemetry_descriptors, expected_namespace):
     p = beam.Pipeline()
-    _ = (p
-         | "CreateTestData" >> beam.Create([b"aaa", b"bbbb"])
-         | "Profile" >> telemetry.ProfileRawRecords(
-             ["test", "component"], _LOGICAL_FORMAT, _PHYSICAL_FORMAT))
+    _ = (
+        p
+        | "CreateTestData" >> beam.Create([b"aaa", b"bbbb"])
+        | "Profile" >> telemetry.ProfileRawRecords(
+            telemetry_descriptors, _LOGICAL_FORMAT, _PHYSICAL_FORMAT))
     runner = p.run()
     runner.wait_until_finish()
     all_metrics = runner.metrics()
     maintained_metrics = all_metrics.query(
-        beam.metrics.metric.MetricsFilter().with_namespace(
-            "tfx.test.component.io"))
+        beam.metrics.metric.MetricsFilter().with_namespace(expected_namespace))
     counters = maintained_metrics[beam.metrics.metric.MetricResults.COUNTERS]
     self.assertLen(counters, 1)
     num_records_counter = counters[0]
