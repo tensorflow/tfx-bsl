@@ -230,7 +230,7 @@ class ColumnTypeInferrer(beam.CombineFn):
       previous_type = accumulator.get(column_name, None)
       if column_name in self._multivalent_columns:
         # the reader only accepts str but v is bytes.
-        values = self._multivalent_reader.ReadLine(cell.decode())
+        values = self._multivalent_reader.ReadLine(cell.decode())  # pytype: disable=attribute-error  # trace-all-classes
         current_type = max([_InferValueType(value) for value in values
                            ]) if values else ColumnType.UNKNOWN
       else:
