@@ -114,7 +114,7 @@ class ArrayUtilTest(parameterized.TestCase):
     # Demonstrate that the returned array can be converted to a numpy boolean
     # array w/o copying
     np.testing.assert_equal(
-        np.array([True, True, True]), null_masks.to_numpy().view(np.bool))
+        np.array([True, True, True]), null_masks.to_numpy().view(bool))
 
   @parameterized.named_parameters(*[
       dict(

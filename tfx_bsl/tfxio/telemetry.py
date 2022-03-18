@@ -135,7 +135,7 @@ class _ProfileRecordBatchDoFn(beam.DoFn):
     # It can be computed by summing up (element wise) the negation of null
     # flags (converted to integer) of all the arrays.
     null_bitmaps = [
-        np.asarray(array_util.GetArrayNullBitmapAsByteArray(c)).view(np.bool)
+        np.asarray(array_util.GetArrayNullBitmapAsByteArray(c)).view(bool)
         for c in record_batch]
     indicators = [(~bitmap).view(np.uint8) for bitmap in null_bitmaps]
     sum_indicators = np.zeros(record_batch.num_rows, dtype=np.int64)

@@ -66,8 +66,8 @@ def ToSingletonListArray(array: pa.Array):
   # This is the null mask over offsets (but ListArray.from_arrays() uses it as
   # the null mask for the ListArray), so its length is array_size +1, but the
   # last element is always False.
-  list_array_null_mask = np.zeros((array_size + 1,), np.bool)
-  list_array_null_mask[:array_size] = null_mask.view(np.bool)
+  list_array_null_mask = np.zeros((array_size + 1,), bool)
+  list_array_null_mask[:array_size] = null_mask.view(bool)
   values_non_null = array.take(pa.array(np.flatnonzero(presence_mask)))
   return pa.ListArray.from_arrays(
       pa.array(offsets_np, mask=list_array_null_mask), values_non_null)
