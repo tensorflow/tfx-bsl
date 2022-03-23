@@ -71,6 +71,10 @@ class ParquetTFXIO(tfxio.TFXIO):
     self._schema = schema
     self._telemetry_descriptors = telemetry_descriptors
 
+  @property
+  def telemetry_descriptors(self) -> Optional[List[str]]:
+    return self._telemetry_descriptors
+
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
 
     @beam.typehints.with_input_types(Union[beam.PCollection, beam.Pipeline])
