@@ -350,9 +350,10 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
         text_format.Parse(pbtxt, tf.train.Example())
         for pbtxt in examples_text_proto
     ]
+    coder = example_coder.RecordBatchToExamplesEncoder()
     actual_examples = [
         tf.train.Example.FromString(encoded)
-        for encoded in example_coder.RecordBatchToExamples(record_batch)
+        for encoded in coder.encode(record_batch)
     ]
 
     self.assertEqual(actual_examples, expected_examples)
@@ -360,7 +361,7 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
   @parameterized.parameters(*_INVALID_ENCODE_TYPE_CASES)
   def test_invalid_input(self, record_batch, error, error_msg_regex):
     with self.assertRaisesRegex(error, error_msg_regex):
-      example_coder.RecordBatchToExamples(record_batch)
+      example_coder.RecordBatchToExamplesEncoder().encode(record_batch)
 
 
 _ENCODE_NESTED_TEST_EXAMPLES = [

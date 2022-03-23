@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Example coders."""
-from typing import List, Dict
+from typing import Dict, List, Optional
 
 import pyarrow as pa
 from tfx_bsl.tfxio import tensor_representation_util
@@ -54,23 +54,24 @@ def _get_ragged_column_names(
 
 
 class RecordBatchToExamplesEncoder:
-  """Encodes `pa.RecordBatch` as a list of `tf.Example`s.
+  """Encodes `pa.RecordBatch` as a list of serialized `tf.Example`s.
 
-  A generalized stateful version of `RecordBatchToExamples` that infers names
-  of features representing nested list components from TFMD schema. The names
-  are inferred once during construction and can be used multiple times in
-  `encode`.
-  Only RaggedTensors are currently represented as nested lists.
+  Requires TFMD schema only if RecordBatches contains nested lists with
+  depth > 2 that represent TensorFlow's RaggedFeatures.
   """
 
-  def __init__(self, schema: schema_pb2.Schema):
+  __slots__ = ["_ragged_features"]
+
+  def __init__(self, schema: Optional[schema_pb2.Schema] = None):
     self._ragged_features = FeatureNameToColumnsMap()
-    # Iterate over tensor representations in all groups.
-    for group in schema.tensor_representation_group.values():
-      tensor_representation_map = group.tensor_representation
-      for name, representation in tensor_representation_map.items():
-        if representation.WhichOneof("kind") == "ragged_tensor":
-          self._ragged_features[name] = _get_ragged_column_names(representation)
+    if schema is not None:
+      # Iterate over tensor representations in all groups.
+      for group in schema.tensor_representation_group.values():
+        tensor_representation_map = group.tensor_representation
+        for name, representation in tensor_representation_map.items():
+          if representation.WhichOneof("kind") == "ragged_tensor":
+            self._ragged_features[name] = _get_ragged_column_names(
+                representation)
 
   def __getstate__(self) -> Dict[str, List[str]]:
     return dict(self._ragged_features.items())

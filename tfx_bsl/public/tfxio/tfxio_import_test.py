@@ -20,6 +20,7 @@ class TfxioImportTest(absltest.TestCase):
 
   def test_import(self):
     # pylint: disable=g-import-not-at-top,unused-import
+    from tfx_bsl.public.tfxio import RecordBatchToExamplesEncoder
     from tfx_bsl.public.tfxio import BeamRecordCsvTFXIO
     from tfx_bsl.public.tfxio import CsvTFXIO
     from tfx_bsl.public.tfxio import TensorFlowDatasetOptions
