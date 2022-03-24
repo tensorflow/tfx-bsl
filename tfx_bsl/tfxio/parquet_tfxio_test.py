@@ -329,6 +329,25 @@ class ParquetRecordTest(absltest.TestCase):
       record_batch_pcoll = (p | tfxio.BeamSource(batch_size=_NUM_ROWS))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
+  def testSubsetOfColumnNames(self):
+    """Tests various valid schemas."""
+    tfxio = ParquetTFXIO(
+      file_pattern=self._example_file,
+      column_names=['int_feature'],
+      schema=_SCHEMA)
+
+    def _AssertFn(record_batch_list):
+      self.assertLen(record_batch_list, 1)
+      record_batch = record_batch_list[0]
+      expected_arrow_schema = pa.schema([
+        pa.field("int_feature", pa.large_list(pa.int64())),
+      ])
+      self._ValidateRecordBatch(record_batch, expected_arrow_schema)
+
+    with beam.Pipeline() as p:
+      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=_NUM_ROWS))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
   def _ValidateRecordBatch(self, record_batch, expected_arrow_schema):
     self.assertIsInstance(record_batch, pa.RecordBatch)
     self.assertEqual(record_batch.num_rows, 2)
