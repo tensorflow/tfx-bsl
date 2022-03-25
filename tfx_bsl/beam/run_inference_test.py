@@ -427,10 +427,6 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         MetricsFilter().with_name('num_inferences'))
     self.assertTrue(num_inferences['counters'])
     self.assertEqual(num_inferences['counters'][0].result, 2)
-    num_instances = run_result.metrics().query(
-        MetricsFilter().with_name('num_instances'))
-    self.assertTrue(num_instances['counters'])
-    self.assertEqual(num_instances['counters'][0].result, 2)
     inference_request_batch_size = run_result.metrics().query(
         MetricsFilter().with_name('inference_request_batch_size'))
     self.assertTrue(inference_request_batch_size['distributions'])
@@ -651,10 +647,10 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             project_id='test_project',
             model_name='test_model',
             version_name='test_version'))
-    remote_predict = run_inference._BatchRemotePredictDoFn(
+    remote_model_spec = run_inference._RemotePrectictModelSpec(
         inference_spec_type, None)
-    result = remote_predict._make_instances(
-        [example], [example.SerializeToString()])
+    result = remote_model_spec._make_instances([example],
+                                               [example.SerializeToString()])
     self.assertEqual(result, [
         {
             'x_bytes': {
@@ -693,9 +689,9 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             model_name='test_model',
             version_name='test_version',
             use_serialization_config=True))
-    remote_predict = run_inference._BatchRemotePredictDoFn(
+    remote_model_spec = run_inference._RemotePrectictModelSpec(
         inference_spec_type, None)
-    result = remote_predict._make_instances(examples, serialized_examples)
+    result = remote_model_spec._make_instances(examples, serialized_examples)
     self.assertEqual(
         result,
         [{'b64': base64.b64encode(se).decode()} for se in serialized_examples])

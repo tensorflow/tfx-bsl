@@ -19,9 +19,6 @@ from concurrent import futures
 import functools
 import importlib
 import os
-import platform
-import sys
-import time
 from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Sequence, Text, Tuple, TypeVar, Union
 
 from absl import logging
@@ -30,27 +27,22 @@ from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.transforms import resources
 from apache_beam.utils import retry
-from apache_beam.utils import shared
 import googleapiclient
 from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
 import tensorflow as tf
+from tfx_bsl.beam.run_inference_base import InferenceRunner
+from tfx_bsl.beam.run_inference_base import ModelLoader
+from tfx_bsl.beam.run_inference_base import RunInference as BaseRunInference
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 
 # TODO(b/140306674): stop using the internal TF API.
 from tensorflow.python.saved_model import loader_impl  # pylint: disable=g-direct-tensorflow-import
-
 from tensorflow_serving.apis import classification_pb2
 from tensorflow_serving.apis import prediction_log_pb2
 from tensorflow_serving.apis import regression_pb2
-
-try:
-  # pylint: disable=g-import-not-at-top
-  import resource
-except ImportError:
-  resource = None
 
 
 # TODO(b/131873699): Remove once 1.x support is dropped.
@@ -66,9 +58,6 @@ except ImportError:
 _METRICS_DESCRIPTOR_INFERENCE = 'BulkInferrer'
 _METRICS_DESCRIPTOR_IN_PROCESS = 'InProcess'
 _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION = 'CloudAIPlatformPrediction'
-_MILLISECOND_TO_MICROSECOND = 1000
-_MICROSECOND_TO_NANOSECOND = 1000
-_SECOND_TO_MICROSECOND = 1000000
 _REMOTE_INFERENCE_NUM_RETRIES = 5
 
 # We define the following aliases of Any because the actual types are not
@@ -171,17 +160,15 @@ class RunInferenceImpl(beam.PTransform):
     if self.infer_output_type(examples.element_type) is _OUTPUT_TYPE:
       # The input is not a KV, so pair with a dummy key, run the inference, and
       # drop the dummy key afterwards.
-      return (
-          examples
-          | 'PairWithNone' >> beam.Map(lambda x: (None, x))
-          | 'ApplyOnKeyedInput' >> RunInferenceImpl(self._inference_spec_type)
-          | 'DropNone' >> beam.Values())
-
-    batched_examples = examples | 'BatchExamples' >> beam.BatchElements()
+      return (examples
+              | 'PairWithNone' >> beam.Map(lambda x: (None, x))
+              |
+              'ApplyOnKeyedInput' >> RunInferenceImpl(self._inference_spec_type)
+              | 'DropNone' >> beam.Values().with_output_types(_OUTPUT_TYPE))
 
     # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
     if resources.ResourceHint.is_registered('close_to_resources'):
-      batched_examples |= (
+      examples |= (
           'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
               close_to_resources=self._make_close_to_resources(
                   self._inference_spec_type)))
@@ -189,17 +176,14 @@ class RunInferenceImpl(beam.PTransform):
     # pylint: disable=no-value-for-parameter
     operation_type = _get_operation_type(self._inference_spec_type)
     if operation_type == _OperationType.CLASSIFICATION:
-      result = batched_examples | 'Classify' >> _Classify(
-          self._inference_spec_type)
+      result = examples | 'Classify' >> _Classify(self._inference_spec_type)
     elif operation_type == _OperationType.REGRESSION:
-      result = batched_examples | 'Regress' >> _Regress(
-          self._inference_spec_type)
+      result = examples | 'Regress' >> _Regress(self._inference_spec_type)
     elif operation_type == _OperationType.MULTI_INFERENCE:
-      result = batched_examples | 'MultiInference' >> _MultiInference(
+      result = examples | 'MultiInference' >> _MultiInference(
           self._inference_spec_type)
     elif operation_type == _OperationType.PREDICTION:
-      result = batched_examples | 'Predict' >> _Predict(
-          self._inference_spec_type)
+      result = examples | 'Predict' >> _Predict(self._inference_spec_type)
     else:
       raise ValueError('Unsupported operation_type %s' % operation_type)
 
@@ -271,177 +255,62 @@ _Signature = NamedTuple('_Signature', [('name', Text),
                                        ('signature_def', _SignatureDef)])
 
 
+# TODO(b/226119284): remove these helper functions once we move with_output_type
+# into the model spec classes.
 @beam.ptransform_fn
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
 @beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 def _Classify(  # pylint: disable=invalid-name
     pcoll: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType):
   """Performs classify PTransform."""
-  if _using_in_process_inference(inference_spec_type):
-    return (pcoll
-            | 'Classify' >> beam.ParDo(
-                _BatchClassifyDoFn(inference_spec_type, shared.Shared())))
-  else:
+  if not _using_in_process_inference(inference_spec_type):
     raise NotImplementedError
+  return pcoll | 'Classify' >> BaseRunInference(
+      _ClassifyModelSpec(inference_spec_type))
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
 @beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 def _Regress(  # pylint: disable=invalid-name
     pcoll: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType):
   """Performs regress PTransform."""
-  if _using_in_process_inference(inference_spec_type):
-    return (pcoll
-            | 'Regress' >> beam.ParDo(
-                _BatchRegressDoFn(inference_spec_type, shared.Shared())))
-  else:
+  if not _using_in_process_inference(inference_spec_type):
     raise NotImplementedError
+  return pcoll | 'Regress' >> BaseRunInference(
+      _RegressModelSpec(inference_spec_type))
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
 @beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 def _MultiInference(  # pylint: disable=invalid-name
     pcoll: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType):
   """Performs multi inference PTransform."""
-  if _using_in_process_inference(inference_spec_type):
-    return (pcoll
-            | 'MultiInference' >> beam.ParDo(
-                _BatchMultiInferenceDoFn(inference_spec_type, shared.Shared())))
-  else:
+  if not _using_in_process_inference(inference_spec_type):
     raise NotImplementedError
+  return (pcoll
+          | 'MultiInference' >> BaseRunInference(
+              _MultiInferenceModelSpec(inference_spec_type)))
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
 @beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
 def _Predict(  # pylint: disable=invalid-name
     pcoll: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType):
   """Performs predict PTransform."""
   if _using_in_process_inference(inference_spec_type):
-    return (pcoll
-            | 'Predict' >> beam.ParDo(
-                _BatchPredictDoFn(inference_spec_type, shared.Shared())))
+    prediction_model_spec = _PredictModelSpec(inference_spec_type)
+    return pcoll | 'Predict' >> BaseRunInference(prediction_model_spec)
   else:
-    return (
-        pcoll
-        | 'RemotePredict'>> beam.ParDo(
-            _BatchRemotePredictDoFn(
-                inference_spec_type, pcoll.pipeline.options)))
-
-
-@beam.typehints.with_input_types(List[Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
-class _BaseBatchDoFn(beam.DoFn, metaclass=abc.ABCMeta):
-  """Base DoFn that performs bulk inference."""
-
-  class _MetricsCollector(object):
-    """A collector for beam metrics."""
-
-    def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
-      operation_type = _get_operation_type(inference_spec_type)
-      proximity_descriptor = (
-          _METRICS_DESCRIPTOR_IN_PROCESS
-          if _using_in_process_inference(inference_spec_type) else
-          _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
-      namespace = util.MakeTfxNamespace(
-          [_METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
-
-      # Metrics
-      self._inference_counter = beam.metrics.Metrics.counter(
-          namespace, 'num_inferences')
-      self._num_instances = beam.metrics.Metrics.counter(
-          namespace, 'num_instances')
-      self._inference_request_batch_size = beam.metrics.Metrics.distribution(
-          namespace, 'inference_request_batch_size')
-      self._inference_request_batch_byte_size = (
-          beam.metrics.Metrics.distribution(
-              namespace, 'inference_request_batch_byte_size'))
-      # Batch inference latency in microseconds.
-      self._inference_batch_latency_micro_secs = (
-          beam.metrics.Metrics.distribution(
-              namespace, 'inference_batch_latency_micro_secs'))
-      self._model_byte_size = beam.metrics.Metrics.distribution(
-          namespace, 'model_byte_size')
-      # Model load latency in milliseconds.
-      self._load_model_latency_milli_secs = beam.metrics.Metrics.distribution(
-          namespace, 'load_model_latency_milli_secs')
-
-      # Metrics cache
-      self.load_model_latency_milli_secs_cache = None
-      self.model_byte_size_cache = None
-
-    def update_metrics_with_cache(self):
-      if self.load_model_latency_milli_secs_cache is not None:
-        self._load_model_latency_milli_secs.update(
-            self.load_model_latency_milli_secs_cache)
-        self.load_model_latency_milli_secs_cache = None
-      if self.model_byte_size_cache is not None:
-        self._model_byte_size.update(self.model_byte_size_cache)
-        self.model_byte_size_cache = None
-
-    def update(self, examples_count: int, examples_byte_size: int,
-               latency_micro_secs: int):
-      self._inference_batch_latency_micro_secs.update(latency_micro_secs)
-      self._num_instances.inc(examples_count)
-      self._inference_counter.inc(examples_count)
-      self._inference_request_batch_size.update(examples_count)
-      self._inference_request_batch_byte_size.update(examples_byte_size)
-
-  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
-    super().__init__()
-    self._metrics_collector = self._MetricsCollector(inference_spec_type)
-    self._clock = None
-
-  def setup(self):
-    self._clock = _ClockFactory.make_clock()
-
-  def process(
-      self,
-      keyed_examples: List[Tuple[_K, _INPUT_TYPE]]
-      ) -> Iterable[Tuple[_K, prediction_log_pb2.PredictionLog]]:
-    batch_start_time = self._clock.get_current_time_in_microseconds()
-    keys, examples = zip(*keyed_examples)
-    serialized_examples = [
-        e if isinstance(e, bytes) else e.SerializeToString() for e in examples
-    ]
-    examples_count = len(serialized_examples)
-    examples_byte_size = sum(len(se) for se in serialized_examples)
-    self._check_examples(examples)
-    outputs = self._run_inference(examples, serialized_examples)
-    result = list(
-        zip(keys, self._post_process(examples, serialized_examples, outputs)))
-    self._metrics_collector.update(
-        examples_count, examples_byte_size,
-        self._clock.get_current_time_in_microseconds() - batch_start_time)
-    return result
-
-  def finish_bundle(self):
-    self._metrics_collector.update_metrics_with_cache()
-
-  @abc.abstractmethod
-  def _check_examples(self, examples: List[_INPUT_TYPE]):
-    raise NotImplementedError
-
-  @abc.abstractmethod
-  def _run_inference(
-      self, examples: List[_INPUT_TYPE], serialized_examples: List[bytes]
-      ) -> List[Mapping[Text, Union[np.ndarray, Any]]]:
-    raise NotImplementedError
-
-  @abc.abstractmethod
-  def _post_process(
-      self,
-      examples: List[_INPUT_TYPE],
-      serialized_examples: List[bytes],
-      outputs: List[Mapping[Text, Union[np.ndarray, Any]]]
-      ) -> List[prediction_log_pb2.PredictionLog]:
-    raise NotImplementedError
+    remote_prediction_model_spec = _RemotePrectictModelSpec(
+        inference_spec_type, pcoll.pipeline.options)
+    return pcoll | 'Predict' >> BaseRunInference(remote_prediction_model_spec)
 
 
 def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
@@ -461,10 +330,61 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
           exception.resp.status in (503, 429))
 
 
+class _BaseModelSpec(InferenceRunner, metaclass=abc.ABCMeta):
+  """A basic TFX implementation of InferenceRunner."""
+
+  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
+    operation_type = _get_operation_type(inference_spec_type)
+    proximity_descriptor = (
+        _METRICS_DESCRIPTOR_IN_PROCESS
+        if _using_in_process_inference(inference_spec_type) else
+        _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
+    self._metrics_namespace = util.MakeTfxNamespace(
+        [_METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
+
+  def run_inference(self, examples: List[_INPUT_TYPE],
+                    model) -> Iterable[prediction_log_pb2.PredictionLog]:
+    serialized_examples = [
+        e if isinstance(e, bytes) else e.SerializeToString() for e in examples
+    ]
+    self._check_examples(examples)
+    outputs = self._run_inference(examples, serialized_examples, model)
+    return self._post_process(examples, serialized_examples, outputs)
+
+  def _check_examples(self, examples):
+    pass
+
+  def get_num_bytes(
+      self, examples: Iterable[prediction_log_pb2.PredictionLog]) -> int:
+    serialized_examples = [
+        e if isinstance(e, bytes) else e.SerializeToString() for e in examples
+    ]
+    examples_byte_size = sum(len(se) for se in serialized_examples)
+    return examples_byte_size
+
+  def get_metrics_namespace(self):
+    return self._metrics_namespace
+
+  @abc.abstractmethod
+  def _post_process(
+      self,
+      examples: List[_INPUT_TYPE],
+      serialized_examples: List[bytes],
+      outputs: List[Mapping[Text, Union[np.ndarray, Any]]]
+      ) -> List[prediction_log_pb2.PredictionLog]:
+    raise NotImplementedError
+
+  @abc.abstractmethod
+  def _run_inference(self, examples: List[_INPUT_TYPE],
+                     serialized_examples: List[bytes],
+                     model) -> List[Mapping[Text, Any]]:
+    raise NotImplementedError
+
+
 # TODO(b/151468119): Consider to re-batch with online serving request size
 # limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
-class _BatchRemotePredictDoFn(_BaseBatchDoFn):
-  """A DoFn that performs predictions from a cloud-hosted TensorFlow model.
+class _RemotePrectictModelSpec(_BaseModelSpec, ModelLoader):
+  """Performs predictions from a cloud-hosted TensorFlow model.
 
   Supports both batch and streaming processing modes.
   NOTE: Does not work on DirectRunner for streaming jobs [BEAM-7885].
@@ -557,11 +477,16 @@ class _BatchRemotePredictDoFn(_BaseBatchDoFn):
       # JSON-serializable.
       return list(values)
 
-  def setup(self):
-    super().setup()
+  def load_model(self):
     # TODO(b/151468119): Add tfx_bsl_version and tfx_bsl_py_version to
     # user agent once custom header is supported in googleapiclient.
     self._api_client = discovery.build('ml', 'v1')
+    # load_model returns a locally hosted model. Since all these inferences
+    # are run on vertexAI, no local model is present.
+    return None
+
+  def get_inference_runner(self):
+    return self
 
   def _check_examples(self, examples: List[_INPUT_TYPE]):
     # TODO(b/131873699): Add support for tf.train.SequenceExample even when
@@ -577,9 +502,10 @@ class _BatchRemotePredictDoFn(_BaseBatchDoFn):
           'serialized tf.SequenceExample and raw bytes (the '
           'latter three only when use_serialization_config is true)')
 
-  def _run_inference(
-      self, examples: List[_INPUT_TYPE], serialized_examples: List[bytes]
-      ) -> List[Mapping[Text, Any]]:
+  def _run_inference(self, examples: List[_INPUT_TYPE],
+                     serialized_examples: List[bytes],
+                     model) -> List[Mapping[Text, Any]]:
+    self._check_examples(examples)
     body = {'instances': self._make_instances(examples, serialized_examples)}
     request = self._api_client.projects().predict(
         name=self._full_model_name, body=body)
@@ -613,10 +539,8 @@ class _BatchRemotePredictDoFn(_BaseBatchDoFn):
     return result
 
 
-# TODO(b/143484017): Add batch_size back off in the case there are functional
-# reasons large batch sizes cannot be handled.
-class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
-  """A DoFn that runs in-process batch inference with a model.
+class _BaseSavedModelSpec(_BaseModelSpec, ModelLoader):
+  """A spec that runs in-process batch inference with a model.
 
     Models need to have the required serving signature as mentioned in
     [Tensorflow Serving](https://www.tensorflow.org/tfx/serving/signature_defs)
@@ -625,11 +549,9 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     model inference in batch.
   """
 
-  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
-               shared_model_handle: shared.Shared):
+  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     super().__init__(inference_spec_type)
     self._inference_spec_type = inference_spec_type
-    self._shared_model_handle = shared_model_handle
     self._model_path = inference_spec_type.saved_model_spec.model_path
     if not self._model_path:
       raise ValueError('Model path is not valid.')
@@ -641,7 +563,6 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     if self._has_tpu_tag():
       # TODO(b/161563144): Support TPU inference.
       raise NotImplementedError('TPU inference is not supported yet.')
-    self._session = None
 
   def _has_tpu_tag(self) -> bool:
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
@@ -661,28 +582,14 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     _try_import('tensorflow_decision_forests')
     _try_import('struct2tensor')
 
-  def _load_model(self):
-    """Load a saved model into memory.
+  def load_model(self):
+    self._maybe_register_addon_ops()
+    result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
+    tf.compat.v1.saved_model.loader.load(result, self._tags, self._model_path)
+    return result
 
-    Returns:
-      Session instance.
-    """
-    def load():
-      """Function for constructing shared LoadedModel."""
-      # TODO(b/143484017): Do warmup and other heavy model construction here.
-      self._maybe_register_addon_ops()
-      result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
-      memory_before = _get_current_process_memory_in_bytes()
-      start_time = self._clock.get_current_time_in_microseconds()
-      tf.compat.v1.saved_model.loader.load(result, self._tags, self._model_path)
-      end_time = self._clock.get_current_time_in_microseconds()
-      memory_after = _get_current_process_memory_in_bytes()
-      self._metrics_collector.load_model_latency_milli_secs_cache = (
-          (end_time - start_time) / _MILLISECOND_TO_MICROSECOND)
-      self._metrics_collector.model_byte_size_cache = (
-          memory_after - memory_before)
-      return result
-    return self._shared_model_handle.acquire(load)
+  def get_inference_runner(self):
+    return self
 
   def _make_io_tensor_spec(self) -> _IOTensorSpec:
     # Pre process functions will validate for each signature.
@@ -715,19 +622,10 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     return _IOTensorSpec(input_tensor_alias, input_tensor_name,
                          output_alias_tensor_names)
 
-  def setup(self):
-    """Load the model.
-
-    Note that worker may crash if exception is thrown in setup due
-    to b/139207285.
-    """
-    super().setup()
-    self._session = self._load_model()
-
-  def _run_inference(
-      self, examples: List[_INPUT_TYPE], serialized_examples: List[bytes]
-      ) -> Mapping[Text, np.ndarray]:
-    result = self._session.run(
+  def _run_inference(self, examples: List[_INPUT_TYPE],
+                     serialized_examples: List[bytes],
+                     model: Any) -> Mapping[Text, np.ndarray]:
+    result = model.run(
         self._io_tensor_spec.output_alias_tensor_names,
         feed_dict={self._io_tensor_spec.input_tensor_name: serialized_examples})
     if len(result) != len(self._io_tensor_spec.output_alias_tensor_names):
@@ -735,8 +633,8 @@ class _BaseBatchSavedModelDoFn(_BaseBatchDoFn):
     return result
 
 
-class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
-  """A DoFn that run inference on classification model."""
+class _ClassifyModelSpec(_BaseSavedModelSpec):
+  """Implements a spec for classification."""
 
   def _check_examples(self, examples: List[_INPUT_TYPE]):
     if not all(isinstance(e, (tf.train.Example, bytes)) for e in examples):
@@ -768,7 +666,7 @@ class _BatchClassifyDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
+class _RegressModelSpec(_BaseSavedModelSpec):
   """A DoFn that run inference on regression model."""
 
   def _check_examples(self, examples: List[_INPUT_TYPE]):
@@ -800,7 +698,7 @@ class _BatchRegressDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
+class _MultiInferenceModelSpec(_BaseSavedModelSpec):
   """A DoFn that runs inference on multi-head model."""
 
   def _check_examples(self, examples: List[_INPUT_TYPE]):
@@ -859,7 +757,7 @@ class _BatchMultiInferenceDoFn(_BaseBatchSavedModelDoFn):
     return result
 
 
-class _BatchPredictDoFn(_BaseBatchSavedModelDoFn):
+class _PredictModelSpec(_BaseSavedModelSpec):
   """A DoFn that runs inference on predict model."""
 
   def _check_examples(self, examples: List[_INPUT_TYPE]):
@@ -1176,20 +1074,6 @@ def _get_meta_graph_def(saved_model_pb: _SavedModel,
                      'found in SavedModel' % tags)
 
 
-def _get_current_process_memory_in_bytes():
-  """Returns memory usage in bytes."""
-
-  if resource is not None:
-    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if _is_darwin():
-      return usage
-    return usage * 1024
-  else:
-    logging.warning('Resource module is not available for current platform, '
-                    'memory usage cannot be fetched.')
-  return 0
-
-
 def _get_tags(
     inference_spec_type: model_spec_pb2.InferenceSpecType) -> Sequence[Text]:
   """Returns tags from ModelSpec."""
@@ -1198,39 +1082,3 @@ def _get_tags(
     return list(inference_spec_type.saved_model_spec.tag)
   else:
     return [tf.saved_model.SERVING]
-
-
-def _is_darwin() -> bool:
-  return sys.platform == 'darwin'
-
-
-def _is_windows() -> bool:
-  return platform.system() == 'Windows' or os.name == 'nt'
-
-
-def _is_cygwin() -> bool:
-  return platform.system().startswith('CYGWIN_NT')
-
-
-class _Clock(object):
-
-  def get_current_time_in_microseconds(self) -> int:
-    return int(time.time() * _SECOND_TO_MICROSECOND)
-
-
-class _FineGrainedClock(_Clock):
-
-  def get_current_time_in_microseconds(self) -> int:
-    return int(
-        time.clock_gettime_ns(time.CLOCK_REALTIME) /  # pytype: disable=module-attr
-        _MICROSECOND_TO_NANOSECOND)
-
-
-class _ClockFactory(object):
-
-  @staticmethod
-  def make_clock() -> _Clock:
-    if (hasattr(time, 'clock_gettime_ns') and not _is_windows() and
-        not _is_cygwin()):
-      return _FineGrainedClock()
-    return _Clock()
