@@ -39,8 +39,8 @@ class ParquetTFXIO(tfxio.TFXIO):
 
   def __init__(self,
                file_pattern: str,
-               column_names: List[str],
                *,
+               column_names: Optional[List[str]] = None,
                min_bundle_size: int = 0,
                schema: Optional[schema_pb2.Schema] = None,
                validate: bool = True,
@@ -51,7 +51,8 @@ class ParquetTFXIO(tfxio.TFXIO):
       file_pattern: A file glob pattern to read parquet files from.
       column_names: List of column names to read from the parquet files.
       min_bundle_size: the minimum size in bytes, to be considered when
-        splitting the parquet input into bundles.
+        splitting the parquet input into bundles. If not provided, all columns
+        in the dataset will be read.
       schema: An optional TFMD Schema describing the dataset. If schema is
         provided, it will determine the data type of the parquet columns.
         Otherwise, the each column's data type will be inferred by the decoder.
@@ -69,6 +70,10 @@ class ParquetTFXIO(tfxio.TFXIO):
     self._validate = validate
     self._schema = schema
     self._telemetry_descriptors = telemetry_descriptors
+
+  @property
+  def telemetry_descriptors(self) -> Optional[List[str]]:
+    return self._telemetry_descriptors
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
 
@@ -106,7 +111,12 @@ class ParquetTFXIO(tfxio.TFXIO):
   def ArrowSchema(self) -> pa.Schema:
     if self._schema is None:
       return self._InferArrowSchema()
-    return csv_decoder.GetArrowSchema(self._column_names, self._schema)
+
+    # If the column names are not passed, we default to all column names in the
+    # schema.
+    columns = self._column_names or [f.name for f in self._schema.feature]
+
+    return csv_decoder.GetArrowSchema(columns, self._schema)
 
   def _InferArrowSchema(self):
     match_result = FileSystems.match([self._file_pattern])[0]
