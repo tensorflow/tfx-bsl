@@ -13,7 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.tensor_representation_util."""
 
-import sys
 import unittest
 
 import numpy as np
@@ -745,6 +744,417 @@ _GET_SOURCE_VALUE_COLUMNS_TEST_CASES = [
     ),
 ]
 
+_PROJECT_TENSOR_REPRESENTATIONS_IN_SCHEMA_TEST_CASES = [
+    dict(
+        testcase_name='simple_features',
+        schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "float_feature"
+            type: FLOAT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+        """,
+        tensor_names=('int_feature', 'string_feature'),
+        expected_projection="""
+          feature {
+            name: "int_feature"
+            type: INT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "int_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "int_feature"
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+    ),
+    dict(
+        testcase_name='simple_tensor_representations',
+        schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          feature {
+            name: "float_feature"
+            type: FLOAT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "int_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "int_feature"
+                  }
+                }
+              }
+              tensor_representation {
+                key: "float_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "float_feature"
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        tensor_names=('float_feature', 'string_feature'),
+        expected_projection="""
+          feature {
+            name: "float_feature"
+            type: FLOAT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "float_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "float_feature"
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+    ),
+    dict(
+        testcase_name='composite_tensor_representations',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["index_key"]
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        tensor_names=('x',),
+        expected_projection="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["index_key"]
+                  }
+                }
+              }
+            }
+          }
+        """,
+    ),
+    dict(
+        testcase_name='refer_same_source_column',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["int_feature"]
+                  }
+                }
+              }
+              tensor_representation {
+                key: "int_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "int_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        tensor_names=('x',),
+        expected_projection="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["int_feature"]
+                  }
+                }
+              }
+            }
+          }
+        """),
+    dict(
+        testcase_name='missing_source_column',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["index_key"] # No "index_key" feature.
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        tensor_names=('x',),
+        expected_error=(
+            'TensorRepresentations source columns {index_key} are '
+            'not present in the schema.'),
+    ),
+    dict(
+        testcase_name='missing_tensor_representation',
+        schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        tensor_names=('int_feature',),
+        expected_error=(
+            "Unable to project {'int_feature'} because they were not in the "
+            'original or inferred TensorRepresentations.'),
+    ),
+    dict(
+        testcase_name='sparse_feature',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 max: 10 }
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          sparse_feature {
+            name: "x"
+            is_sorted: true
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        tensor_names=('x',),
+        expected_projection="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain {
+              min: 0
+              max: 10
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    dense_shape {
+                      dim {
+                        size: 11
+                      }
+                    }
+                    index_column_names: "index_key"
+                    value_column_name: "value_key"
+                  }
+                }
+              }
+            }
+          }
+        """),
+    dict(
+        testcase_name='sparse_feature_legacy',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 max: 10 }
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          sparse_feature {
+            name: "x"
+            is_sorted: true
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        tensor_names=('x',),
+        expected_error=(
+            "Unable to project {'x'} because they were not in the "
+            'original or inferred TensorRepresentations.'
+        ),  # sparse_feature inference is not implemented in legacy logic.
+        generate_legacy_feature_spec=True),
+]
+
 
 def _MakeFixedLenFeatureTestCases():
   result = []
@@ -998,11 +1408,9 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       expected,
       generate_legacy_feature_spec=False,
       schema_is_mixed=False):
-    # Skip a test if it's testing legacy logic but the schema is not the
-    # legacy schema.
     if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
-      print('Skipping test case: ', self.id(), file=sys.stderr)
-      return
+      raise self.skipTest('This test exersizes legacy inference logic, but the '
+                          'schema is not legacy schema.')
     schema = text_format.Parse(ascii_proto, schema_pb2.Schema())
     if _IS_LEGACY_SCHEMA:
       schema.generate_legacy_feature_spec = generate_legacy_feature_spec
@@ -1024,8 +1432,8 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
   def testInferTensorRepresentationsFromSchemaInvalidSchema(
       self, ascii_proto, error_msg, generate_legacy_feature_spec=False):
     if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
-      print('Skipping test case: ', self.id(), file=sys.stderr)
-      return
+      raise self.skipTest('This test exersizes legacy inference logic, but the '
+                          'schema is not legacy schema.')
     schema = text_format.Parse(ascii_proto, schema_pb2.Schema())
     if _IS_LEGACY_SCHEMA:
       schema.generate_legacy_feature_spec = generate_legacy_feature_spec
@@ -1132,6 +1540,30 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       tensor_representation_util.CreateTfExampleParserConfig(
           tensor_representation, feature_type)
 
+  @parameterized.named_parameters(
+      *(_PROJECT_TENSOR_REPRESENTATIONS_IN_SCHEMA_TEST_CASES))
+  def testProjectTfmdSchema(self,
+                            schema,
+                            tensor_names,
+                            expected_projection=None,
+                            expected_error=None,
+                            generate_legacy_feature_spec=False):
+    schema = text_format.Parse(schema, schema_pb2.Schema())
+    if not _IS_LEGACY_SCHEMA and generate_legacy_feature_spec:
+      raise self.skipTest('This test exersizes legacy inference logic, but the '
+                          'schema is not legacy schema.')
+
+    if _IS_LEGACY_SCHEMA:
+      schema.generate_legacy_feature_spec = generate_legacy_feature_spec
+    if expected_error is None:
+      self.assertEqual(
+          text_format.Parse(expected_projection, schema_pb2.Schema()),
+          tensor_representation_util.ProjectTensorRepresentationsInSchema(
+              schema, tensor_names))
+    else:
+      with self.assertRaisesRegex(ValueError, expected_error):
+        _ = tensor_representation_util.ProjectTensorRepresentationsInSchema(
+            schema, tensor_names)
 
 if __name__ == '__main__':
   absltest.main()

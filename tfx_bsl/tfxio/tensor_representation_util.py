@@ -13,7 +13,7 @@
 # limitations under the License.
 """TensorRepresentation utilities."""
 
-from typing import List, Dict, Mapping, Optional, Text, Tuple, Union
+from typing import List, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 from absl import logging
 import numpy as np
@@ -111,8 +111,8 @@ _TENSOR_REPRESENTATION_KIND_TO_VALUE_COLUMN_GETTER = {
 
 def SetTensorRepresentationsInSchema(
     schema: schema_pb2.Schema,
-    tensor_representations: Mapping[Text, schema_pb2.TensorRepresentation],
-    tensor_representation_group_name: Text = _DEFAULT_TENSOR_REPRESENTATION_GROUP
+    tensor_representations: Mapping[str, schema_pb2.TensorRepresentation],
+    tensor_representation_group_name: str = _DEFAULT_TENSOR_REPRESENTATION_GROUP
 ) -> None:
   """Sets the TensorRepresentationGroup of the given name to the given value."""
   tensor_representation_map = schema.tensor_representation_group[
@@ -124,8 +124,8 @@ def SetTensorRepresentationsInSchema(
 
 def GetTensorRepresentationsFromSchema(
     schema: schema_pb2.Schema,
-    tensor_representation_group_name: Text = _DEFAULT_TENSOR_REPRESENTATION_GROUP
-) -> Optional[Dict[Text, schema_pb2.TensorRepresentation]]:
+    tensor_representation_group_name: str = _DEFAULT_TENSOR_REPRESENTATION_GROUP
+) -> Optional[Dict[str, schema_pb2.TensorRepresentation]]:
   """Gets a TensorRepresentationGroup as a dict<tensor_name,rep> from schema.
 
   If the group name is provided, look it up in the schema, otherwise, look for
@@ -148,7 +148,7 @@ def GetTensorRepresentationsFromSchema(
 
 
 def InferTensorRepresentationsFromSchema(
-    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
+    schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Infers TensorRepresentations from the schema's Features."""
   # TODO(zhuo): Add support for SparseFeature -> SparseTensor representation.
   if _ShouldUseLegacyLogic(schema):
@@ -160,7 +160,7 @@ def InferTensorRepresentationsFromSchema(
 
 
 def InferTensorRepresentationsFromMixedSchema(
-    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
+    schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Infers TensorRepresentations from schema that has Features and TRs."""
   tensor_representations = GetTensorRepresentationsFromSchema(schema)
   inferred_tensor_representations = InferTensorRepresentationsFromSchema(schema)
@@ -308,7 +308,7 @@ def _ShouldIncludeFeature(
 
 
 def _InferTensorRepresentationFromSchema(
-    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
+    schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Translate a Feature proto into a TensorRepresentation proto.
 
   We apply the following rules:
@@ -360,7 +360,7 @@ def _InferTensorRepresentationFromSchema(
 
 def _InferSparseTensorRepresentationsFromSchema(
     schema: schema_pb2.Schema, columns_remaining: Dict[str, schema_pb2.Feature]
-) -> Tuple[Dict[Text, schema_pb2.TensorRepresentation], Dict[
+) -> Tuple[Dict[str, schema_pb2.TensorRepresentation], Dict[
     str, schema_pb2.Feature]]:
   """Infers SparseTensor TensorRepresentation from the given schema."""
   sparse_tensor_representations = {}
@@ -433,7 +433,7 @@ def _ShouldUseLegacyLogic(schema: schema_pb2.Schema) -> bool:
 
 
 def _LegacyInferTensorRepresentationFromSchema(
-    schema: schema_pb2.Schema) -> Dict[Text, schema_pb2.TensorRepresentation]:
+    schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Translate a Feature proto into a TensorRepresentation proto.
 
   This function applies heuristics to deduce the shape and other information
@@ -580,3 +580,57 @@ def _GetDefaultValuesList(
   size = int(np.prod(unbatched_shape, initial=1))
 
   return [default_value] * size
+
+
+def ProjectTensorRepresentationsInSchema(
+    schema: schema_pb2.Schema,
+    tensor_names: Iterable[str]) -> schema_pb2.Schema:
+  """Returns a projection of schema by the given tensor names.
+
+  Tries to extract TensorRpresentations from the schema and infers them in case
+  there's none. The schema is then projected to have the TensorRepresentations
+  and source feature columns of tensors that are present in `tensor_names`.
+
+  Args:
+    schema: A TFMD Schema to be projected.
+    tensor_names: Names of tensors that schema must be projected on.
+
+  Returns:
+    A schema that contains a subset of TensorRepresentations and features in
+    `schema` that is a set of source columns for the given tensors.
+
+  Raises:
+    ValueError: if `schema` doesn't contain any of the given `tensor_names` or
+    TensorRepresentations' source columns are not present in `schema` features.
+  """
+  tensor_representations = GetTensorRepresentationsFromSchema(schema)
+  if tensor_representations is None:
+    tensor_representations = InferTensorRepresentationsFromSchema(schema)
+  tensor_names = set(tensor_names)
+  if not tensor_names.issubset(tensor_representations):
+    raise ValueError(
+        "Unable to project {} because they were not in the original "
+        "or inferred TensorRepresentations.".format(
+            tensor_names - tensor_representations.keys()))
+  paths = set()
+  for tensor_name in tensor_names:
+    paths.update(
+        GetSourceColumnsFromTensorRepresentation(
+            tensor_representations[tensor_name]))
+  result = schema_pb2.Schema()
+
+  for feature in schema.feature:
+    feature_path = path.ColumnPath(feature.name)
+    if feature_path in paths:
+      paths.remove(feature_path)
+      result.feature.add().CopyFrom(feature)
+
+  if paths:
+    raise ValueError("TensorRepresentations source columns {} are not present "
+                     "in the schema.".format(paths))
+
+  SetTensorRepresentationsInSchema(
+      result,
+      {k: v for k, v in tensor_representations.items() if k in tensor_names})
+
+  return result

@@ -6,6 +6,8 @@
 
 *   Introduced `RunInferencePerModel` PTransform, which is a vectorized variant
     of `RunInference` (useful for ensembles).
+*   Introduced `ParquetTFXIO` that allows reading data from Parquet files in
+    `pyarrow.RecordBatch` format.
 
 ## Bug Fixes and Other Changes
 

@@ -21,7 +21,6 @@ from apache_beam.io.filesystems import FileSystems
 import pyarrow as pa
 import pyarrow.parquet as pq
 import tensorflow as tf
-from tfx_bsl.arrow import path
 from tfx_bsl.coders import csv_decoder
 from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry
@@ -134,35 +133,6 @@ class ParquetTFXIO(tfxio.TFXIO):
               self._schema))
     return result
 
-  # TODO(iindyk): Consider moving this to tfxio.TFXIO.
-  def _ProjectTfmdSchema(self, tensor_names: List[str]) -> schema_pb2.Schema:
-    """Projects self._schema by the given tensor names."""
-    tensor_representations = self.TensorRepresentations()
-    tensor_names = set(tensor_names)
-    if not tensor_names.issubset(tensor_representations):
-      raise ValueError(
-          "Unable to project {} because they were not in the original "
-          "TensorRepresentations.".format(tensor_names -
-                                          tensor_representations))
-    paths = set()
-    for tensor_name in tensor_names:
-      paths.update(
-          tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
-              tensor_representations[tensor_name]))
-    result = schema_pb2.Schema()
-    # Note: We only copy projected features into the new schema because the
-    # coder, and ArrowSchema() only care about Schema.feature. If they start
-    # depending on other Schema fields then those fields must also be projected.
-    for f in self._schema.feature:
-      if path.ColumnPath(f.name) in paths:
-        result.feature.add().CopyFrom(f)
-
-    tensor_representation_util.SetTensorRepresentationsInSchema(
-        result,
-        {k: v for k, v in tensor_representations.items() if k in tensor_names})
-
-    return result
-
   def _ProjectImpl(self, tensor_names: List[str]) -> tfxio.TFXIO:
     """Returns a projected TFXIO.
 
@@ -174,7 +144,9 @@ class ParquetTFXIO(tfxio.TFXIO):
     Args:
       tensor_names: The columns to project.
     """
-    projected_schema = self._ProjectTfmdSchema(tensor_names)
+    projected_schema = (
+        tensor_representation_util.ProjectTensorRepresentationsInSchema(
+            self._schema, tensor_names))
     result = copy.copy(self)
 
     result._column_names = [f.name for f in projected_schema.feature]  # pylint: disable=protected-access

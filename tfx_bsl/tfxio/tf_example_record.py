@@ -19,7 +19,6 @@ from typing import Any, Dict, Iterator, List, Optional, Text, Tuple, Union
 import apache_beam as beam
 import pyarrow as pa
 import tensorflow as tf
-from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import example_coder
 from tfx_bsl.tfxio import dataset_options
@@ -94,34 +93,6 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     if result is None:
       result = (
           tensor_rep_util.InferTensorRepresentationsFromSchema(self._schema))
-    return result
-
-  def _ProjectTfmdSchema(self, tensor_names: List[Text]) -> schema_pb2.Schema:
-    """Projects self._schema by the given tensor names."""
-    tensor_representations = self.TensorRepresentations()
-    tensor_names = set(tensor_names)
-    if not tensor_names.issubset(tensor_representations):
-      raise ValueError(
-          "Unable to project {} because they were not in the original "
-          "TensorRepresentations.".format(tensor_names -
-                                          tensor_representations))
-    paths = set()
-    for tensor_name in tensor_names:
-      paths.update(
-          tensor_rep_util.GetSourceColumnsFromTensorRepresentation(
-              tensor_representations[tensor_name]))
-    result = schema_pb2.Schema()
-    # Note: We only copy projected features into the new schema because the
-    # coder, and ArrowSchema() only care about Schema.feature. If they start
-    # depending on other Schema fields then those fields must also be projected.
-    for f in self._schema.feature:
-      if path.ColumnPath(f.name) in paths:
-        result.feature.add().CopyFrom(f)
-
-    tensor_rep_util.SetTensorRepresentationsInSchema(
-        result,
-        {k: v for k, v in tensor_representations.items() if k in tensor_names})
-
     return result
 
   def _GetSchemaForDecoding(self) -> schema_pb2.Schema:
@@ -241,7 +212,11 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
             .with_output_types(bytes))
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
-    projected_schema = self._ProjectTfmdSchema(tensor_names)
+    # Note: We only copy projected features into the new schema because the
+    # coder, and ArrowSchema() only care about Schema.feature. If they start
+    # depending on other Schema fields then those fields must also be projected.
+    projected_schema = tensor_rep_util.ProjectTensorRepresentationsInSchema(
+        self._schema, tensor_names)
     return TFExampleBeamRecord(self._physical_format,
                                self.telemetry_descriptors, projected_schema,
                                self.raw_record_column_name)
@@ -291,7 +266,11 @@ class TFExampleRecord(_TFExampleRecordBase):
     return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
-    projected_schema = self._ProjectTfmdSchema(tensor_names)
+    # Note: We only copy projected features into the new schema because the
+    # coder, and ArrowSchema() only care about Schema.feature. If they start
+    # depending on other Schema fields then those fields must also be projected.
+    projected_schema = tensor_rep_util.ProjectTensorRepresentationsInSchema(
+        self._schema, tensor_names)
     return TFExampleRecord(
         file_pattern=self._file_pattern,
         schema=projected_schema,
