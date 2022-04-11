@@ -11,7 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""An extensible run inference transform."""
+"""An extensible run inference transform.
+
+Users of this module can extend the ModelLoader class for any ML framework. Then
+pass their extended ModelLoader object into RunInference to create a
+RunInference Beam transform for that framework.
+
+The transform will handle standard inference functionality like metric
+collection, sharing model between threads and batching elements.
+"""
 
 import logging
 import os
@@ -19,7 +27,7 @@ import pickle
 import platform
 import sys
 import time
-from typing import Any, Iterable, Tuple
+from typing import Any, Iterator, Sequence, Tuple, Union
 
 import apache_beam as beam
 from apache_beam.utils import shared
@@ -32,14 +40,14 @@ except ImportError:
 
 _MILLISECOND_TO_MICROSECOND = 1000
 _MICROSECOND_TO_NANOSECOND = 1000
-_SECOND_TO_MICROSECOND = 1000000
+_SECOND_TO_MICROSECOND = 1_000_000
 
 
 class InferenceRunner():
   """Implements running inferences for a framework."""
 
-  def run_inference(self, batch: Any, model: Any) -> Iterable[Any]:
-    """Runs inferences on a batch of examples and returns an Iterable of Predictions."""
+  def run_inference(self, batch: Sequence[Any], model: Any) -> Sequence[Any]:
+    """Runs inferences on a batch of examples and returns an Sequence of Predictions."""
     raise NotImplementedError(type(self))
 
   def get_num_bytes(self, batch: Any) -> int:
@@ -63,7 +71,8 @@ class ModelLoader():
     raise NotImplementedError(type(self))
 
 
-def _unbatch(maybe_keyed_batches: Tuple[Any, Any]):
+def _unbatch(
+    maybe_keyed_batches: Tuple[Any, Any]) -> Union[Tuple[Any, Any], Any]:
   keys, results = maybe_keyed_batches
   if keys:
     return zip(keys, results)
@@ -84,12 +93,12 @@ class RunInference(beam.PTransform):
     return (pcoll
             | beam.BatchElements()
             | beam.ParDo(
-                RunInferenceDoFn(shared.Shared(), self._model_loader,
-                                 self._clock))
+                _RunInferenceDoFn(shared.Shared(), self._model_loader,
+                                  self._clock))
             | beam.FlatMap(_unbatch))
 
 
-class MetricsCollector:
+class _MetricsCollector:
   """A metrics collector that tracks ML related performance and memory usage."""
 
   def __init__(self, namespace: str):
@@ -132,7 +141,7 @@ class MetricsCollector:
     self._inference_request_batch_byte_size.update(examples_byte_size)
 
 
-class RunInferenceDoFn(beam.DoFn):
+class _RunInferenceDoFn(beam.DoFn):
   """A DoFn implementation generic to frameworks."""
 
   def __init__(self,
@@ -142,7 +151,7 @@ class RunInferenceDoFn(beam.DoFn):
     self._model_loader = model_loader
     self._inference_runner = model_loader.get_inference_runner()
     self._shared_model_handle = shared_handle
-    self._metrics_collector = MetricsCollector(
+    self._metrics_collector = _MetricsCollector(
         self._inference_runner.get_metrics_namespace())
     self._clock = clock
     if not clock:
@@ -151,7 +160,7 @@ class RunInferenceDoFn(beam.DoFn):
 
   def _load_model(self):
 
-    def load():
+    def load() -> Any:
       """Function for constructing shared LoadedModel."""
       memory_before = _get_current_process_memory_in_bytes()
       start_time = self._clock.get_current_time_in_microseconds()
@@ -170,7 +179,7 @@ class RunInferenceDoFn(beam.DoFn):
   def setup(self):
     self._model = self._load_model()
 
-  def process(self, batch):
+  def process(self, batch: Any) -> Iterator[Any]:
     # Process supports both keyed data, and example only data.
     # First keys and samples are separated (if there are keys)
     has_keys = isinstance(batch[0], tuple)
@@ -203,7 +212,7 @@ def _is_darwin() -> bool:
   return sys.platform == 'darwin'
 
 
-def _get_current_process_memory_in_bytes():
+def _get_current_process_memory_in_bytes() -> int:
   """Returns memory usage in bytes."""
 
   if resource is not None:
@@ -225,13 +234,13 @@ def _is_cygwin() -> bool:
   return platform.system().startswith('CYGWIN_NT')
 
 
-class Clock(object):
+class _Clock(object):
 
   def get_current_time_in_microseconds(self) -> int:
     return int(time.time() * _SECOND_TO_MICROSECOND)
 
 
-class _FineGrainedClock(Clock):
+class _FineGrainedClock(_Clock):
 
   def get_current_time_in_microseconds(self) -> int:
     return int(
@@ -242,8 +251,8 @@ class _FineGrainedClock(Clock):
 class _ClockFactory(object):
 
   @staticmethod
-  def make_clock() -> Clock:
+  def make_clock() -> _Clock:
     if (hasattr(time, 'clock_gettime_ns') and not _is_windows() and
         not _is_cygwin()):
       return _FineGrainedClock()
-    return Clock()
+    return _Clock()

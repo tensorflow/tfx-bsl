@@ -14,7 +14,6 @@
 """Tests for tfx_bsl.run_inference_base."""
 
 import pickle
-from typing import Any
 from typing import Iterable
 import unittest
 
@@ -23,7 +22,7 @@ from apache_beam.metrics.metric import MetricsFilter
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
-import tfx_bsl.beam.run_inference_base as base
+from tfx_bsl.beam import run_inference_base
 
 
 class FakeModel:
@@ -32,19 +31,20 @@ class FakeModel:
     return example + 1
 
 
-class FakeInferenceRunner(base.InferenceRunner):
+class FakeInferenceRunner(run_inference_base.InferenceRunner):
 
   def __init__(self, clock=None):
     self._mock_clock = clock
 
-  def run_inference(self, batch: Any, model: Any) -> Iterable[Any]:
+  def run_inference(self, batch: Iterable[int],
+                    model: FakeModel) -> Iterable[int]:
     if self._mock_clock:
       self._mock_clock.current_time += 3000
     for example in batch:
       yield model.predict(example)
 
 
-class FakeModelLoader(base.ModelLoader):
+class FakeModelLoader(run_inference_base.ModelLoader):
 
   def __init__(self, clock=None):
     self._mock_clock = clock
@@ -58,7 +58,7 @@ class FakeModelLoader(base.ModelLoader):
     return FakeInferenceRunner(self._mock_clock)
 
 
-class MockClock(base.Clock):
+class MockClock(run_inference_base._Clock):
 
   def __init__(self):
     self.current_time = 10000
@@ -80,7 +80,7 @@ class RunInferenceBaseTest(unittest.TestCase):
       examples = [1, 5, 3, 10]
       expected = [example + 1 for example in examples]
       pcoll = pipeline | 'start' >> beam.Create(examples)
-      actual = pcoll | base.RunInference(FakeModelLoader())
+      actual = pcoll | run_inference_base.RunInference(FakeModelLoader())
       assert_that(actual, equal_to(expected), label='assert:inferences')
 
   def test_run_inference_impl_with_keyed_examples(self):
@@ -89,14 +89,14 @@ class RunInferenceBaseTest(unittest.TestCase):
       keyed_examples = [(i, example) for i, example in enumerate(examples)]
       expected = [(i, example + 1) for i, example in enumerate(examples)]
       pcoll = pipeline | 'start' >> beam.Create(keyed_examples)
-      actual = pcoll | base.RunInference(FakeModelLoader())
+      actual = pcoll | run_inference_base.RunInference(FakeModelLoader())
       assert_that(actual, equal_to(expected), label='assert:inferences')
 
   def test_counted_metrics(self):
     pipeline = TestPipeline()
     examples = [1, 5, 3, 10]
     pcoll = pipeline | 'start' >> beam.Create(examples)
-    _ = pcoll | base.RunInference(FakeModelLoader())
+    _ = pcoll | run_inference_base.RunInference(FakeModelLoader())
     run_result = pipeline.run()
     run_result.wait_until_finish()
 
@@ -125,7 +125,7 @@ class RunInferenceBaseTest(unittest.TestCase):
     examples = [1, 5, 3, 10]
     pcoll = pipeline | 'start' >> beam.Create(examples)
     mock_clock = MockClock()
-    _ = pcoll | base.RunInference(
+    _ = pcoll | run_inference_base.RunInference(
         FakeModelLoader(clock=mock_clock), clock=mock_clock)
     res = pipeline.run()
     res.wait_until_finish()

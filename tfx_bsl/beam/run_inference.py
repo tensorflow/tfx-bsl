@@ -32,9 +32,7 @@ from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
 import tensorflow as tf
-from tfx_bsl.beam.run_inference_base import InferenceRunner
-from tfx_bsl.beam.run_inference_base import ModelLoader
-from tfx_bsl.beam.run_inference_base import RunInference as BaseRunInference
+from tfx_bsl.beam import run_inference_base
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 
@@ -164,6 +162,7 @@ class RunInferenceImpl(beam.PTransform):
               | 'PairWithNone' >> beam.Map(lambda x: (None, x))
               |
               'ApplyOnKeyedInput' >> RunInferenceImpl(self._inference_spec_type)
+              # Note: Using more specific and correct type hints with no key.
               | 'DropNone' >> beam.Values().with_output_types(_OUTPUT_TYPE))
 
     # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
@@ -266,7 +265,7 @@ def _Classify(  # pylint: disable=invalid-name
   """Performs classify PTransform."""
   if not _using_in_process_inference(inference_spec_type):
     raise NotImplementedError
-  return pcoll | 'Classify' >> BaseRunInference(
+  return pcoll | 'Classify' >> run_inference_base.RunInference(
       _ClassifyModelSpec(inference_spec_type))
 
 
@@ -279,7 +278,7 @@ def _Regress(  # pylint: disable=invalid-name
   """Performs regress PTransform."""
   if not _using_in_process_inference(inference_spec_type):
     raise NotImplementedError
-  return pcoll | 'Regress' >> BaseRunInference(
+  return pcoll | 'Regress' >> run_inference_base.RunInference(
       _RegressModelSpec(inference_spec_type))
 
 
@@ -293,7 +292,7 @@ def _MultiInference(  # pylint: disable=invalid-name
   if not _using_in_process_inference(inference_spec_type):
     raise NotImplementedError
   return (pcoll
-          | 'MultiInference' >> BaseRunInference(
+          | 'MultiInference' >> run_inference_base.RunInference(
               _MultiInferenceModelSpec(inference_spec_type)))
 
 
@@ -306,11 +305,13 @@ def _Predict(  # pylint: disable=invalid-name
   """Performs predict PTransform."""
   if _using_in_process_inference(inference_spec_type):
     prediction_model_spec = _PredictModelSpec(inference_spec_type)
-    return pcoll | 'Predict' >> BaseRunInference(prediction_model_spec)
+    return pcoll | 'Predict' >> run_inference_base.RunInference(
+        prediction_model_spec)
   else:
     remote_prediction_model_spec = _RemotePrectictModelSpec(
         inference_spec_type, pcoll.pipeline.options)
-    return pcoll | 'Predict' >> BaseRunInference(remote_prediction_model_spec)
+    return pcoll | 'Predict' >> run_inference_base.RunInference(
+        remote_prediction_model_spec)
 
 
 def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
@@ -330,7 +331,7 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
           exception.resp.status in (503, 429))
 
 
-class _BaseModelSpec(InferenceRunner, metaclass=abc.ABCMeta):
+class _BaseModelSpec(run_inference_base.InferenceRunner, metaclass=abc.ABCMeta):
   """A basic TFX implementation of InferenceRunner."""
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
@@ -359,8 +360,7 @@ class _BaseModelSpec(InferenceRunner, metaclass=abc.ABCMeta):
     serialized_examples = [
         e if isinstance(e, bytes) else e.SerializeToString() for e in examples
     ]
-    examples_byte_size = sum(len(se) for se in serialized_examples)
-    return examples_byte_size
+    return sum(len(se) for se in serialized_examples)
 
   def get_metrics_namespace(self):
     return self._metrics_namespace
@@ -383,7 +383,7 @@ class _BaseModelSpec(InferenceRunner, metaclass=abc.ABCMeta):
 
 # TODO(b/151468119): Consider to re-batch with online serving request size
 # limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
-class _RemotePrectictModelSpec(_BaseModelSpec, ModelLoader):
+class _RemotePrectictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
   """Performs predictions from a cloud-hosted TensorFlow model.
 
   Supports both batch and streaming processing modes.
@@ -539,7 +539,7 @@ class _RemotePrectictModelSpec(_BaseModelSpec, ModelLoader):
     return result
 
 
-class _BaseSavedModelSpec(_BaseModelSpec, ModelLoader):
+class _BaseSavedModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
   """A spec that runs in-process batch inference with a model.
 
     Models need to have the required serving signature as mentioned in
