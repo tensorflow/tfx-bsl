@@ -22,7 +22,14 @@ class UtilTest(absltest.TestCase):
   def testMakeTfxNamespace(self):
     self.assertEqual("tfx", util.MakeTfxNamespace([]))
     self.assertEqual("tfx.some.component",
-                     util.MakeTfxNamespace(["some", "component"]))
+                     util.MakeTfxNamespace(("some", "component")))
+
+  def testAppendToNamespace(self):
+    self.assertEqual("some_namespace",
+                     util.AppendToNamespace("some_namespace", []))
+    self.assertEqual(
+        "some_namespace.some.component",
+        util.AppendToNamespace("some_namespace", ["some", "component"]))
 
 
 if __name__ == "__main__":

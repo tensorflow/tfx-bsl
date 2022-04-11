@@ -13,11 +13,17 @@
 # limitations under the License.
 """Telemetry utils."""
 
-from typing import List, Text
+from typing import Sequence
 
 
-def MakeTfxNamespace(descriptors: List[Text]) -> Text:
-  """Makes a beam metric namespace from a list of descriptors."""
-  if not descriptors:
-    return "tfx"
-  return "tfx." + ".".join(descriptors)
+def MakeTfxNamespace(descriptors: Sequence[str]) -> str:
+  """Makes a TFX beam metric namespace from a list of descriptors."""
+  return AppendToNamespace("tfx", descriptors)
+
+
+def AppendToNamespace(namespace: str,
+                      descriptors_to_append: Sequence[str]) -> str:
+  """Appends a list of descriptors to a beam metric namespace."""
+  if descriptors_to_append:
+    return namespace + "." + ".".join(descriptors_to_append)
+  return namespace
