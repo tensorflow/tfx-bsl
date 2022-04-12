@@ -17,7 +17,6 @@ import base64
 from http import client as http_client
 import json
 import os
-import random
 from unittest import mock
 
 import apache_beam as beam
@@ -33,10 +32,8 @@ from tfx_bsl.beam import test_helpers
 from tfx_bsl.public.proto import model_spec_pb2
 
 from google.protobuf import text_format
+from absl.testing import parameterized
 from tensorflow_serving.apis import prediction_log_pb2
-
-
-_rand_bool = lambda: random.randint(0, 1)
 
 
 class RunInferenceFixture(tf.test.TestCase):
@@ -106,7 +103,26 @@ class RunInferenceFixture(tf.test.TestCase):
       builder.save()
 
 
-class RunOfflineInferenceTest(RunInferenceFixture):
+_RUN_OFFLINE_INFERENCE_TEST_CASES = [{
+    'testcase_name': 'unkeyed_encoded',
+    'keyed_input': False,
+    'decode_examples': False
+}, {
+    'testcase_name': 'keyed_encoded',
+    'keyed_input': True,
+    'decode_examples': False
+}, {
+    'testcase_name': 'unkeyed_decoded',
+    'keyed_input': False,
+    'decode_examples': True
+}, {
+    'testcase_name': 'keyed_decoded',
+    'keyed_input': True,
+    'decode_examples': True
+}]
+
+
+class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
 
   def setUp(self):
     super().setUp()
@@ -200,10 +216,12 @@ class RunOfflineInferenceTest(RunInferenceFixture):
           signature_def_map=signature_def_map)
       builder.save()
 
-  def _run_inference_with_beam(self, example_path, inference_spec_type,
-                               prediction_log_path):
+  def _run_inference_with_beam(
+      self, example_path: str,
+      inference_spec_type: model_spec_pb2.InferenceSpecType,
+      prediction_log_path: str, keyed_input: bool, decode_examples: bool):
     with self._make_beam_pipeline() as pipeline:
-      if _rand_bool():
+      if keyed_input:
         key = 'TheKey'
         def verify_key(k, v):
           if k != key:
@@ -215,14 +233,17 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         identity = beam.Map(lambda x: x)
         maybe_pair_with_key = 'NoPairWithKey' >> identity
         maybe_verify_key = 'NoVerifyKey' >> identity
+      if decode_examples:
+        maybe_decode = tf.train.Example.FromString
+      else:
+        maybe_decode = lambda x: x
       _ = (
           pipeline
           | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-          | 'MaybeDecode' >> beam.Map(
-              lambda x: x if _rand_bool() else tf.train.Example.FromString(x))
+          | 'MaybeDecode' >> beam.Map(maybe_decode)
           | maybe_pair_with_key
-          | 'RunInference' >> run_inference.RunInferenceImpl(
-              inference_spec_type)
+          |
+          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
           | maybe_verify_key
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path,
@@ -237,18 +258,21 @@ class RunOfflineInferenceTest(RunInferenceFixture):
             prediction_log_pb2.PredictionLog.FromString(record_string))
     return result
 
-  def testModelPathInvalid(self):
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testModelPathInvalid(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
-    with self.assertRaisesRegexp(IOError, 'SavedModel file does not exist.*'):
+    with self.assertRaisesRegex(IOError, 'SavedModel file does not exist.*'):
       self._run_inference_with_beam(
           example_path,
           model_spec_pb2.InferenceSpecType(
               saved_model_spec=model_spec_pb2.SavedModelSpec(
-                  model_path=self._get_output_data_dir())), prediction_log_path)
+                  model_path=self._get_output_data_dir())), prediction_log_path,
+          keyed_input, decode_examples)
 
-  def testEstimatorModelPredict(self):
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testEstimatorModelPredict(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -258,7 +282,8 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         example_path,
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
-                model_path=model_path)), prediction_log_path)
+                model_path=model_path)), prediction_log_path, keyed_input,
+        decode_examples)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -272,7 +297,8 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self.assertEqual(outputs.tensor_shape.dim[0].size, 1)
     self.assertEqual(outputs.tensor_shape.dim[1].size, 1)
 
-  def testClassifyModel(self):
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testClassifyModel(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -283,7 +309,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['classify_sum'])),
-        prediction_log_path)
+        prediction_log_path, keyed_input, decode_examples)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -296,7 +322,8 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self.assertAlmostEqual(
         classify_log.response.result.classifications[0].classes[0].score, 1.0)
 
-  def testRegressModel(self):
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testRegressModel(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -307,7 +334,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['regress_diff'])),
-        prediction_log_path)
+        prediction_log_path, keyed_input, decode_examples)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -319,7 +346,8 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self.assertAlmostEqual(regress_log.response.result.regressions[0].value,
                            0.6)
 
-  def testMultiInferenceModel(self):
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testMultiInferenceModel(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -331,7 +359,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path,
                 signature_name=['regress_diff', 'classify_sum'])),
-        prediction_log_path)
+        prediction_log_path, keyed_input, decode_examples)
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
     multi_inference_log = results[0].multi_inference_log
@@ -355,7 +383,8 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self.assertAlmostEqual(
         result.classification_result.classifications[0].classes[0].score, 1.0)
 
-  def testKerasModelPredict(self):
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testKerasModelPredict(self, keyed_input: bool, decode_examples: bool):
     inputs = tf.keras.Input(shape=(1,), name='input1')
     output1 = tf.keras.layers.Dense(
         1, activation=tf.nn.sigmoid, name='output1')(
@@ -400,12 +429,20 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         example_path,
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
-                model_path=model_path)), prediction_log_path)
+                model_path=model_path)), prediction_log_path, keyed_input,
+        decode_examples)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
 
-  def testTelemetry(self):
+  @parameterized.named_parameters([{
+      'testcase_name': 'decoded_examples',
+      'decode_examples': True
+  }, {
+      'testcase_name': 'encoded_examples',
+      'decode_examples': False
+  }])
+  def testTelemetry(self, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -418,7 +455,7 @@ class RunOfflineInferenceTest(RunInferenceFixture):
         pipeline
         | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
         | 'MaybeDecode' >> beam.Map(
-            lambda x: x if _rand_bool() else tf.train.Example.FromString(x))
+            lambda x: x if decode_examples else tf.train.Example.FromString(x))
         | 'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type))
     run_result = pipeline.run()
     run_result.wait_until_finish()
@@ -464,7 +501,16 @@ class RunOfflineInferenceTest(RunInferenceFixture):
     self.assertLess(model_size, 5000)
 
 
-class RunRemoteInferenceTest(RunInferenceFixture):
+_RUN_REMOTE_INFERENCE_TEST_CASES = [{
+    'testcase_name': 'keyed_input_false',
+    'keyed_input': False
+}, {
+    'keyed_input': True,
+    'testcase_name': 'keyed_input_true'
+}]
+
+
+class RunRemoteInferenceTest(RunInferenceFixture, parameterized.TestCase):
 
   def setUp(self):
     super().setUp()
@@ -483,8 +529,10 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       response_dict = {'error': content}
     return json.dumps(response_dict)
 
-  def _set_up_pipeline(self, inference_spec_type):
-    if _rand_bool():
+  def _set_up_pipeline(self,
+                       inference_spec_type: model_spec_pb2.InferenceSpecType,
+                       keyed_input: bool):
+    if keyed_input:
       key = 'TheKey'
       def verify_key(k, v):
         if k != key:
@@ -509,7 +557,8 @@ class RunRemoteInferenceTest(RunInferenceFixture):
     self.pipeline_result = self.pipeline.run()
     self.pipeline_result.wait_until_finish()
 
-  def test_model_predict(self):
+  @parameterized.named_parameters(_RUN_REMOTE_INFERENCE_TEST_CASES)
+  def test_model_predict(self, keyed_input: bool):
     predictions = [{
         'output_1': [0.901],
         'output_2': [0.997]
@@ -546,11 +595,13 @@ class RunRemoteInferenceTest(RunInferenceFixture):
             tf.make_tensor_proto(values=[0.997], dtype=tf.double, shape=(1, 1)))
         expected.append(prediction_log)
 
-      self._set_up_pipeline(inference_spec_type)
+      self._set_up_pipeline(inference_spec_type, keyed_input)
       assert_that(self.pcoll, equal_to(expected))
       self._run_inference_with_beam()
 
-  def test_exception_raised_when_response_body_contains_error_entry(self):
+  @parameterized.named_parameters(_RUN_REMOTE_INFERENCE_TEST_CASES)
+  def test_exception_raised_when_response_body_contains_error_entry(
+      self, keyed_input: bool):
     error_msg = 'Base64 decode failed.'
     builder = http.RequestMockBuilder({
         'ml.projects.predict':
@@ -572,7 +623,7 @@ class RunRemoteInferenceTest(RunInferenceFixture):
           ))
 
       try:
-        self._set_up_pipeline(inference_spec_type)
+        self._set_up_pipeline(inference_spec_type, keyed_input)
         self._run_inference_with_beam()
       except (ValueError, RuntimeError) as exc:
         actual_error_msg = str(exc)
@@ -580,13 +631,14 @@ class RunRemoteInferenceTest(RunInferenceFixture):
       else:
         self.fail('Test was expected to throw an exception')
 
-  def test_exception_raised_when_project_id_is_empty(self):
+  @parameterized.named_parameters(_RUN_REMOTE_INFERENCE_TEST_CASES)
+  def test_exception_raised_when_project_id_is_empty(self, keyed_input: bool):
     inference_spec_type = model_spec_pb2.InferenceSpecType(
         ai_platform_prediction_model_spec=model_spec_pb2
         .AIPlatformPredictionModelSpec(model_name='test-model',))
 
     with self.assertRaises(ValueError):
-      self._set_up_pipeline(inference_spec_type)
+      self._set_up_pipeline(inference_spec_type, keyed_input)
       self._run_inference_with_beam()
 
   def test_can_format_requests(self):
