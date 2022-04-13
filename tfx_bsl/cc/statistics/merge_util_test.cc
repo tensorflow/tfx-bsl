@@ -385,6 +385,99 @@ TEST(MergeUtilTest, MergesDistinctCrossFeatures) {
                           testing::EqualsProto(expected)));
 }
 
+TEST(MergeUtilTest, MergesWithDerivedSource) {
+  DatasetFeatureStatistics slice1;
+  ASSERT_TRUE(
+      TextFormat::ParseFromString("name: 'slice1' "
+                                  "features: { "
+                                  "  path: { "
+                                  "   step: 'path' "
+                                  "   step: 'to' "
+                                  "   step: 'feature1' "
+                                  "  } "
+                                  "  type: STRING "
+                                  "  derived_source: {"
+                                  "     deriver_name: 'foo'"
+                                  "     source_path: {step: 'source_path'}"
+                                  "  }"
+                                  "} ",
+                                  &slice1));
+  DatasetFeatureStatistics slice2;
+  ASSERT_TRUE(
+      TextFormat::ParseFromString("name: 'slice1' "
+                                  "features: { "
+                                  "  path: { "
+                                  "   step: 'path' "
+                                  "   step: 'to' "
+                                  "   step: 'feature1' "
+                                  "  } "
+                                  "  string_stats: { "
+                                  "     unique: 54 "
+                                  "  } "
+                                  "} ",
+                                  &slice2));
+  DatasetFeatureStatisticsList expected;
+  ASSERT_TRUE(
+      TextFormat::ParseFromString("datasets: { "
+                                  "name: 'slice1' "
+                                  "features: { "
+                                  "  path: { "
+                                  "   step: 'path' "
+                                  "   step: 'to' "
+                                  "   step: 'feature1' "
+                                  "  } "
+                                  "  type: STRING "
+                                  "  string_stats: { "
+                                  "     unique: 54 "
+                                  "  } "
+                                  "  derived_source: {"
+                                  "     deriver_name: 'foo'"
+                                  "     source_path: {step: 'source_path'}"
+                                  "  }"
+                                  "} "
+                                  "} ",
+                                  &expected));
+  auto output_or = Merge({slice1, slice2});
+  ASSERT_OK(output_or.status());
+  DatasetFeatureStatisticsList output = **output_or;
+  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
+                          testing::EqualsProto(expected)));
+}
+
+TEST(MergeUtilTest, ConflictingDerivedSourceIsError) {
+  DatasetFeatureStatistics slice1;
+  ASSERT_TRUE(
+      TextFormat::ParseFromString("name: 'slice1' "
+                                  "features: { "
+                                  "  path: { "
+                                  "   step: 'path' "
+                                  "   step: 'to' "
+                                  "   step: 'feature1' "
+                                  "  } "
+                                  "  type: STRING "
+                                  "  derived_source: {"
+                                  "     deriver_name: 'foo'"
+                                  "  }"
+                                  "} ",
+                                  &slice1));
+  DatasetFeatureStatistics slice2;
+  ASSERT_TRUE(
+      TextFormat::ParseFromString("name: 'slice1' "
+                                  "features: { "
+                                  "  path: { "
+                                  "   step: 'path' "
+                                  "   step: 'to' "
+                                  "   step: 'feature1' "
+                                  "  } "
+                                  "  derived_source: {"
+                                  "     deriver_name: 'bar'"
+                                  "  }"
+                                  "} ",
+                                  &slice2));
+  auto output_or = Merge({slice1, slice2});
+  ASSERT_FALSE(output_or.ok());
+}
+
 TEST(MergeUtilTest, MergesSameCrossFeatures) {
   DatasetFeatureStatistics slice1;
   ASSERT_TRUE(

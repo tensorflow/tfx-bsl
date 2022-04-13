@@ -24,7 +24,9 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "tfx_bsl/cc/util/status_util.h"
+#include "tensorflow_metadata/proto/v0/derived_feature.pb.h"
 #include "tensorflow_metadata/proto/v0/path.pb.h"
 #include "tensorflow_metadata/proto/v0/statistics.pb.h"
 
@@ -40,6 +42,7 @@ namespace {
 using tensorflow::metadata::v0::CrossFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatisticsList;
+using tensorflow::metadata::v0::DerivedFeatureSource;
 using tensorflow::metadata::v0::FeatureNameStatistics;
 using SliceKey = std::string;
 
@@ -61,6 +64,24 @@ bool DistinctNonzeroValues(const T& v0, const T& v1, const T& zero) {
   return v0 != zero && v1 != zero && v0 != v1;
 }
 
+// TODO(b/227478330): Find a more robust way of checking. This will break (open)
+// if we add fields.
+bool DerivedSourcesEqual(const DerivedFeatureSource& lhs,
+                         const DerivedFeatureSource& rhs) {
+  if (lhs.deriver_name() != rhs.deriver_name()) return false;
+  if (lhs.description() != rhs.description()) return false;
+  if (lhs.source_path_size() != rhs.source_path_size()) return false;
+  for (int i = 0; i < lhs.source_path_size(); i++) {
+    if (lhs.source_path(i).step_size() != rhs.source_path(i).step_size())
+      return false;
+    for (int j = 0; j < lhs.source_path_size(); j++) {
+      if (lhs.source_path(i).step(j) != rhs.source_path(i).step(j))
+        return false;
+    }
+  }
+  return true;
+}
+
 absl::Status MergeFeatureStatistics(const FeatureNameStatistics& merge_from,
                                     FeatureNameStatistics* merge_to) {
   // Copy the path/name if not yet set; We don't need to check for matches here,
@@ -69,6 +90,16 @@ absl::Status MergeFeatureStatistics(const FeatureNameStatistics& merge_from,
     *merge_to->mutable_path() = merge_from.path();
   if (!merge_from.name().empty() && merge_to->name().empty())
     merge_to->set_name(merge_from.name());
+
+  // Copy the derived source if currently unset.
+  if (merge_from.has_derived_source() && merge_to->has_derived_source() &&
+      !DerivedSourcesEqual(merge_from.derived_source(),
+                           merge_to->derived_source()))
+    return absl::InvalidArgumentError(
+        absl::StrFormat("Conflicting derived sources for feature %s and %s.",
+                        merge_from.DebugString(), merge_to->DebugString()));
+  if (merge_from.has_derived_source() && !merge_to->has_derived_source())
+    *merge_to->mutable_derived_source() = merge_from.derived_source();
 
   // Set the type.
   if (DistinctNonzeroValues<FeatureNameStatistics::Type>(
@@ -86,7 +117,7 @@ absl::Status MergeFeatureStatistics(const FeatureNameStatistics& merge_from,
     return absl::InvalidArgumentError(
         "FeatureNameStatistics shards with different stats");
   }
-  // TODO(202910677): Consider making this stricter, to match the requirement
+  // TODO(b/202910677): Consider making this stricter, to match the requirement
   // that we not merge two non-empty messages (other than common stats).
   switch (merge_from.stats_case()) {
     case FeatureNameStatistics::STATS_NOT_SET:
