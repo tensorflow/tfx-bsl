@@ -154,8 +154,8 @@ class RunInferenceImpl(beam.PTransform):
 
   def expand(self, examples: beam.PCollection) -> beam.PCollection:
     logging.info('RunInference on model: %s', self._inference_spec_type)
-
-    if self.infer_output_type(examples.element_type) is _OUTPUT_TYPE:
+    output_type = self.infer_output_type(examples.element_type)
+    if output_type is _OUTPUT_TYPE:
       # The input is not a KV, so pair with a dummy key, run the inference, and
       # drop the dummy key afterwards.
       return (examples
@@ -163,7 +163,7 @@ class RunInferenceImpl(beam.PTransform):
               |
               'ApplyOnKeyedInput' >> RunInferenceImpl(self._inference_spec_type)
               # Note: Using more specific and correct type hints with no key.
-              | 'DropNone' >> beam.Values().with_output_types(_OUTPUT_TYPE))
+              | 'DropNone' >> beam.Values().with_output_types(output_type))
 
     # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
     if resources.ResourceHint.is_registered('close_to_resources'):
@@ -175,14 +175,17 @@ class RunInferenceImpl(beam.PTransform):
     # pylint: disable=no-value-for-parameter
     operation_type = _get_operation_type(self._inference_spec_type)
     if operation_type == _OperationType.CLASSIFICATION:
-      result = examples | 'Classify' >> _Classify(self._inference_spec_type)
+      result = examples | 'Classify' >> _Classify(
+          self._inference_spec_type).with_output_types(output_type)
     elif operation_type == _OperationType.REGRESSION:
-      result = examples | 'Regress' >> _Regress(self._inference_spec_type)
+      result = examples | 'Regress' >> _Regress(
+          self._inference_spec_type).with_output_types(output_type)
     elif operation_type == _OperationType.MULTI_INFERENCE:
       result = examples | 'MultiInference' >> _MultiInference(
-          self._inference_spec_type)
+          self._inference_spec_type).with_output_types(output_type)
     elif operation_type == _OperationType.PREDICTION:
-      result = examples | 'Predict' >> _Predict(self._inference_spec_type)
+      result = examples | 'Predict' >> _Predict(
+          self._inference_spec_type).with_output_types(output_type)
     else:
       raise ValueError('Unsupported operation_type %s' % operation_type)
 
@@ -209,6 +212,7 @@ class RunInferencePerModelImpl(beam.PTransform):
       return output_type
 
   def expand(self, examples: beam.PCollection) -> beam.PCollection:
+    output_type = self.infer_output_type(examples.element_type)
 
     # TODO(b/217442215): Obviate the need for this block (and instead rely
     # solely on the one within RunInferenceImpl::expand).
@@ -229,7 +233,7 @@ class RunInferencePerModelImpl(beam.PTransform):
               | 'PairWithNone' >> beam.Map(lambda x: (None, x))
               | 'ApplyOnKeyedInput' >> RunInferencePerModelImpl(
                   self._inference_spec_types)
-              | 'DropNone' >> beam.Values())
+              | 'DropNone' >> beam.Values().with_output_types(output_type))
 
     @beam.ptransform_fn
     def Iteration(pcoll, inference_spec_type):  # pylint: disable=invalid-name
@@ -241,7 +245,8 @@ class RunInferencePerModelImpl(beam.PTransform):
     result = examples
     for i, inference_spec_type in enumerate(self._inference_spec_types):
       result |= f'Model[{i}]' >> Iteration(inference_spec_type)  # pylint: disable=no-value-for-parameter
-    result |= 'ExtractResults' >> beam.Map(lambda tup: (tup[0], tuple(tup[2:])))
+    result |= 'ExtractResults' >> beam.Map(
+        lambda tup: (tup[0], tuple(tup[2:]))).with_output_types(output_type)
     return result
 
 

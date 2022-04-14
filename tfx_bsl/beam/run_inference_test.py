@@ -500,6 +500,47 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertGreater(model_size, 1000)
     self.assertLess(model_size, 5000)
 
+  @parameterized.named_parameters([
+      dict(
+          testcase_name='example',
+          input_element=tf.train.Example(),
+          output_type=prediction_log_pb2.PredictionLog),
+      dict(
+          testcase_name='bytes',
+          input_element=b'',
+          output_type=prediction_log_pb2.PredictionLog),
+      dict(
+          testcase_name='sequence_example',
+          input_element=tf.train.SequenceExample(),
+          output_type=prediction_log_pb2.PredictionLog),
+      dict(
+          testcase_name='keyed_example',
+          input_element=('key', tf.train.Example()),
+          output_type=beam.typehints.Tuple[str,
+                                           prediction_log_pb2.PredictionLog]),
+      dict(
+          testcase_name='keyed_bytes',
+          input_element=('key', b''),
+          output_type=beam.typehints.Tuple[str,
+                                           prediction_log_pb2.PredictionLog]),
+      dict(
+          testcase_name='keyed_sequence_example',
+          input_element=('key', tf.train.SequenceExample()),
+          output_type=beam.typehints.Tuple[str,
+                                           prediction_log_pb2.PredictionLog]),
+  ])
+  def testInfersElementType(self, input_element, output_type):
+    # TODO(zwestrick): Skip building the model, which is not actually used, or
+    # stop using parameterized tests if performance becomes an issue.
+    model_path = self._get_output_data_dir('model')
+    self._build_predict_model(model_path)
+    spec = model_spec_pb2.InferenceSpecType(
+        saved_model_spec=model_spec_pb2.SavedModelSpec(model_path=model_path))
+    inference_transform = run_inference.RunInferenceImpl(spec)
+    with beam.Pipeline() as p:
+      inference = (p | beam.Create([input_element]) | inference_transform)
+      self.assertEqual(inference.element_type, output_type)
+
 
 _RUN_REMOTE_INFERENCE_TEST_CASES = [{
     'testcase_name': 'keyed_input_false',
@@ -749,7 +790,7 @@ class RunRemoteInferenceTest(RunInferenceFixture, parameterized.TestCase):
         [{'b64': base64.b64encode(se).decode()} for se in serialized_examples])
 
 
-class RunInferencePerModelTest(RunInferenceFixture):
+class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
 
   def test_basic(self):
     examples = [
@@ -796,6 +837,57 @@ class RunInferencePerModelTest(RunInferenceFixture):
           predictions_table,
           equal_to([(0, 0.0), (1, 2.0)]),
           label='AssertTable')
+
+  @parameterized.named_parameters([
+      dict(
+          testcase_name='example',
+          input_element=tf.train.Example(),
+          output_type=beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
+                                           prediction_log_pb2.PredictionLog]),
+      dict(
+          testcase_name='bytes',
+          input_element=b'',
+          output_type=beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
+                                           prediction_log_pb2.PredictionLog]),
+      dict(
+          testcase_name='sequence_example',
+          input_element=tf.train.SequenceExample(),
+          output_type=beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
+                                           prediction_log_pb2.PredictionLog]),
+      dict(
+          testcase_name='keyed_example',
+          input_element=('key', tf.train.Example()),
+          output_type=beam.typehints.Tuple[
+              str, beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
+                                        prediction_log_pb2.PredictionLog]]),
+      dict(
+          testcase_name='keyed_bytes',
+          input_element=('key', b''),
+          output_type=beam.typehints.Tuple[
+              str, beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
+                                        prediction_log_pb2.PredictionLog]]),
+      dict(
+          testcase_name='keyed_sequence_example',
+          input_element=('key', tf.train.SequenceExample()),
+          output_type=beam.typehints.Tuple[
+              str, beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
+                                        prediction_log_pb2.PredictionLog]]),
+  ])
+  def testInfersElementType(self, input_element, output_type):
+    # TODO(zwestrick): Skip building the model, which is not actually used, or
+    # stop using parameterized tests if performance becomes an issue.
+    model_paths = [self._get_output_data_dir(m) for m in ('model1', 'model2')]
+    for model_path in model_paths:
+      self._build_predict_model(model_path)
+    specs = [
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(model_path=p))
+        for p in model_paths
+    ]
+    inference_transform = run_inference.RunInferencePerModelImpl(specs)
+    with beam.Pipeline() as p:
+      inference = (p | beam.Create([input_element]) | inference_transform)
+      self.assertEqual(inference.element_type, output_type)
 
 if __name__ == '__main__':
   tf.test.main()
