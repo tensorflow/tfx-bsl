@@ -1405,6 +1405,70 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
 
     self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
+  @test_util.run_in_graph_and_eager_modes
+  def testSparseTensorsReferSameColumns(self):
+    tensor_representation1 = text_format.Parse(
+        """
+        sparse_tensor {
+          value_column_name: "values"
+          index_column_names: ["d0", "d1"]
+          dense_shape {
+            dim {
+              size: 10
+            }
+            dim {
+              size: 20
+            }
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    tensor_representation2 = text_format.Parse(
+        """
+        sparse_tensor {
+          value_column_name: "d1"
+          index_column_names: ["d0"]
+          dense_shape {
+            dim {
+              size: 10
+            }
+          }
+        }
+        """, schema_pb2.TensorRepresentation())
+    record_batch = pa.RecordBatch.from_arrays([
+        pa.array([[1], None, [2], [3, 4, 5], []], type=pa.list_(pa.int64())),
+        pa.array([[9], None, [9], [7, 8, 9], []], type=pa.list_(pa.int64())),
+        pa.array([[0], None, [0], [0, 1, 2], []], type=pa.list_(pa.int64()))
+    ], ["values", "d0", "d1"])
+    adapter = tensor_adapter.TensorAdapter(
+        tensor_adapter.TensorAdapterConfig(record_batch.schema, {
+            "output1": tensor_representation1,
+            "output2": tensor_representation2
+        }))
+    converted = adapter.ToBatchTensors(record_batch)
+    self.assertLen(converted, 2)
+    self.assertIn("output1", converted)
+    self.assertIn("output2", converted)
+    actual_output1 = converted["output1"]
+    actual_output2 = converted["output2"]
+    self.assertIsInstance(actual_output1,
+                          (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
+    self.assertSparseAllEqual(
+        tf.compat.v1.SparseTensorValue(
+            dense_shape=[5, 10, 20],
+            indices=[[0, 9, 0], [2, 9, 0], [3, 7, 0], [3, 8, 1], [3, 9, 2]],
+            values=tf.constant([1, 2, 3, 4, 5], dtype=tf.int64)),
+        actual_output1)
+    self.assertIsInstance(actual_output2,
+                          (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
+    self.assertSparseAllEqual(
+        tf.compat.v1.SparseTensorValue(
+            dense_shape=[5, 10],
+            indices=[[0, 9], [2, 9], [3, 7], [3, 8], [3, 9]],
+            values=tf.constant([0, 0, 0, 1, 2], dtype=tf.int64)),
+        actual_output2)
+
+    self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
+
   @parameterized.named_parameters(_RAGGED_TENSOR_TEST_CASES)
   @test_util.run_in_graph_and_eager_modes
   def testRaggedTensor(self, tensor_representation_textpb, record_batch,

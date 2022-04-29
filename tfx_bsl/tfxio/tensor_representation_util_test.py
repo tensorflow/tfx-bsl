@@ -1155,6 +1155,327 @@ _PROJECT_TENSOR_REPRESENTATIONS_IN_SCHEMA_TEST_CASES = [
         generate_legacy_feature_spec=True),
 ]
 
+_VALIDATE_TENSOR_REPRESENTATIONS_IN_SCHEMA_TEST_CASES = [
+    dict(
+        testcase_name='_simple_features',
+        schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "float_feature"
+            type: FLOAT
+            int_domain { min: 0 max: 0 }
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+        """,
+        error='TensorRepresentations are not found in the schema.',
+    ),
+    dict(
+        testcase_name='_simple_tensor_representations',
+        schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          feature {
+            name: "float_feature"
+            type: FLOAT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "int_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "int_feature"
+                  }
+                }
+              }
+              tensor_representation {
+                key: "float_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "float_feature"
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+    ),
+    dict(
+        testcase_name='_composite_tensor_representations',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: "group_name"
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["index_key"]
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        tensor_representation_group_name='group_name',
+    ),
+    dict(
+        testcase_name='_struct_features',
+        schema="""
+        feature {
+          name: "int_feature"
+          type: INT
+          value_count {
+            min: 1
+            max: 1
+          }
+        }
+        feature {
+          name: "float_feature"
+          type: FLOAT
+          value_count {
+            min: 4
+            max: 4
+          }
+        }
+        feature {
+          name: "struct_feature"
+          type: STRUCT
+          struct_domain {
+            feature {
+              name: "int_feature"
+              type: INT
+              value_count {
+                min: 0
+                max: 2
+              }
+            }
+            feature {
+              name: "string_feature"
+              type: BYTES
+              value_count {
+                min: 0
+                max: 2
+              }
+            }
+          }
+        }
+        tensor_representation_group {
+          key: ""
+          value {
+            tensor_representation {
+              key: "int_feature"
+              value { varlen_sparse_tensor { column_name: "int_feature" } }
+            }
+            tensor_representation {
+              key: "float_feature"
+              value { varlen_sparse_tensor { column_name: "float_feature" } }
+            }
+            tensor_representation {
+              key: "seq_string_feature"
+              value {
+                ragged_tensor {
+                  feature_path {
+                    step: "struct_feature"
+                    step: "string_feature"
+                  }
+                }
+              }
+            }
+            tensor_representation {
+              key: "seq_int_feature"
+              value {
+                ragged_tensor {
+                  feature_path {
+                    step: "struct_feature"
+                    step: "int_feature"
+                  }
+                }
+              }
+            }
+          }
+        }
+      """,
+    ),
+    dict(
+        testcase_name='_tensor_representations_with_sparse_feature',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "index_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            is_sorted: true
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["index_key"]
+                  }
+                }
+              }
+            }
+          }
+        """,
+    ),
+    dict(
+        testcase_name='_refer_same_source_column',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["int_feature"]
+                  }
+                }
+              }
+              tensor_representation {
+                key: "int_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "int_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+    ),
+    dict(
+        testcase_name='_missing_source_column',
+        schema="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "x"
+                value {
+                  sparse_tensor {
+                    value_column_name: "value_key"
+                    index_column_names: ["index_key"] # No "index_key" feature.
+                  }
+                }
+              }
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        error=(
+            'Features referred in TensorRepresentations but not found in the '
+            'schema: {index_key}'),
+    ),
+    dict(
+        testcase_name='_missing_tensor_representation',
+        schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+          }
+          feature {
+            name: "string_feature"
+            type: BYTES
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "string_feature"
+                value {
+                  varlen_sparse_tensor {
+                    column_name: "string_feature"
+                  }
+                }
+              }
+            }
+          }
+        """,
+        error=('Features present in the schema but not referred in any '
+               'TensorRepresentation: {int_feature}'),
+    ),
+]
+
 
 def _MakeFixedLenFeatureTestCases():
   result = []
@@ -1564,6 +1885,23 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       with self.assertRaisesRegex(ValueError, expected_error):
         _ = tensor_representation_util.ProjectTensorRepresentationsInSchema(
             schema, tensor_names)
+
+  @parameterized.named_parameters(
+      *(_VALIDATE_TENSOR_REPRESENTATIONS_IN_SCHEMA_TEST_CASES))
+  def testValidateTensorRepresentationsInSchema(
+      self,
+      schema,
+      tensor_representation_group_name=tensor_representation_util
+      ._DEFAULT_TENSOR_REPRESENTATION_GROUP,
+      error=None):
+    schema = text_format.Parse(schema, schema_pb2.Schema())
+    if error is None:
+      tensor_representation_util.ValidateTensorRepresentationsInSchema(
+          schema, tensor_representation_group_name)
+    else:
+      with self.assertRaisesRegex(ValueError, error):
+        tensor_representation_util.ValidateTensorRepresentationsInSchema(
+            schema, tensor_representation_group_name)
 
 if __name__ == '__main__':
   absltest.main()

@@ -634,3 +634,59 @@ def ProjectTensorRepresentationsInSchema(
       {k: v for k, v in tensor_representations.items() if k in tensor_names})
 
   return result
+
+
+def _GetSourceColumnsFromFeature(
+    feature: schema_pb2.Feature) -> List[path.ColumnPath]:
+  """Extracts all Feature paths from a potentially nested Feature."""
+  if feature.type == schema_pb2.FeatureType.STRUCT:
+    result = []
+    for child_feature in feature.struct_domain.feature:
+      result.extend(
+          path.ColumnPath([feature.name] + list(child_path.steps()))
+          for child_path in _GetSourceColumnsFromFeature(child_feature))
+    return result
+  else:
+    return [path.ColumnPath(feature.name)]
+
+
+def ValidateTensorRepresentationsInSchema(
+    schema: schema_pb2.Schema,
+    tensor_representation_group_name: str = _DEFAULT_TENSOR_REPRESENTATION_GROUP
+):
+  """Checks that TensorRepresentations refer all schema features at least once.
+
+  Args:
+    schema: A TFMD Schema proto.
+    tensor_representation_group_name: (optional) the name of the group to look
+      for. If not provided, looks for the default name.
+
+  Raises:
+    ValueError: If either of the following is true
+      * there's no TensorRepresentationGroup with the given name;
+      * TensorRepresentations refer to a feature that is not in the schema;
+      * feature exists in the schema, but is not referred to by any
+        TensorRepresentation.
+  """
+  tensor_representations = GetTensorRepresentationsFromSchema(
+      schema, tensor_representation_group_name)
+  if tensor_representations is None:
+    raise ValueError(
+        "TensorRepresentations are not found in the schema. Did you specify "
+        "correct group name?")
+  source_features = set()
+  for representation in tensor_representations.values():
+    source_features.update(
+        GetSourceColumnsFromTensorRepresentation(representation))
+  all_features = set()
+  for feature in schema.feature:
+    all_features.update(_GetSourceColumnsFromFeature(feature))
+  source_not_in_schema = source_features - all_features
+  if source_not_in_schema:
+    raise ValueError(
+        f"Features referred in TensorRepresentations but not found in the "
+        f"schema: {source_not_in_schema}")
+  in_schema_not_source = all_features - source_features
+  if in_schema_not_source:
+    raise ValueError(f"Features present in the schema but not referred in any "
+                     f"TensorRepresentation: {in_schema_not_source}")
