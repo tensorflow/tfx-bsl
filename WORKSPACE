@@ -59,12 +59,12 @@ http_archive(
 )
 
 
-TFMD_COMMIT = "3294624003df6425e83c9e85e1cc2399eff4ad03"
+TFMD_COMMIT = "47170227144d2e90299f7a6f67c2939f1e10d0c8"
 http_archive(
     name = "com_github_tensorflow_metadata",
     urls = ["https://github.com/tensorflow/metadata/archive/%s.zip" % TFMD_COMMIT],
     strip_prefix = "metadata-%s" % TFMD_COMMIT,
-    sha256 = "768986cbf3b1c2e90fb8850d168707a27a6373842447e22ba5a484436fe631aa",
+    sha256 = "31f4f72343e0f040904ac4c8fea5e15c80d24c912272c2ba92a4de4dba42b526",
 )
 
 # TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.

@@ -92,14 +92,17 @@ absl::Status MergeFeatureStatistics(const FeatureNameStatistics& merge_from,
     merge_to->set_name(merge_from.name());
 
   // Copy the derived source if currently unset.
-  if (merge_from.has_derived_source() && merge_to->has_derived_source() &&
-      !DerivedSourcesEqual(merge_from.derived_source(),
-                           merge_to->derived_source()))
+  if (merge_from.has_validation_derived_source() &&
+      merge_to->has_validation_derived_source() &&
+      !DerivedSourcesEqual(merge_from.validation_derived_source(),
+                           merge_to->validation_derived_source()))
     return absl::InvalidArgumentError(
         absl::StrFormat("Conflicting derived sources for feature %s and %s.",
                         merge_from.DebugString(), merge_to->DebugString()));
-  if (merge_from.has_derived_source() && !merge_to->has_derived_source())
-    *merge_to->mutable_derived_source() = merge_from.derived_source();
+  if (merge_from.has_validation_derived_source() &&
+      !merge_to->has_validation_derived_source())
+    *merge_to->mutable_validation_derived_source() =
+        merge_from.validation_derived_source();
 
   // Set the type.
   if (DistinctNonzeroValues<FeatureNameStatistics::Type>(
