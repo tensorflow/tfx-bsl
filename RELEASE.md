@@ -8,6 +8,7 @@
     of `RunInference` (useful for ensembles).
 *   Introduced `ParquetTFXIO` that allows reading data from Parquet files in
     `pyarrow.RecordBatch` format.
+*   From this version we will be releasing python 3.9 wheels.
 
 ## Bug Fixes and Other Changes
 
