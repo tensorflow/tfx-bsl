@@ -22,5 +22,5 @@ use GitHub pull requests for this purpose. Consult
 [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
 information on using pull requests.
 
-TFDV follows the [Google Python Style Guide]
+`tfx_bsl` follows the [Google Python Style Guide]
 (http://google.github.io/styleguide/pyguide.html).
