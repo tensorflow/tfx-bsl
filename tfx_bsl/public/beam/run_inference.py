@@ -13,7 +13,7 @@
 # limitations under the License.
 """Publich API of batch inference."""
 
-from typing import Iterable, Tuple, TypeVar, Union
+from typing import Iterable, List, Tuple, TypeVar, Union
 
 import apache_beam as beam
 import tensorflow as tf
@@ -40,7 +40,7 @@ _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 @beam.ptransform_fn
 @beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
 @beam.typehints.with_output_types(Union[_OUTPUT_TYPE, Tuple[_K, _OUTPUT_TYPE]])
-def RunInference(  # pylint: disable=invalid-name
+def RunInference(
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType
 ) -> beam.pvalue.PCollection:
@@ -98,7 +98,7 @@ def RunInference(  # pylint: disable=invalid-name
 @beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
 @beam.typehints.with_output_types(Union[Tuple[_OUTPUT_TYPE, ...],
                                         Tuple[_K, Tuple[_OUTPUT_TYPE, ...]]])
-def RunInferencePerModel(  # pylint: disable=invalid-name
+def RunInferencePerModel(
     examples: beam.pvalue.PCollection,
     inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType]
 ) -> beam.pvalue.PCollection:
@@ -155,3 +155,36 @@ def RunInferencePerModel(  # pylint: disable=invalid-name
   return (examples
           | 'RunInferencePerModelImpl' >>
           run_inference.RunInferencePerModelImpl(inference_spec_types))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(Tuple[_K, List[_INPUT_TYPE]])
+@beam.typehints.with_output_types(Tuple[_K, List[_OUTPUT_TYPE]])
+def RunInferenceOnKeyedBatches(
+    examples: beam.pvalue.PCollection,
+    inference_spec_type: model_spec_pb2.InferenceSpecType
+) -> beam.pvalue.PCollection:
+  """Run inference over pre-batched keyed inputs.
+
+  This API is experimental and may change in the future.
+
+  Supports the same inference specs as RunInference. Inputs must consist of a
+  keyed list of examples, and outputs consist of keyed list of prediction logs
+  corresponding by index.
+
+  Args:
+    examples: A PCollection of keyed, batched inputs of type Example,
+      SequenceExample, or bytes. Each type support inference specs corresponding
+      to the unbatched cases described in RunInference. Supports
+        - PCollection[Tuple[K, List[Example]]]
+        - PCollection[Tuple[K, List[SequenceExample]]]
+        - PCollection[Tuple[K, List[Bytes]]]
+    inference_spec_type: Model inference endpoint.
+
+  Returns:
+    A PCollection of Tuple[K, List[PredictionLog]].
+  """
+  return (
+      examples
+      |
+      'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))

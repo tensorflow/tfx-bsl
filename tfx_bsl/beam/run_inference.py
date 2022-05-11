@@ -19,7 +19,7 @@ from concurrent import futures
 import functools
 import importlib
 import os
-from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Sequence, Text, Tuple, TypeVar, Union
+from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Text, Tuple, TypeVar, Union
 
 from absl import logging
 import apache_beam as beam
@@ -78,8 +78,31 @@ _INPUT_TYPE = Union[tf.train.Example, tf.train.SequenceExample, bytes]
 _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 
 
-@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Union[_OUTPUT_TYPE, Tuple[_K, _OUTPUT_TYPE]])
+def _is_list_type(input_type: beam.typehints.typehints.TypeConstraint) -> bool:
+  if hasattr(input_type, 'inner_type'):
+    return input_type == beam.typehints.List[input_type.inner_type]
+  return False
+
+
+def _key_and_result_type(input_type: beam.typehints.typehints.TypeConstraint):
+  """Get typehints for key and result type given an input typehint."""
+  tuple_types = getattr(input_type, 'tuple_types', None)
+  if tuple_types is not None and len(tuple_types) == 2:
+    key_type = tuple_types[0]
+    value_type = tuple_types[1]
+  else:
+    key_type = None
+    value_type = input_type
+  if _is_list_type(value_type):
+    result_type = beam.typehints.List[_OUTPUT_TYPE]
+  else:
+    result_type = _OUTPUT_TYPE
+  return key_type, result_type
+
+
+# Output type is inferred from input.
+@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE],
+                                       Tuple[_K, List[_INPUT_TYPE]]])
 class RunInferenceImpl(beam.PTransform):
   """Implementation of RunInference API."""
 
@@ -146,25 +169,14 @@ class RunInferenceImpl(beam.PTransform):
   # LINT.ThenChange(../../../../learning/serving/contrib/servables/tensorflow/flume/bulk-inference.cc:close_to_resources)
 
   def infer_output_type(self, input_type):
-    tuple_types = getattr(input_type, 'tuple_types', None)
-    if tuple_types and len(tuple_types) == 2:
-      return beam.typehints.Tuple[tuple_types[0], _OUTPUT_TYPE]
-    else:
-      return _OUTPUT_TYPE
+    key_type, result_type = _key_and_result_type(input_type)
+    if key_type is not None:
+      return beam.typehints.Tuple[key_type, result_type]
+    return result_type
 
   def expand(self, examples: beam.PCollection) -> beam.PCollection:
     logging.info('RunInference on model: %s', self._inference_spec_type)
     output_type = self.infer_output_type(examples.element_type)
-    if output_type is _OUTPUT_TYPE:
-      # The input is not a KV, so pair with a dummy key, run the inference, and
-      # drop the dummy key afterwards.
-      return (examples
-              | 'PairWithNone' >> beam.Map(lambda x: (None, x))
-              |
-              'ApplyOnKeyedInput' >> RunInferenceImpl(self._inference_spec_type)
-              # Note: Using more specific and correct type hints with no key.
-              | 'DropNone' >> beam.Values().with_output_types(output_type))
-
     # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
     if resources.ResourceHint.is_registered('close_to_resources'):
       examples |= (
@@ -173,28 +185,42 @@ class RunInferenceImpl(beam.PTransform):
                   self._inference_spec_type)))
 
     # pylint: disable=no-value-for-parameter
-    operation_type = _get_operation_type(self._inference_spec_type)
-    if operation_type == _OperationType.CLASSIFICATION:
-      result = examples | 'Classify' >> _Classify(
-          self._inference_spec_type).with_output_types(output_type)
-    elif operation_type == _OperationType.REGRESSION:
-      result = examples | 'Regress' >> _Regress(
-          self._inference_spec_type).with_output_types(output_type)
-    elif operation_type == _OperationType.MULTI_INFERENCE:
-      result = examples | 'MultiInference' >> _MultiInference(
-          self._inference_spec_type).with_output_types(output_type)
-    elif operation_type == _OperationType.PREDICTION:
-      result = examples | 'Predict' >> _Predict(
-          self._inference_spec_type).with_output_types(output_type)
+    if _using_in_process_inference(self._inference_spec_type):
+      spec = _get_saved_model_spec(self._inference_spec_type)
     else:
-      raise ValueError('Unsupported operation_type %s' % operation_type)
+      spec = _get_remote_model_spec(self._inference_spec_type, examples)
+    spec = _ModelLoaderWrapper(spec)
+    return examples | 'BulkInference' >> run_inference_base.RunInference(
+        spec).with_output_types(output_type)
 
-    return result
+
+def _get_saved_model_spec(
+    inference_spec_type: model_spec_pb2.InferenceSpecType
+) -> run_inference_base.ModelLoader:
+  """Get an in-process ModelLoader."""
+  operation_type = _get_operation_type(inference_spec_type)
+  if operation_type == _OperationType.CLASSIFICATION:
+    return _ClassifyModelSpec(inference_spec_type)
+  elif operation_type == _OperationType.REGRESSION:
+    return _RegressModelSpec(inference_spec_type)
+  elif operation_type == _OperationType.MULTI_INFERENCE:
+    return _MultiInferenceModelSpec(inference_spec_type)
+  elif operation_type == _OperationType.PREDICTION:
+    return _PredictModelSpec(inference_spec_type)
+  else:
+    raise ValueError('Unsupported operation_type %s' % operation_type)
 
 
+def _get_remote_model_spec(
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    pcoll: beam.PCollection) -> run_inference_base.ModelLoader:
+  """Get a remote prediction ModelLoader."""
+  return _RemotePredictModelSpec(inference_spec_type, pcoll.pipeline.options)
+
+
+# TODO(b/231328769): Consider supporting Tuple[K, List[E]] here as well.
+# Output type is inferred from input.
 @beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
-@beam.typehints.with_output_types(Union[Tuple[_OUTPUT_TYPE, ...],
-                                        Tuple[_K, Tuple[_OUTPUT_TYPE, ...]]])
 class RunInferencePerModelImpl(beam.PTransform):
   """Implementation of the vectorized variant of the RunInference API."""
 
@@ -203,13 +229,12 @@ class RunInferencePerModelImpl(beam.PTransform):
     self._inference_spec_types = tuple(inference_spec_types)
 
   def infer_output_type(self, input_type):
-    output_type = beam.typehints.Tuple[(_OUTPUT_TYPE,) *
+    key_type, result_type = _key_and_result_type(input_type)
+    result_type = beam.typehints.Tuple[(result_type,) *
                                        len(self._inference_spec_types)]
-    tuple_types = getattr(input_type, 'tuple_types', None)
-    if tuple_types and len(tuple_types) == 2:
-      return beam.typehints.Tuple[tuple_types[0], output_type]
-    else:
-      return output_type
+    if key_type:
+      return beam.typehints.Tuple[key_type, result_type]
+    return result_type
 
   def expand(self, examples: beam.PCollection) -> beam.PCollection:
     output_type = self.infer_output_type(examples.element_type)
@@ -257,66 +282,6 @@ _IOTensorSpec = NamedTuple('_IOTensorSpec',
 
 _Signature = NamedTuple('_Signature', [('name', Text),
                                        ('signature_def', _SignatureDef)])
-
-
-# TODO(b/226119284): remove these helper functions once we move with_output_type
-# into the model spec classes.
-@beam.ptransform_fn
-@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
-def _Classify(  # pylint: disable=invalid-name
-    pcoll: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType):
-  """Performs classify PTransform."""
-  if not _using_in_process_inference(inference_spec_type):
-    raise NotImplementedError
-  return pcoll | 'Classify' >> run_inference_base.RunInference(
-      _ClassifyModelSpec(inference_spec_type))
-
-
-@beam.ptransform_fn
-@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
-def _Regress(  # pylint: disable=invalid-name
-    pcoll: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType):
-  """Performs regress PTransform."""
-  if not _using_in_process_inference(inference_spec_type):
-    raise NotImplementedError
-  return pcoll | 'Regress' >> run_inference_base.RunInference(
-      _RegressModelSpec(inference_spec_type))
-
-
-@beam.ptransform_fn
-@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
-def _MultiInference(  # pylint: disable=invalid-name
-    pcoll: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType):
-  """Performs multi inference PTransform."""
-  if not _using_in_process_inference(inference_spec_type):
-    raise NotImplementedError
-  return (pcoll
-          | 'MultiInference' >> run_inference_base.RunInference(
-              _MultiInferenceModelSpec(inference_spec_type)))
-
-
-@beam.ptransform_fn
-@beam.typehints.with_input_types(Tuple[_K, _INPUT_TYPE])
-@beam.typehints.with_output_types(Tuple[_K, prediction_log_pb2.PredictionLog])
-def _Predict(  # pylint: disable=invalid-name
-    pcoll: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType):
-  """Performs predict PTransform."""
-  if _using_in_process_inference(inference_spec_type):
-    prediction_model_spec = _PredictModelSpec(inference_spec_type)
-    return pcoll | 'Predict' >> run_inference_base.RunInference(
-        prediction_model_spec)
-  else:
-    remote_prediction_model_spec = _RemotePrectictModelSpec(
-        inference_spec_type, pcoll.pipeline.options)
-    return pcoll | 'Predict' >> run_inference_base.RunInference(
-        remote_prediction_model_spec)
 
 
 def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
@@ -388,7 +353,7 @@ class _BaseModelSpec(run_inference_base.InferenceRunner, metaclass=abc.ABCMeta):
 
 # TODO(b/151468119): Consider to re-batch with online serving request size
 # limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
-class _RemotePrectictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
+class _RemotePredictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
   """Performs predictions from a cloud-hosted TensorFlow model.
 
   Supports both batch and streaming processing modes.
@@ -520,12 +485,12 @@ class _RemotePrectictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
   def _post_process(
       self,
       examples: List[_INPUT_TYPE],
-      serialize_examples: List[bytes],
+      serialized_examples: List[bytes],
       outputs: List[Mapping[Text, Any]]
       ) -> List[prediction_log_pb2.PredictionLog]:
     del examples
     result = []
-    for i, serialized_example in enumerate(serialize_examples):
+    for i, serialized_example in enumerate(serialized_examples):
       prediction_log = prediction_log_pb2.PredictionLog()
       predict_log = prediction_log.predict_log
       input_tensor_proto = predict_log.request.inputs[
@@ -1087,3 +1052,95 @@ def _get_tags(
     return list(inference_spec_type.saved_model_spec.tag)
   else:
     return [tf.saved_model.SERVING]
+
+
+_T = TypeVar('_T')
+
+
+def _flatten_examples(
+    maybe_nested_examples: List[Union[_T, List[_T]]]
+) -> Tuple[List[_T], Optional[List[int]], Optional[int]]:
+  """Flattens nested examples, and returns corresponding nested list indices."""
+  if (not maybe_nested_examples or
+      not isinstance(maybe_nested_examples[0], list)):
+    return maybe_nested_examples, None, None
+  idx = []
+  flattened = []
+  for i in range(len(maybe_nested_examples)):
+    for ex in maybe_nested_examples[i]:
+      idx.append(i)
+      flattened.append(ex)
+  return flattened, idx, len(maybe_nested_examples)
+
+
+def _nest_results(flat_results: Iterable[_T], idx: Optional[List[int]],
+                  max_idx: Optional[int]) -> List[Union[_T, List[_T]]]:
+  """Reverses operation of _flatten_examples if indices are provided."""
+  if idx is None:
+    return list(flat_results)
+  nested_results = []
+  for _ in range(max_idx):
+    nested_results.append([])
+  for result, i in zip(flat_results, idx):
+    nested_results[i].append(result)
+  return nested_results
+
+
+class _InferenceRunnerWrapper(run_inference_base.InferenceRunner):
+  """Wrapper that handles key forwarding and pre-batching of inputs.
+
+  This wrapper accepts an InferenceRunner mapping ExampleType -> PredictType,
+  and itself maps either
+
+  * ExampleType -> PredictType
+
+  * Tuple[K, ExampleType] -> Tuple[K, PredictType]
+
+  * Tuple[K, List[ExampleType]] -> Tuple[K, List[PredictType]]
+
+  The second mode can support forwarding metadata with a one-to-one relationship
+  to examples, while the third supports forwarding metadata with a many-to-one
+  relationship.
+
+  Note that ExampleType can not be a Tuple or a List.
+  """
+
+  def __init__(self, inference_runner: run_inference_base.InferenceRunner):
+    self._inference_runner = inference_runner
+
+  def run_inference(self, batch: Sequence[Any], model: Any) -> Sequence[Any]:
+    if not batch:
+      return []
+    if isinstance(batch[0], tuple):
+      keys, examples = zip(*batch)
+    else:
+      keys, examples = None, batch
+    examples, nested_batch_idx, max_idx = _flatten_examples(examples)
+    predictions = self._inference_runner.run_inference(examples, model)
+    predictions = _nest_results(predictions, nested_batch_idx, max_idx)
+    if keys:
+      return list(zip(keys, predictions))
+    return predictions
+
+  def get_num_bytes(self, batch: Any) -> int:
+    if isinstance(batch[0], tuple):
+      _, batch = zip(*batch)
+    batch, _, _ = _flatten_examples(batch)
+    return self._inference_runner.get_num_bytes(batch)
+
+  def get_metrics_namespace(self) -> str:
+    return self._inference_runner.get_metrics_namespace()
+
+
+# TODO(b/231328769): Overload batch args when available.
+class _ModelLoaderWrapper(run_inference_base.ModelLoader):
+  """Supplies _InferenceRunnerWrapper."""
+
+  def __init__(self, model_loader: run_inference_base.ModelLoader):
+    self._model_loader = model_loader
+
+  def load_model(self) -> Any:
+    return self._model_loader.load_model()
+
+  def get_inference_runner(self) -> run_inference_base.InferenceRunner:
+    return _InferenceRunnerWrapper(self._model_loader.get_inference_runner())
