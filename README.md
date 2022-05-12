@@ -35,7 +35,7 @@ Google Cloud. To install the latest nightly package, please use the following
 command:
 
 ```bash
-pip install -i https://pypi-nightly.tensorflow.org/simple tfx-bsl
+pip install --extra-index-url https://pypi-nightly.tensorflow.org/simple tfx-bsl
 ```
 
 This will install the nightly packages for the major dependencies of TFX-BSL
