@@ -6,6 +6,8 @@
 
 ## Bug Fixes and Other Changes
 
+*   Depends on `tensorflow>=1.15.5,<2` or `tensorflow>=2.9,<3`
+
 ## Breaking Changes
 
 ## Deprecations
@@ -24,10 +26,6 @@
 ## Bug Fixes and Other Changes
 
 *   Depends on `tensorflow-metadata>=1.8,<1.9`.
-*   Depends on
-    `tensorflow>=1.15.5,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,<3`.
-*   Depends on
-    `tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,<3`.
 
 ## Breaking Changes
 
