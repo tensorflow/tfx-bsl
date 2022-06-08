@@ -232,7 +232,7 @@ class RunInferencePerModelImpl(beam.PTransform):
     key_type, result_type = _key_and_result_type(input_type)
     result_type = beam.typehints.Tuple[(result_type,) *
                                        len(self._inference_spec_types)]
-    if key_type:
+    if key_type is not None:
       return beam.typehints.Tuple[key_type, result_type]
     return result_type
 

@@ -267,7 +267,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     return result
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testModelPathInvalid(self, keyed_input: bool, decode_examples: bool):
+  def test_model_path_invalid(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
@@ -280,7 +280,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
           keyed_input, decode_examples)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testEstimatorModelPredict(self, keyed_input: bool, decode_examples: bool):
+  def test_estimator_model_predict(self, keyed_input: bool,
+                                   decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -306,7 +307,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertEqual(outputs.tensor_shape.dim[1].size, 1)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testClassifyModel(self, keyed_input: bool, decode_examples: bool):
+  def test_classify_model(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -331,7 +332,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         classify_log.response.result.classifications[0].classes[0].score, 1.0)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testRegressModel(self, keyed_input: bool, decode_examples: bool):
+  def test_regress_model(self, keyed_input: bool, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -355,7 +356,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
                            0.6)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testMultiInferenceModel(self, keyed_input: bool, decode_examples: bool):
+  def test_multi_inference_model(self, keyed_input: bool,
+                                 decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -392,7 +394,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         result.classification_result.classifications[0].classes[0].score, 1.0)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testKerasModelPredict(self, keyed_input: bool, decode_examples: bool):
+  def test_keras_model_predict(self, keyed_input: bool, decode_examples: bool):
     inputs = tf.keras.Input(shape=(1,), name='input1')
     output1 = tf.keras.layers.Dense(
         1, activation=tf.nn.sigmoid, name='output1')(
@@ -450,7 +452,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
       'testcase_name': 'encoded_examples',
       'decode_examples': False
   }])
-  def testTelemetry(self, decode_examples: bool):
+  def test_telemetry(self, decode_examples: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -494,7 +496,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertGreaterEqual(
         load_model_latency_milli_secs['distributions'][0].result.sum, 0)
 
-  def testModelSizeBytes(self):
+  def test_model_size_bytes(self):
     self.assertEqual(
         1 << 30,
         run_inference.RunInferenceImpl._model_size_bytes(
@@ -508,7 +510,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertGreater(model_size, 1000)
     self.assertLess(model_size, 5000)
 
-  def testEstimatorModelPredictBatched(self):
+  def test_estimator_model_predict_batched(self):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -571,7 +573,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
           output_type=beam.typehints.Tuple[
               str, beam.typehints.List[prediction_log_pb2.PredictionLog]]),
   ])
-  def testInfersElementType(self, input_element, output_type):
+  def test_infers_element_type(self, input_element, output_type):
     # TODO(zwestrick): Skip building the model, which is not actually used, or
     # stop using parameterized tests if performance becomes an issue.
     model_path = self._get_output_data_dir('model')
@@ -579,8 +581,9 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     spec = model_spec_pb2.InferenceSpecType(
         saved_model_spec=model_spec_pb2.SavedModelSpec(model_path=model_path))
     inference_transform = run_inference.RunInferenceImpl(spec)
-    with beam.Pipeline() as p:
-      inference = (p | beam.Create([input_element]) | inference_transform)
+    with self._make_beam_pipeline() as pipeline:
+      inference = (
+          pipeline | beam.Create([input_element]) | inference_transform)
       self.assertEqual(inference.element_type, output_type)
 
 
@@ -834,7 +837,7 @@ class RunRemoteInferenceTest(RunInferenceFixture, parameterized.TestCase):
 
 class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
 
-  def test_basic(self):
+  def test_nonkeyed_nonbatched_input(self):
     examples = [
         text_format.Parse(
             """
@@ -866,10 +869,33 @@ class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
               lambda _, p2: p2.predict_log.response.outputs['y'].float_val[0]))
       assert_that(predictions, equal_to([0.0, 2.0]))
 
+  def test_keyed_nonbatched_input(self):
+    keyed_examples = [
+        ('key1', text_format.Parse(
+            """
+              features {
+                feature { key: "x" value { float_list { value: 0 }}}
+              }
+              """, tf.train.Example())),
+        ('key2', text_format.Parse(
+            """
+              features {
+                feature { key: "x" value { float_list { value: 1 }}}
+              }
+              """, tf.train.Example()))
+    ]
+    model_paths = [self._get_output_data_dir(m) for m in ('model1', 'model2')]
+    for model_path in model_paths:
+      self._build_predict_model(model_path)
+    specs = [
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(model_path=p))
+        for p in model_paths
+    ]
+    with self._make_beam_pipeline() as pipeline:
       predictions_table = (
           pipeline
-          |
-          'CreateTable' >> beam.Create([(i, e) for i, e in enumerate(examples)])
+          | beam.Create(keyed_examples)
           | 'RunInferencePerModelTable' >>
           run_inference.RunInferencePerModelImpl(specs)
           | beam.MapTuple(lambda k, v:  # pylint: disable=g-long-lambda
@@ -877,7 +903,7 @@ class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
                               0])))
       assert_that(
           predictions_table,
-          equal_to([(0, 0.0), (1, 2.0)]),
+          equal_to([('key1', 0.0), ('key2', 2.0)]),
           label='AssertTable')
 
   @parameterized.named_parameters([
@@ -915,7 +941,7 @@ class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
               str, beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
                                         prediction_log_pb2.PredictionLog]]),
   ])
-  def testInfersElementType(self, input_element, output_type):
+  def test_infers_element_type(self, input_element, output_type):
     # TODO(zwestrick): Skip building the model, which is not actually used, or
     # stop using parameterized tests if performance becomes an issue.
     model_paths = [self._get_output_data_dir(m) for m in ('model1', 'model2')]
@@ -927,8 +953,9 @@ class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
         for p in model_paths
     ]
     inference_transform = run_inference.RunInferencePerModelImpl(specs)
-    with beam.Pipeline() as p:
-      inference = (p | beam.Create([input_element]) | inference_transform)
+    with self._make_beam_pipeline() as pipeline:
+      inference = (
+          pipeline | beam.Create([input_element]) | inference_transform)
       self.assertEqual(inference.element_type, output_type)
 
 if __name__ == '__main__':
