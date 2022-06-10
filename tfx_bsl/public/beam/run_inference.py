@@ -184,7 +184,44 @@ def RunInferenceOnKeyedBatches(
   Returns:
     A PCollection of Tuple[K, List[PredictionLog]].
   """
-  return (
-      examples
-      |
-      'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
+  return (examples
+          | 'RunInferenceOnKeyedBatchesImpl' >>
+          run_inference.RunInferenceImpl(inference_spec_type))
+
+
+@beam.ptransform_fn
+@beam.typehints.with_input_types(Tuple[_K, List[_INPUT_TYPE]])
+@beam.typehints.with_output_types(Tuple[_K, Tuple[List[_OUTPUT_TYPE]]])
+def RunInferencePerModelOnKeyedBatches(
+    examples: beam.pvalue.PCollection,
+    inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
+) -> beam.pvalue.PCollection:
+  """Run inference over pre-batched keyed inputs on multiple models.
+
+  This API is experimental and may change in the future.
+
+  Supports the same inference specs as RunInferencePerModel. Inputs must consist
+  of a keyed list of examples, and outputs consist of keyed list of prediction
+  logs corresponding by index.
+
+  Args:
+    examples: A PCollection of keyed, batched inputs of type Example,
+      SequenceExample, or bytes. Each type support inference specs corresponding
+      to the unbatched cases described in RunInferencePerModel. Supports -
+      PCollection[Tuple[K, List[Example]]] - PCollection[Tuple[K,
+      List[SequenceExample]]] - PCollection[Tuple[K, List[Bytes]]]
+    inference_spec_types: A flat iterable of Model inference endpoints.
+      Inference will happen in a fused fashion (ie without data
+      materialization), sequentially across Models within a Beam thread (but in
+      parallel across threads and workers).
+
+  Returns:
+    A PCollection containing Tuples of a key and lists of batched prediction
+    logs from each model provided in inference_spec_types. The Tuple of batched
+    prediction logs is 1-1 aligned with inference_spec_types. The individual
+    prediction logs in the batch are 1-1 aligned with the rows of data in the
+    batch key.
+  """
+  return (examples
+          | 'RunInferencePerModelOnKeyedBatchesImpl' >>
+          run_inference.RunInferencePerModelImpl(inference_spec_types))

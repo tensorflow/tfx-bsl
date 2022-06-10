@@ -218,9 +218,9 @@ def _get_remote_model_spec(
   return _RemotePredictModelSpec(inference_spec_type, pcoll.pipeline.options)
 
 
-# TODO(b/231328769): Consider supporting Tuple[K, List[E]] here as well.
 # Output type is inferred from input.
-@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE],
+                                       Tuple[_K, List[_INPUT_TYPE]]])
 class RunInferencePerModelImpl(beam.PTransform):
   """Implementation of the vectorized variant of the RunInference API."""
 
@@ -260,12 +260,32 @@ class RunInferencePerModelImpl(beam.PTransform):
                   self._inference_spec_types)
               | 'DropNone' >> beam.Values().with_output_types(output_type))
 
+    def infer_iteration_output_type(input_type):
+      """Infers ouput typehint for Iteration Ptransform based on input_type."""
+      tuple_types = getattr(input_type, 'tuple_types', None)
+      output_tuple_components = []
+      if tuple_types is not None:
+        output_tuple_components.extend(tuple_types)
+        example_type = tuple_types[1]
+      else:
+        output_tuple_components.append(input_type)
+        example_type = input_type
+
+      if _is_list_type(example_type):
+        inference_result_type = beam.typehints.List[_OUTPUT_TYPE]
+      else:
+        inference_result_type = _OUTPUT_TYPE
+      output_tuple_components.append(inference_result_type)
+      return beam.typehints.Tuple[output_tuple_components]
+
     @beam.ptransform_fn
     def Iteration(pcoll, inference_spec_type):  # pylint: disable=invalid-name
       return (pcoll
               | 'PairWithInput' >> beam.Map(lambda x: (x, x[1]))
               | 'RunInferenceImpl' >> RunInferenceImpl(inference_spec_type)
-              | 'ExtendResults' >> beam.MapTuple(lambda k, v: k + (v,)))
+              | 'ExtendResults' >>
+              beam.MapTuple(lambda k, v: k + (v,)).with_output_types(
+                  infer_iteration_output_type(pcoll.element_type)))
 
     result = examples
     for i, inference_spec_type in enumerate(self._inference_spec_types):

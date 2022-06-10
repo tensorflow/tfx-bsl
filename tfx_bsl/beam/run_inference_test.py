@@ -898,12 +898,68 @@ class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
           | beam.Create(keyed_examples)
           | 'RunInferencePerModelTable' >>
           run_inference.RunInferencePerModelImpl(specs)
-          | beam.MapTuple(lambda k, v:  # pylint: disable=g-long-lambda
-                          (k, v[1].predict_log.response.outputs['y'].float_val[
-                              0])))
+          | beam.MapTuple(lambda k, predict_logs:  # pylint: disable=g-long-lambda
+                          (k, [
+                              p.predict_log.response.outputs['y'].float_val[0]
+                              for p in predict_logs
+                          ])))
       assert_that(
           predictions_table,
-          equal_to([('key1', 0.0), ('key2', 2.0)]),
+          equal_to([('key1', [0.0, 0.0]), ('key2', [2.0, 2.0])]),
+          label='AssertTable')
+
+  def test_keyed_batched_input(self):
+    keyed_batched_examples = [('key_batch_1', [
+        text_format.Parse(
+            """
+                features {
+                  feature { key: "x" value { float_list { value: 0 }}}
+                }
+              """, tf.train.Example()),
+        text_format.Parse(
+            """
+                features {
+                  feature { key: "x" value { float_list { value: 1 }}}
+                }
+              """, tf.train.Example())
+    ]),
+                              ('key_batch_2', [
+                                  text_format.Parse(
+                                      """
+                features {
+                  feature { key: "x" value { float_list { value: 2 }}}
+                }
+              """, tf.train.Example()),
+                                  text_format.Parse(
+                                      """
+                features {
+                  feature { key: "x" value { float_list { value: 3 }}}
+                }
+              """, tf.train.Example())
+                              ])]
+    model_paths = [self._get_output_data_dir(m) for m in ('model1', 'model2')]
+    for model_path in model_paths:
+      self._build_predict_model(model_path)
+    specs = [
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(model_path=p))
+        for p in model_paths
+    ]
+    with self._make_beam_pipeline() as pipeline:
+      predictions_table = (
+          pipeline
+          | beam.Create(keyed_batched_examples)
+          | 'RunInferencePerModelTable' >>
+          run_inference.RunInferencePerModelImpl(specs)
+          | beam.MapTuple(lambda k, batched_predicit_logs:  # pylint: disable=g-long-lambda
+                          (k, [[  # pylint: disable=g-complex-comprehension
+                              pl.predict_log.response.outputs['y'].float_val[
+                                  0] for pl in pls
+                          ] for pls in batched_predicit_logs])))
+      assert_that(
+          predictions_table,
+          equal_to([('key_batch_1', [[0.0, 2.0], [0.0, 2.0]]),
+                    ('key_batch_2', [[4.0, 6.0], [4.0, 6.0]])]),
           label='AssertTable')
 
   @parameterized.named_parameters([
@@ -940,6 +996,12 @@ class RunInferencePerModelTest(RunInferenceFixture, parameterized.TestCase):
           output_type=beam.typehints.Tuple[
               str, beam.typehints.Tuple[prediction_log_pb2.PredictionLog,
                                         prediction_log_pb2.PredictionLog]]),
+      dict(
+          testcase_name='keyed_batched_examples',
+          input_element=('key', [tf.train.Example()]),
+          output_type=beam.typehints.Tuple[str, beam.typehints.Tuple[
+              beam.typehints.List[prediction_log_pb2.PredictionLog],
+              beam.typehints.List[prediction_log_pb2.PredictionLog]]]),
   ])
   def test_infers_element_type(self, input_element, output_type):
     # TODO(zwestrick): Skip building the model, which is not actually used, or
