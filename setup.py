@@ -172,6 +172,7 @@ setup(
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
         'pandas>=1.0,<2',
+        # TODO(b/233991867): Replace with major version upper bound.
         'protobuf>=3.13,<3.21',
         'pyarrow>=1,<6',
         'tensorflow>=1.15.5,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,<3',
