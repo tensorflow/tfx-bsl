@@ -13,7 +13,7 @@
 # limitations under the License.
 """Publich API of batch inference."""
 
-from typing import Iterable, List, Tuple, TypeVar, Union
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import apache_beam as beam
 import tensorflow as tf
@@ -162,7 +162,8 @@ def RunInferencePerModel(
 @beam.typehints.with_output_types(Tuple[_K, List[_OUTPUT_TYPE]])
 def RunInferenceOnKeyedBatches(
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
 ) -> beam.pvalue.PCollection:
   """Run inference over pre-batched keyed inputs.
 
@@ -180,13 +181,18 @@ def RunInferenceOnKeyedBatches(
         - PCollection[Tuple[K, List[SequenceExample]]]
         - PCollection[Tuple[K, List[Bytes]]]
     inference_spec_type: Model inference endpoint.
+    load_override_fn: Optional function taking a model path and sequence of
+      tags, and returning a tf SavedModel. The loaded model must be equivalent
+      in interface to the model that would otherwise be loaded. It is up to the
+      caller to ensure compatibility. This argument is experimental and subject
+      to change.
 
   Returns:
     A PCollection of Tuple[K, List[PredictionLog]].
   """
   return (examples
-          | 'RunInferenceOnKeyedBatchesImpl' >>
-          run_inference.RunInferenceImpl(inference_spec_type))
+          | 'RunInferenceOnKeyedBatchesImpl' >> run_inference.RunInferenceImpl(
+              inference_spec_type, load_override_fn))
 
 
 @beam.ptransform_fn
@@ -195,6 +201,7 @@ def RunInferenceOnKeyedBatches(
 def RunInferencePerModelOnKeyedBatches(
     examples: beam.pvalue.PCollection,
     inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
+    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
 ) -> beam.pvalue.PCollection:
   """Run inference over pre-batched keyed inputs on multiple models.
 
@@ -214,6 +221,11 @@ def RunInferencePerModelOnKeyedBatches(
       Inference will happen in a fused fashion (ie without data
       materialization), sequentially across Models within a Beam thread (but in
       parallel across threads and workers).
+    load_override_fn: Optional function taking a model path and sequence of
+      tags, and returning a tf SavedModel. The loaded model must be equivalent
+      in interface to the model that would otherwise be loaded. It is up to the
+      caller to ensure compatibility. This argument is experimental and subject
+      to change.
 
   Returns:
     A PCollection containing Tuples of a key and lists of batched prediction
@@ -224,4 +236,5 @@ def RunInferencePerModelOnKeyedBatches(
   """
   return (examples
           | 'RunInferencePerModelOnKeyedBatchesImpl' >>
-          run_inference.RunInferencePerModelImpl(inference_spec_types))
+          run_inference.RunInferencePerModelImpl(inference_spec_types,
+                                                 load_override_fn))

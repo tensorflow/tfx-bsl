@@ -19,7 +19,7 @@ from concurrent import futures
 import functools
 import importlib
 import os
-from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Text, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Text, Tuple, TypeVar, Union
 
 from absl import logging
 import apache_beam as beam
@@ -106,8 +106,20 @@ def _key_and_result_type(input_type: beam.typehints.typehints.TypeConstraint):
 class RunInferenceImpl(beam.PTransform):
   """Implementation of RunInference API."""
 
-  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
+  def __init__(self,
+               inference_spec_type: model_spec_pb2.InferenceSpecType,
+               load_override_fn: Optional[Callable[[str, Sequence[str]],
+                                                   Any]] = None):
+    """Initializes transform.
+
+    Args:
+      inference_spec_type: InferenceSpecType proto.
+      load_override_fn: If provided, overrides the model loader fn of the
+        underlying ModelLoader. This takes a model path and sequence of tags,
+        and should return a model with interface compatible with tf.SavedModel.
+    """
     self._inference_spec_type = inference_spec_type
+    self._load_override_fn = load_override_fn
 
   # LINT.IfChange(close_to_resources)
   @staticmethod
@@ -186,7 +198,8 @@ class RunInferenceImpl(beam.PTransform):
 
     # pylint: disable=no-value-for-parameter
     if _using_in_process_inference(self._inference_spec_type):
-      spec = _get_saved_model_spec(self._inference_spec_type)
+      spec = _get_saved_model_spec(self._inference_spec_type,
+                                   self._load_override_fn)
     else:
       spec = _get_remote_model_spec(self._inference_spec_type, examples)
     spec = _ModelLoaderWrapper(spec)
@@ -195,18 +208,19 @@ class RunInferenceImpl(beam.PTransform):
 
 
 def _get_saved_model_spec(
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]]
 ) -> run_inference_base.ModelLoader:
   """Get an in-process ModelLoader."""
   operation_type = _get_operation_type(inference_spec_type)
   if operation_type == _OperationType.CLASSIFICATION:
-    return _ClassifyModelSpec(inference_spec_type)
+    return _ClassifyModelSpec(inference_spec_type, load_override_fn)
   elif operation_type == _OperationType.REGRESSION:
-    return _RegressModelSpec(inference_spec_type)
+    return _RegressModelSpec(inference_spec_type, load_override_fn)
   elif operation_type == _OperationType.MULTI_INFERENCE:
-    return _MultiInferenceModelSpec(inference_spec_type)
+    return _MultiInferenceModelSpec(inference_spec_type, load_override_fn)
   elif operation_type == _OperationType.PREDICTION:
-    return _PredictModelSpec(inference_spec_type)
+    return _PredictModelSpec(inference_spec_type, load_override_fn)
   else:
     raise ValueError('Unsupported operation_type %s' % operation_type)
 
@@ -224,9 +238,20 @@ def _get_remote_model_spec(
 class RunInferencePerModelImpl(beam.PTransform):
   """Implementation of the vectorized variant of the RunInference API."""
 
-  def __init__(
-      self, inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType]):
+  def __init__(self,
+               inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
+               load_override_fn: Optional[Callable[[str, Sequence[str]],
+                                                   Any]] = None):
+    """Initializes transform.
+
+    Args:
+      inference_spec_types: InferenceSpecType proto.
+      load_override_fn: If provided, overrides the model loader fn of the
+        underlying ModelLoader. This takes a model path and sequence of tags,
+        and should return a model with interface compatible with tf.SavedModel.
+    """
     self._inference_spec_types = tuple(inference_spec_types)
+    self._load_override_fn = load_override_fn
 
   def infer_output_type(self, input_type):
     key_type, result_type = _key_and_result_type(input_type)
@@ -282,7 +307,8 @@ class RunInferencePerModelImpl(beam.PTransform):
     def Iteration(pcoll, inference_spec_type):  # pylint: disable=invalid-name
       return (pcoll
               | 'PairWithInput' >> beam.Map(lambda x: (x, x[1]))
-              | 'RunInferenceImpl' >> RunInferenceImpl(inference_spec_type)
+              | 'RunInferenceImpl' >> RunInferenceImpl(inference_spec_type,
+                                                       self._load_override_fn)
               | 'ExtendResults' >>
               beam.MapTuple(lambda k, v: k + (v,)).with_output_types(
                   infer_iteration_output_type(pcoll.element_type)))
@@ -539,7 +565,8 @@ class _BaseSavedModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
     model inference in batch.
   """
 
-  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
+  def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
+               load_override_fn: Optional[Callable[[str, Sequence[str]], Any]]):
     super().__init__(inference_spec_type)
     self._inference_spec_type = inference_spec_type
     self._model_path = inference_spec_type.saved_model_spec.model_path
@@ -553,6 +580,7 @@ class _BaseSavedModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
     if self._has_tpu_tag():
       # TODO(b/161563144): Support TPU inference.
       raise NotImplementedError('TPU inference is not supported yet.')
+    self._load_override_fn = load_override_fn
 
   def _has_tpu_tag(self) -> bool:
     return (len(self._tags) == 2 and tf.saved_model.SERVING in self._tags and
@@ -573,6 +601,8 @@ class _BaseSavedModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
     _try_import('struct2tensor')
 
   def load_model(self):
+    if self._load_override_fn:
+      return self._load_override_fn(self._model_path, self._tags)
     self._maybe_register_addon_ops()
     result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
     tf.compat.v1.saved_model.loader.load(result, self._tags, self._model_path)

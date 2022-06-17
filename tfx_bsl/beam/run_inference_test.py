@@ -18,12 +18,15 @@ from http import client as http_client
 import json
 import os
 import pickle
+from typing import Any, Callable, Optional
 from unittest import mock
 
 import apache_beam as beam
 from apache_beam.metrics.metric import MetricsFilter
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
+from apache_beam.utils import shared
+
 from googleapiclient import discovery
 from googleapiclient import http
 import tensorflow as tf
@@ -224,7 +227,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
       prediction_log_path: str,
       keyed_input: bool,
       decode_examples: bool,
-      pre_batch_inputs=False):
+      pre_batch_inputs=False,
+      load_override_fn: Optional[Callable[[], Any]] = None):
     with self._make_beam_pipeline() as pipeline:
       if keyed_input:
         key = 'TheKey'
@@ -252,8 +256,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
           | 'MaybeDecode' >> beam.Map(maybe_decode)
           | 'MaybeBatch' >> maybe_batch
           | maybe_pair_with_key
-          |
-          'RunInference' >> run_inference.RunInferenceImpl(inference_spec_type)
+          | 'RunInference' >> run_inference.RunInferenceImpl(
+              inference_spec_type, load_override_fn)
           | maybe_verify_key
           | 'WritePredictions' >> beam.io.WriteToTFRecord(
               prediction_log_path, coder=beam.coders.PickleCoder()))
@@ -354,6 +358,53 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertLen(regress_log.response.result.regressions, 1)
     self.assertAlmostEqual(regress_log.response.result.regressions[0].value,
                            0.6)
+
+  @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
+  def testRegressModelSideloaded(self, keyed_input: bool,
+                                 decode_examples: bool):
+    example_path = self._get_output_data_dir('examples')
+    self._prepare_multihead_examples(example_path)
+    model_path = self._get_output_data_dir('model')
+    self._build_multihead_model(model_path)
+
+    called_count = 0
+
+    def load_model():
+      nonlocal called_count
+      called_count += 1
+      result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
+      tf.compat.v1.saved_model.loader.load(result, [tf.saved_model.SERVING],
+                                           model_path)
+      return result
+
+    shared_handle = shared.Shared()
+    def _load_override_fn(unused_path, unused_tags):
+      return shared_handle.acquire(load_model)
+    # Load the model the first time. It should not be loaded again.
+    _ = _load_override_fn('', [])
+
+    prediction_log_path = self._get_output_data_dir('predictions')
+    self._run_inference_with_beam(
+        example_path,
+        model_spec_pb2.InferenceSpecType(
+            saved_model_spec=model_spec_pb2.SavedModelSpec(
+                model_path=model_path, signature_name=['regress_diff'])),
+        prediction_log_path,
+        keyed_input,
+        decode_examples,
+        load_override_fn=_load_override_fn)
+
+    results = self._get_results(prediction_log_path)
+    self.assertLen(results, 2)
+    regress_log = results[0].regress_log
+    self.assertLen(regress_log.request.input.example_list.examples, 1)
+    self.assertEqual(regress_log.request.input.example_list.examples[0],
+                     self._multihead_examples[0])
+    self.assertLen(regress_log.response.result.regressions, 1)
+    self.assertAlmostEqual(regress_log.response.result.regressions[0].value,
+                           0.6)
+    # Ensure that the model load only happened once.
+    self.assertEqual(called_count, 1)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
   def test_multi_inference_model(self, keyed_input: bool,
