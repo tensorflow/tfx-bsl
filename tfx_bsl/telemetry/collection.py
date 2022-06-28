@@ -22,15 +22,17 @@ import pyarrow as pa
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-def _IncrementCounter(element: int, counter_namespace: str, counter_name: str):
+def _IncrementCounter(element: int, counter_namespace: str,
+                      counter_name: str) -> int:
   counter = beam.metrics.Metrics.counter(counter_namespace, counter_name)
   counter.inc(element)
+  return element
 
 
 @beam.ptransform_fn
 def TrackRecordBatchBytes(dataset: beam.PCollection[pa.RecordBatch],
                           counter_namespace: str,
-                          counter_name: str) -> beam.pvalue.PCollection[None]:
+                          counter_name: str) -> beam.pvalue.PCollection[int]:
   """Gathers telemetry on input record batch."""
   return (dataset
           | "GetRecordBatchSize" >> beam.Map(lambda rb: rb.nbytes)
