@@ -36,7 +36,7 @@ void DefineCodersSubmodule(py::module main_module) {
   m.doc() = "Coders.";
 
   py::class_<ExamplesToRecordBatchDecoder>(m, "ExamplesToRecordBatchDecoder")
-      .def(py::init([](absl::string_view serialized_schema) {
+      .def(py::init([](absl::optional<absl::string_view> serialized_schema) {
              std::unique_ptr<ExamplesToRecordBatchDecoder> result;
              absl::Status s =
                  ExamplesToRecordBatchDecoder::Make(serialized_schema, &result);
@@ -45,16 +45,7 @@ void DefineCodersSubmodule(py::module main_module) {
              }
              return result;
            }),
-           py::arg("serialized_schema"))
-      .def(py::init([] {
-             std::unique_ptr<ExamplesToRecordBatchDecoder> result;
-             absl::Status s =
-                 ExamplesToRecordBatchDecoder::Make(absl::nullopt, &result);
-             if (!s.ok()) {
-               throw std::runtime_error(s.ToString());
-             }
-             return result;
-           }))
+           py::arg("serialized_schema") = absl::nullopt)
       .def(
           "DecodeBatch",
           [](ExamplesToRecordBatchDecoder* decoder,

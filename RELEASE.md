@@ -4,6 +4,8 @@
 
 # Major Features and Improvements
 
+*   `ExamplesToRecordBatchDecoder` is now picklable.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

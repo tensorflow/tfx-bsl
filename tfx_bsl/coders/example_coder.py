@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Example coders."""
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Type, Tuple
 
 import pyarrow as pa
 from tfx_bsl.tfxio import tensor_representation_util
@@ -24,7 +24,7 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 # pylint: disable=g-import-not-at-top
 # See b/148667210 for why the ImportError is ignored.
 try:
-  from tfx_bsl.cc.tfx_bsl_extension.coders import ExamplesToRecordBatchDecoder
+  from tfx_bsl.cc.tfx_bsl_extension.coders import ExamplesToRecordBatchDecoder as ExamplesToRecordBatchDecoderCpp
   from tfx_bsl.cc.tfx_bsl_extension.coders import ExampleToNumpyDict
   from tfx_bsl.cc.tfx_bsl_extension.coders import RecordBatchToExamples
   from tfx_bsl.cc.tfx_bsl_extension.coders import FeatureNameToColumnsMap
@@ -83,3 +83,43 @@ class RecordBatchToExamplesEncoder:
 
   def encode(self, record_batch: pa.RecordBatch) -> List[bytes]:
     return RecordBatchToExamples(record_batch, self._ragged_features)
+
+
+class ExamplesToRecordBatchDecoder:
+  """Decodes a list of serialized `tf.Example`s into `pa.RecordBatch`.
+
+  If a schema is provided then the record batch will contain only the fields
+  from the schema, in the same order as the Schema.  The data type of the
+  schema to determine the field types, with INT, BYTES and FLOAT fields in the
+  schema corresponding to the Arrow data types large_list[int64],
+  large_list[large_binary] and large_list[float32].
+
+  If a schema is not provided then the data type will be inferred, and chosen
+  from list_type[int64], list_type[binary_type] and list_type[float32].  In the
+  case where no data type can be inferred the arrow null type will be inferred.
+
+  This class wraps pybind11 class `ExamplesToRecordBatchDecoder` to make the
+  class and its member functions picklable.
+  """
+
+  __slots__ = ["_schema", "_coder"]
+
+  def __init__(self, serialized_schema: Optional[bytes] = None):
+    """Initializes ExamplesToRecordBatchDecoder.
+
+    Args:
+      serialized_schema: A serialized TFMD schema.
+    """
+    self._schema = serialized_schema
+    self._coder = ExamplesToRecordBatchDecoderCpp(serialized_schema)
+
+  def __reduce__(
+      self
+  ) -> Tuple[Type["ExamplesToRecordBatchDecoder"], Tuple[Optional[bytes]]]:
+    return (self.__class__, (self._schema,))
+
+  def DecodeBatch(self, examples: List[bytes]) -> pa.RecordBatch:  # pylint: disable=invalid-name
+    return self._coder.DecodeBatch(examples)
+
+  def ArrowSchema(self) -> pa.Schema:  # pylint: disable=invalid-name
+    return self._coder.ArrowSchema()

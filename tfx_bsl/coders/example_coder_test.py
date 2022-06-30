@@ -230,6 +230,18 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
     if serialized_schema:
       self.assertTrue(expected.schema.equals(coder.ArrowSchema()))
 
+    # Verify that coder and DecodeBatch can be properly pickled and unpickled.
+    # This is necessary for using them in beam.Map.
+    coder = pickle.loads(pickle.dumps(coder))
+    decode = pickle.loads(pickle.dumps(coder.DecodeBatch))
+    result = decode(serialized_examples)
+    self.assertIsInstance(result, pa.RecordBatch)
+    self.assertTrue(
+        result.equals(expected),
+        "actual: {}\n expected:{}".format(result, expected))
+    if serialized_schema:
+      self.assertTrue(expected.schema.equals(coder.ArrowSchema()))
+
   @parameterized.named_parameters(*_INVALID_INPUT_CASES)
   def test_invalid_input(self, schema_text_proto, examples_text_proto, error,
                          error_msg_regex):
