@@ -189,7 +189,7 @@ class RunInferenceImpl(beam.PTransform):
   def expand(self, examples: beam.PCollection) -> beam.PCollection:
     logging.info('RunInference on model: %s', self._inference_spec_type)
     output_type = self.infer_output_type(examples.element_type)
-    # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
+    # TODO(b/217271822): Do this unconditionally after BEAM-13690 is resolved.
     if resources.ResourceHint.is_registered('close_to_resources'):
       examples |= (
           'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
@@ -266,7 +266,7 @@ class RunInferencePerModelImpl(beam.PTransform):
 
     # TODO(b/217442215): Obviate the need for this block (and instead rely
     # solely on the one within RunInferenceImpl::expand).
-    # TODO(katsiapis): Do this unconditionally after BEAM-13690 is resolved.
+    # TODO(b/217271822): Do this unconditionally after BEAM-13690 is resolved.
     if resources.ResourceHint.is_registered('close_to_resources'):
       examples |= (
           'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
