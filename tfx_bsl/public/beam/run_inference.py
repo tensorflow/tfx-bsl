@@ -42,7 +42,8 @@ _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 @beam.typehints.with_output_types(Union[_OUTPUT_TYPE, Tuple[_K, _OUTPUT_TYPE]])
 def RunInference(
     examples: beam.pvalue.PCollection,
-    inference_spec_type: model_spec_pb2.InferenceSpecType
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
 ) -> beam.pvalue.PCollection:
   """Run inference with a model.
 
@@ -84,14 +85,18 @@ def RunInference(
             * For everything else: Works with Predict and RemotePredict.
 
     inference_spec_type: Model inference endpoint.
+    load_override_fn: Optional function taking a model path and sequence of
+      tags, and returning a tf SavedModel. The loaded model must be equivalent
+      in interface to the model that would otherwise be loaded. It is up to the
+      caller to ensure compatibility. This argument is experimental and subject
+      to change.
 
   Returns:
     A PCollection (possibly keyed) containing prediction logs.
   """
-  return (
-      examples
-      |
-      'RunInferenceImpl' >> run_inference.RunInferenceImpl(inference_spec_type))
+  return (examples
+          | 'RunInferenceImpl' >> run_inference.RunInferenceImpl(
+              inference_spec_type, load_override_fn))
 
 
 @beam.ptransform_fn
@@ -100,7 +105,8 @@ def RunInference(
                                         Tuple[_K, Tuple[_OUTPUT_TYPE, ...]]])
 def RunInferencePerModel(
     examples: beam.pvalue.PCollection,
-    inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType]
+    inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
+    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
 ) -> beam.pvalue.PCollection:
   """Vectorized variant of RunInference (useful for ensembles).
 
@@ -147,14 +153,20 @@ def RunInferencePerModel(
       Inference will happen in a fused fashion (ie without data
       materialization), sequentially across Models within a Beam thread (but
       in parallel across threads and workers).
+    load_override_fn: Optional function taking a model path and sequence of
+      tags, and returning a tf SavedModel. The loaded model must be equivalent
+      in interface to the model that would otherwise be loaded. It is up to the
+      caller to ensure compatibility. This argument is experimental and subject
+      to change.
 
   Returns:
     A PCollection (possibly keyed) containing a Tuple of prediction logs. The
     Tuple of prediction logs is 1-1 aligned with inference_spec_types.
   """
   return (examples
-          | 'RunInferencePerModelImpl' >>
-          run_inference.RunInferencePerModelImpl(inference_spec_types))
+          |
+          'RunInferencePerModelImpl' >> run_inference.RunInferencePerModelImpl(
+              inference_spec_types, load_override_fn))
 
 
 @beam.ptransform_fn
