@@ -5,6 +5,7 @@
 # Major Features and Improvements
 
 *   `ExamplesToRecordBatchDecoder` is now picklable.
+*   `ParquetTFXIO` can now be used as `RecordBasedTFXIO`.
 
 ## Bug Fixes and Other Changes
 

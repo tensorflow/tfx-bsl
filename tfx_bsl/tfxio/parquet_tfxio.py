@@ -14,15 +14,18 @@
 """TFXIO implementation for Parquet."""
 
 import copy
-from typing import Any, List, Optional, Union
+import pickle
+from typing import Any, Dict, List, Optional, Union
 
 import apache_beam as beam
 from apache_beam.io.filesystems import FileSystems
 import pyarrow as pa
 import pyarrow.parquet as pq
 import tensorflow as tf
+from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import csv_decoder
 from tfx_bsl.tfxio import dataset_options
+from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import telemetry
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
@@ -32,12 +35,23 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 
 _PARQUET_FORMAT = "parquet"
 
+_RecordDataType = Union[str, int, float, Dict[Any, Any], List[Any]]
 
-class ParquetTFXIO(tfxio.TFXIO):
+
+def _RecordDictsToRecordBatch(dicts: List[Dict[str, _RecordDataType]],
+                              schema: pa.Schema) -> pa.RecordBatch:
+  record_data_arrays = []
+  for name, array_type in zip(schema.names, schema.types):
+    record_data_arrays.append(
+        pa.array([record[name] for record in dicts], array_type))
+  return pa.RecordBatch.from_arrays(record_data_arrays, schema)
+
+
+class ParquetTFXIO(record_based_tfxio.RecordBasedTFXIO):
   """TFXIO implementation for Parquet."""
 
   def __init__(self,
-               file_pattern: str,
+               file_pattern: Union[str, List[str]],
                *,
                column_names: Optional[List[str]] = None,
                min_bundle_size: int = 0,
@@ -47,7 +61,8 @@ class ParquetTFXIO(tfxio.TFXIO):
     """Initializes a Parquet TFXIO.
 
     Args:
-      file_pattern: A file glob pattern to read parquet files from.
+      file_pattern: One or a list of file glob patterns to read parquet files
+        from.
       column_names: List of column names to read from the parquet files.
       min_bundle_size: the minimum size in bytes, to be considered when
         splitting the parquet input into bundles. If not provided, all columns
@@ -63,31 +78,82 @@ class ParquetTFXIO(tfxio.TFXIO):
         be identifiers of the component itself and not individual instances of
         source use.
     """
-    self._file_pattern = file_pattern
+    super().__init__(
+        telemetry_descriptors=telemetry_descriptors,
+        raw_record_column_name=None,
+        logical_format=_PARQUET_FORMAT,
+        physical_format=_PARQUET_FORMAT)
+    self._file_pattern = (
+        file_pattern if isinstance(file_pattern, list) else [file_pattern])
     self._column_names = column_names
     self._min_bundle_size = min_bundle_size
     self._validate = validate
     self._schema = schema
-    self._telemetry_descriptors = telemetry_descriptors
 
-  @property
-  def telemetry_descriptors(self) -> Optional[List[str]]:
-    return self._telemetry_descriptors
+  def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
+
+    @beam.typehints.with_output_types(bytes)
+    def _PTransformFn(
+        pcoll_or_pipeline: Union[beam.PCollection, beam.Pipeline]
+    ) -> beam.PCollection[bytes]:
+      """Reads Parquet records and serializes to bytes."""
+      source_pcolls = []
+      for i, pattern in enumerate(self._file_pattern):
+        source_pcolls.append(
+            pcoll_or_pipeline
+            | f"ReadFromParquet[{i}]" >> beam.io.ReadFromParquet(
+                file_pattern=pattern,
+                min_bundle_size=self._min_bundle_size,
+                validate=self._validate,
+                columns=self._column_names))
+      return (source_pcolls | "FlattenPCollsFromPatterns" >> beam.Flatten()
+              | "EncodeRawRecords" >> beam.Map(pickle.dumps))
+
+    return beam.ptransform_fn(_PTransformFn)()
+
+  def _RawRecordToRecordBatchInternal(self,
+                                      batch_size: Optional[int] = None
+                                     ) -> beam.PTransform:
+
+    @beam.typehints.with_input_types(bytes)
+    @beam.typehints.with_output_types(pa.RecordBatch)
+    def _PTransformFn(
+        raw_records_pcoll: beam.PCollection[bytes]
+    ) -> beam.PCollection[pa.RecordBatch]:
+      """Decodes raw records and converts them to RecordBatches."""
+      return (raw_records_pcoll
+              | "DecodeRawRecords" >> beam.Map(pickle.loads)
+              | "Batch" >> beam.BatchElements(
+                  **batch_util.GetBatchElementsKwargs(batch_size))
+              | "ToRecordBatch" >> beam.Map(
+                  _RecordDictsToRecordBatch, schema=self.ArrowSchema()))
+
+    return beam.ptransform_fn(_PTransformFn)()
 
   def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
-
-    @beam.typehints.with_input_types(Union[beam.PCollection, beam.Pipeline])
+    # We override the `RecordBasedTFXIO`s `BeamSource` that is a composition of
+    # `_RawRecordBeamSourceInternal` and `_RawRecordToRecordBatchInternal` with
+    # a more efficient implementation that uses batched read.
     @beam.typehints.with_output_types(pa.RecordBatch)
-    def _PTransformFn(pcoll_or_pipeline: Any):
+    def _PTransformFn(
+        pcoll_or_pipeline: Union[beam.PCollection, beam.Pipeline]
+    ) -> beam.PCollection[pa.RecordBatch]:
       """Reads Parquet tables and converts to RecordBatches."""
+      source_pcolls = []
+      for i, pattern in enumerate(self._file_pattern):
+        source_pcolls.append(
+            pcoll_or_pipeline
+            | f"ReadFromParquetBatched[{i}]" >> beam.io.ReadFromParquetBatched(
+                file_pattern=pattern,
+                min_bundle_size=self._min_bundle_size,
+                validate=self._validate,
+                columns=self._column_names))
+      max_batch_size = (
+          batch_util.GetBatchElementsKwargs(batch_size)["max_batch_size"])
       return (
-          pcoll_or_pipeline
-          | "ParquetBeamSource" >> beam.io.ReadFromParquetBatched(
-              file_pattern=self._file_pattern,
-              min_bundle_size=self._min_bundle_size,
-              validate=self._validate,
-              columns=self._column_names) |
-          "ToRecordBatch" >> beam.FlatMap(self._TableToRecordBatch, batch_size)
+          source_pcolls | "FlattenPCollsFromPatterns" >> beam.Flatten()
+          | "ToRecordBatch" >>
+          beam.FlatMap(lambda table: table.to_batches(max_batch_size))
           | "CollectRecordBatchTelemetry" >> telemetry.ProfileRecordBatches(
               self._telemetry_descriptors, _PARQUET_FORMAT, _PARQUET_FORMAT))
 
@@ -101,13 +167,9 @@ class ParquetTFXIO(tfxio.TFXIO):
       options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
     raise NotImplementedError
 
-  def _TableToRecordBatch(
-      self,
-      table: pa.Table,
-      batch_size: Optional[int] = None) -> List[pa.RecordBatch]:
-    return table.to_batches(max_chunksize=batch_size)
-
-  def ArrowSchema(self) -> pa.Schema:
+  def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
+    # ParquetTFXIO does not support attaching raw record column and therefore
+    # columns' schema does not contain the raw record column.
     if self._schema is None:
       return self._InferArrowSchema()
 
@@ -117,8 +179,8 @@ class ParquetTFXIO(tfxio.TFXIO):
 
     return csv_decoder.GetArrowSchema(columns, self._schema)
 
-  def _InferArrowSchema(self):
-    match_result = FileSystems.match([self._file_pattern])[0]
+  def _InferArrowSchema(self) -> pa.Schema:
+    match_result = FileSystems.match(self._file_pattern)[0]
     files_metadata = match_result.metadata_list[0]
     with FileSystems.open(files_metadata.path) as f:
       return pq.read_schema(f)

@@ -14,6 +14,7 @@
 """Tests for tfx_bsl.tfxio.parquet_tfxio."""
 
 import os
+import pickle
 
 from absl import flags
 import apache_beam as beam
@@ -22,9 +23,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import tensorflow as tf
+from tfx_bsl.tfxio import parquet_tfxio
 from tfx_bsl.tfxio import telemetry_test_util
 from tfx_bsl.tfxio import tensor_representation_util
-from tfx_bsl.tfxio.parquet_tfxio import ParquetTFXIO
 
 from google.protobuf import text_format
 from absl.testing import absltest
@@ -116,6 +117,19 @@ _EXPECTED_COLUMN_VALUES = {
         pa.array([[b"abc"], [b"xyz"]], type=pa.large_list(pa.large_binary())),
 }
 
+_EXPECTED_RAW_RECORDS = [
+    pickle.dumps({
+        "int_feature": [1],
+        "float_feature": [2.0],
+        "string_feature": [b"abc"],
+    }),
+    pickle.dumps({
+        "int_feature": [2],
+        "float_feature": [3.0],
+        "string_feature": [b"xyz"],
+    }),
+]
+
 
 def _WriteInputs(filename):
   df = pd.DataFrame(_ROWS)
@@ -135,7 +149,7 @@ class ParquetRecordTest(absltest.TestCase):
 
   def testImplicitTensorRepresentations(self):
     """Tests inferring of tensor representation."""
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=_COLUMN_NAMES,
         schema=_UNORDERED_SCHEMA,
@@ -195,12 +209,76 @@ class ParquetRecordTest(absltest.TestCase):
         schema_pb2.TensorRepresentationGroup(
             tensor_representation=tensor_representations))
 
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=_COLUMN_NAMES,
         schema=schema,
         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
     self.assertEqual(tensor_representations, tfxio.TensorRepresentations())
+
+  def testReadMultipleFiles(self):
+    """Tests multiple file input patterns."""
+    num_copies = 3
+    # The TFXIO will create multiple read nodes for the file.
+    tfxio = parquet_tfxio.ParquetTFXIO(
+        file_pattern=[self._example_file] * num_copies,
+        column_names=_COLUMN_NAMES,
+        schema=_SCHEMA)
+
+    def _AssertFn(record_batch_list):
+      self.assertLen(record_batch_list, num_copies)
+      for record_batch in record_batch_list:
+        self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
+
+    with beam.Pipeline() as p:
+      record_batch_pcoll = (p | tfxio.BeamSource(batch_size=_NUM_ROWS))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+  def testReadRawRecords(self):
+    """Tests reading raw records."""
+    tfxio = parquet_tfxio.ParquetTFXIO(
+        file_pattern=self._example_file,
+        column_names=_COLUMN_NAMES,
+        schema=_SCHEMA)
+
+    with beam.Pipeline() as p:
+      raw_record_pcoll = (p | tfxio.RawRecordBeamSource())
+      beam_testing_util.assert_that(
+          raw_record_pcoll, beam_testing_util.equal_to(_EXPECTED_RAW_RECORDS))
+
+  def testReadRawRecordsMultipleFiles(self):
+    """Tests reading raw records from multiple files."""
+    num_copies = 3
+    # The TFXIO will create multiple read nodes for the file.
+    tfxio = parquet_tfxio.ParquetTFXIO(
+        file_pattern=[self._example_file] * num_copies,
+        column_names=_COLUMN_NAMES,
+        schema=_SCHEMA)
+
+    with beam.Pipeline() as p:
+      raw_record_pcoll = (p | tfxio.RawRecordBeamSource())
+      beam_testing_util.assert_that(
+          raw_record_pcoll,
+          beam_testing_util.equal_to(_EXPECTED_RAW_RECORDS * num_copies))
+
+  def testReadRawRecordsVsBeamSource(self):
+    """Tests reading of raw records and conversion to RecordBatches."""
+    tfxio = parquet_tfxio.ParquetTFXIO(
+        file_pattern=self._example_file,
+        column_names=_COLUMN_NAMES,
+        schema=_SCHEMA)
+
+    def _AssertFn(record_batch_list):
+      self.assertLen(record_batch_list, 1)
+      for record_batch in record_batch_list:
+        self._ValidateRecordBatch(record_batch, _EXPECTED_ARROW_SCHEMA)
+
+    with beam.Pipeline() as p:
+      record_batch_pcoll = (
+          p | "ReadRawRecords" >> tfxio.RawRecordBeamSource()
+          |
+          "RawRecordsToRecordBatch" >> tfxio.RawRecordToRecordBatch(_NUM_ROWS))
+      beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
   def testProjection(self):
     """Test projecting of a TFXIO."""
@@ -222,7 +300,7 @@ class ParquetRecordTest(absltest.TestCase):
     tensor_representation_util.SetTensorRepresentationsInSchema(
         schema, tensor_representations)
 
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=_COLUMN_NAMES,
         schema=schema,
@@ -264,7 +342,7 @@ class ParquetRecordTest(absltest.TestCase):
 
   def testOptionalSchema(self):
     """Tests when the schema is not provided."""
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=_COLUMN_NAMES,
         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
@@ -287,7 +365,7 @@ class ParquetRecordTest(absltest.TestCase):
 
   def testUnorderedSchema(self):
     """Tests various valid schemas."""
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=_COLUMN_NAMES,
         schema=_UNORDERED_SCHEMA)
@@ -303,7 +381,8 @@ class ParquetRecordTest(absltest.TestCase):
 
   def testOptionalColumnNames(self):
     """Tests when column names are not provided."""
-    tfxio = ParquetTFXIO(file_pattern=self._example_file, schema=_SCHEMA)
+    tfxio = parquet_tfxio.ParquetTFXIO(
+        file_pattern=self._example_file, schema=_SCHEMA)
 
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
@@ -316,7 +395,7 @@ class ParquetRecordTest(absltest.TestCase):
 
   def testOptionalColumnNamesAndSchema(self):
     """Tests when schema and column names are not provided."""
-    tfxio = ParquetTFXIO(file_pattern=self._example_file)
+    tfxio = parquet_tfxio.ParquetTFXIO(file_pattern=self._example_file)
 
     def _AssertFn(record_batch_list):
       self.assertLen(record_batch_list, 1)
@@ -329,7 +408,7 @@ class ParquetRecordTest(absltest.TestCase):
 
   def testSubsetOfColumnNamesWithCompleteSchema(self):
     """Tests when column names is a subset of schema features."""
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=["int_feature"],
         schema=_SCHEMA)
@@ -360,7 +439,7 @@ class ParquetRecordTest(absltest.TestCase):
       }
       """, schema_pb2.Schema())
 
-    tfxio = ParquetTFXIO(
+    tfxio = parquet_tfxio.ParquetTFXIO(
         file_pattern=self._example_file,
         column_names=["int_feature"],
         schema=schema)
