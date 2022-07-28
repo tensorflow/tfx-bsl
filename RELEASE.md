@@ -6,6 +6,9 @@
 
 *   `ExamplesToRecordBatchDecoder` is now picklable.
 *   `ParquetTFXIO` can now be used as `RecordBasedTFXIO`.
+*   Introduces `CreateTfSequenceExampleParserConfig` that takes TFMD schema as
+    input and produces configs for `tf.SequenceExample` parsing.
+*   `TFSequenceExampleRecord` can now produce an equivalent tf.data.Dataset.
 
 ## Bug Fixes and Other Changes
 

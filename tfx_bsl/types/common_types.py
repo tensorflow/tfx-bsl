@@ -20,3 +20,11 @@ import tensorflow as tf
 # pytype starts recognizing subclasses of TF classes.
 TensorTypeSpec = Union[tf.TensorSpec, tf.SparseTensorSpec, tf.RaggedTensorSpec,
                        tf.TypeSpec]
+
+# RaggedFeature is not present in TF 1.x.
+if hasattr(tf.io, 'RaggedFeature'):
+  FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
+                          tf.io.SparseFeature, tf.io.RaggedFeature]
+else:
+  FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
+                          tf.io.SparseFeature]

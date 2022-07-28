@@ -13,21 +13,15 @@
 # limitations under the License.
 """TensorRepresentation utilities."""
 
-from typing import List, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 from absl import logging
 import numpy as np
 import tensorflow as tf
 from tfx_bsl.arrow import path
-from tensorflow_metadata.proto.v0 import schema_pb2
+from tfx_bsl.types import common_types
 
-if tf.__version__ < "2":
-  # TF1 doesn't have tf.io.RaggedFeature.
-  IOFeatures = Union[tf.io.VarLenFeature, tf.io.SparseFeature,
-                     tf.io.FixedLenFeature]
-else:
-  IOFeatures = Union[tf.io.VarLenFeature, tf.io.SparseFeature,
-                     tf.io.FixedLenFeature, tf.io.RaggedFeature]
+from tensorflow_metadata.proto.v0 import schema_pb2
 
 _DEFAULT_TENSOR_REPRESENTATION_GROUP = ""
 
@@ -218,9 +212,7 @@ def GetSourceValueColumnFromTensorRepresentation(
 
 def CreateTfExampleParserConfig(
     tensor_representation: schema_pb2.TensorRepresentation,
-    feature_type: schema_pb2.FeatureType
-) -> ("Union[tf.io.VarLenFeature, tf.io.SparseFeature, tf.io.FixedLenFeature, "
-      "tf.io.RaggedFeature]"):
+    feature_type: schema_pb2.FeatureType) -> common_types.FeatureSpecType:
   """Creates a Feature Configuration that is used for tf.io.parse_example.
 
   Args:
@@ -229,12 +221,11 @@ def CreateTfExampleParserConfig(
       types are listed in _FEATURE_TYPE_TO_TF_TYPE.
 
   Returns:
-    Either a `tf.io.FixedLenFeature`, `tf.io.VarLenFeature`, or
-    `tf.io.SparseFeature`.
+    Either a `tf.io.FixedLenFeature`, `tf.io.VarLenFeature`,
+      `tf.io.SparseFeature`, or `tf.io.RaggedFeature`.
 
   Raises:
     ValueError: If the tensor_representation cannot be converted to a Feature.
-    NotImplementedError: For ragged_tensor in tensor_representation.
   """
   value_dtype = _FEATURE_TYPE_TO_TF_TYPE.get(feature_type, None)
   if value_dtype is None:
@@ -299,6 +290,78 @@ def CreateTfExampleParserConfig(
     raise NotImplementedError(
         "TensorRepresentation: {} is not supported.".format(
             tensor_representation_kind))
+
+
+def _GetPrimitiveFeatureTypes(
+    features: List["schema_pb2.Feature"]
+) -> Dict[path.ColumnPath, "schema_pb2.FeatureType"]:
+  """Recursively extracts types of all primitive features in the given list."""
+  result = {}
+  for feature in features:
+    if feature.type == schema_pb2.STRUCT:
+      if feature.struct_domain.sparse_feature:
+        raise ValueError(
+            "Struct features with sparse domains are not supported.")
+      for child_path, child_type in _GetPrimitiveFeatureTypes(
+          list(feature.struct_domain.feature)).items():
+        full_path = path.ColumnPath((feature.name,) + child_path.steps())
+        result[full_path] = child_type
+    else:
+      result[path.ColumnPath((feature.name,))] = feature.type
+  return result
+
+
+def CreateTfSequenceExampleParserConfig(
+    schema: schema_pb2.Schema
+) -> Tuple[Dict[str, common_types.FeatureSpecType], Dict[
+    str, common_types.FeatureSpecType]]:
+  """Creates feature specs that are used for tf.io.parse_sequence_example.
+
+  Args:
+    schema: A TFMD Schema describing the features that are going to be parsed.
+      The parsing config is generated from `TensorRepresentation`s and therefore
+      the schema is expected to have them for all parsed features. Sequence
+      features are expected to be described in a `StructDomain` of a top-level
+      `STRUCT` sequence feature.
+
+  Returns:
+    A tuple of context and sequence feature spec dictionaries that map tensor
+    names to either `tf.io.FixedLenFeature`, `tf.io.VarLenFeature`,
+    `tf.io.SparseFeature`, or `tf.io.RaggedFeature`.
+
+  Raises:
+    ValueError: If the schema does not contain tensor representations or if the
+      top-level `STRUCT` feature is not valid.
+  """
+  tensor_representations = GetTensorRepresentationsFromSchema(schema)
+  if tensor_representations is None:
+    raise ValueError("TensorRepresentations are required.")
+  column_name_to_type = _GetPrimitiveFeatureTypes(list(schema.feature))
+  context_features = {}
+  sequence_features = {}
+  for name, tensor_representation in tensor_representations.items():
+    value_column = GetSourceValueColumnFromTensorRepresentation(
+        tensor_representation)
+    value_type = column_name_to_type[value_column]
+    if len(value_column) == 1:
+      context_features[name] = CreateTfExampleParserConfig(
+          tensor_representation, value_type)
+    elif len(value_column) == 2:
+      # Only ragged tensor representation supports paths with multiple steps.
+      assert tensor_representation.WhichOneof("kind") == "ragged_tensor", (
+          tensor_representation)
+      sequence_tensor_representation = schema_pb2.TensorRepresentation()
+      sequence_tensor_representation.CopyFrom(tensor_representation)
+      # Now that we know that it's a sequence feature, we put it in the proper
+      # dictionary and pop the sequence feature path.
+      sequence_tensor_representation.ragged_tensor.feature_path.step.pop(0)
+      sequence_features[name] = CreateTfExampleParserConfig(
+          sequence_tensor_representation, value_type)
+    else:
+      raise ValueError(
+          f"Only primitive or struct of primitive features are supported, "
+          f"got {tensor_representation}")
+  return context_features, sequence_features
 
 
 def _ShouldIncludeFeature(

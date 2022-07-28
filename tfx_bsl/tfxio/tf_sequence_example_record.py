@@ -18,10 +18,12 @@ from typing import List, Optional, Text, Union
 
 import apache_beam as beam
 import pyarrow as pa
+import tensorflow as tf
 from tfx_bsl.arrow import path
 from tfx_bsl.coders import batch_util
 from tfx_bsl.coders import sequence_example_coder
 from tfx_bsl.tfxio import dataset_options
+from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_representation_util
@@ -84,6 +86,31 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
       raise ValueError("For SequenceExample, TensorRepresentations must be "
                        "specified in the schema.")
     return result
+
+  def _ParseRawRecordTensorFlowDataset(
+      self,
+      raw_record_dataset: tf.data.Dataset,
+      label_key: Optional[str] = None) -> tf.data.Dataset:
+    """Parses a dataset of serialized SequenceExamples."""
+
+    context_features, sequence_features = (
+        tensor_representation_util.CreateTfSequenceExampleParserConfig(
+            self._schema))
+
+    # Parse `SequenceExample` tensors to dictionaries of context and sequence
+    # tensors and merge them.
+    def _ParseAndMerge(serialized):
+      context, sequence, _ = tf.io.parse_sequence_example(
+          serialized, context_features, sequence_features)
+      return {**context, **sequence}
+
+    dataset = raw_record_dataset.map(
+        _ParseAndMerge, num_parallel_calls=tf.data.AUTOTUNE)
+
+    if label_key is not None:
+      dataset = self._PopLabelFeatureFromDataset(dataset, label_key)
+
+    return dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
   def _ProjectTfmdSchema(self, tensor_names: List[Text]) -> schema_pb2.Schema:
     """Projects self._schema by the given tensor names."""
@@ -235,9 +262,40 @@ class TFSequenceExampleRecord(_TFSequenceExampleRecordBase):
   def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
     raise NotImplementedError
 
-  def TensorFlowDataset(self,
-                        options: dataset_options.TensorFlowDatasetOptions):
-    raise NotImplementedError
+  def TensorFlowDataset(
+      self,
+      options: dataset_options.TensorFlowDatasetOptions) -> tf.data.Dataset:
+    """Creates a tf.data.Dataset that yields Tensors.
+
+    The serialized tf.SequenceExamples are parsed by
+    `tf.io.parse_sequence_example`.
+
+    See base class (tfxio.TFXIO) for more details.
+
+    Args:
+      options: an options object for the tf.data.Dataset. See
+        `dataset_options.TensorFlowDatasetOptions` for more details.
+
+    Returns:
+      A dataset of `dict` elements, (or a tuple of `dict` elements and label).
+      Each `dict` maps feature keys to `Tensor`, `SparseTensor`, or
+      `RaggedTensor` objects.
+
+    Raises:
+      ValueError: if there is something wrong with the tensor_representation.
+    """
+    file_pattern = tf.convert_to_tensor(self._file_pattern)
+    dataset = dataset_util.make_tf_record_dataset(
+        file_pattern,
+        batch_size=options.batch_size,
+        num_epochs=options.num_epochs,
+        shuffle=options.shuffle,
+        shuffle_buffer_size=options.shuffle_buffer_size,
+        shuffle_seed=options.shuffle_seed,
+        reader_num_threads=options.reader_num_threads,
+        drop_final_batch=options.drop_final_batch)
+
+    return self._ParseRawRecordTensorFlowDataset(dataset, options.label_key)
 
 
 @beam.typehints.with_input_types(List[bytes])

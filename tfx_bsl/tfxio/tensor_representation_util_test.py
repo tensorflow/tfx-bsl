@@ -1718,6 +1718,225 @@ _PARSE_EXAMPLE_TEST_CASES = _MakeFixedLenFeatureTestCases(
 ) + _MakeRaggedFeatureTestCases()
 
 
+def _MakeCreateTfSequenceExampleParserConfigTestCases():
+  result = [
+      dict(
+          testcase_name='_no_struct_feature',
+          schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+            value_count {
+              min: 1
+              max: 1
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "int_feature"
+                value { varlen_sparse_tensor { column_name: "int_feature" } }
+              }
+            }
+          }
+        """,
+          expected_context_features={
+              'int_feature': tf.io.VarLenFeature(dtype=tf.int64)
+          },
+          expected_sequence_features={},
+      )
+  ]
+  if tf.__version__ < '2':
+    # Sequence features can only be represented by `tf.io.RaggedFeatures` which
+    # are not present in TF 1.
+    return result
+  return result + [
+      dict(
+          testcase_name='_simple',
+          schema="""
+          feature {
+            name: "int_feature"
+            type: INT
+            value_count {
+              min: 1
+              max: 1
+            }
+          }
+          feature {
+            name: "float_feature"
+            type: FLOAT
+            value_count {
+              min: 4
+              max: 4
+            }
+          }
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "string_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "int_feature"
+                value { varlen_sparse_tensor { column_name: "int_feature" } }
+              }
+              tensor_representation {
+                key: "float_feature"
+                value { varlen_sparse_tensor { column_name: "float_feature" } }
+              }
+              tensor_representation {
+                key: "seq_string_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "##SEQUENCE##" step: "string_feature"
+                            } } }
+              }
+              tensor_representation {
+                key: "seq_int_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "##SEQUENCE##" step: "int_feature"
+                            } } }
+              }
+            }
+          }
+        """,
+          expected_context_features={
+              'int_feature': tf.io.VarLenFeature(dtype=tf.int64),
+              'float_feature': tf.io.VarLenFeature(dtype=tf.float32)
+          },
+          expected_sequence_features={
+              'seq_string_feature':
+                  tf.io.RaggedFeature(
+                      dtype=tf.string,
+                      value_key='string_feature',
+                      row_splits_dtype=tf.int64,
+                      partitions=[]),
+              'seq_int_feature':
+                  tf.io.RaggedFeature(
+                      dtype=tf.int64,
+                      value_key='int_feature',
+                      row_splits_dtype=tf.int64,
+                      partitions=[])
+          },
+      ),
+      dict(
+          testcase_name='_no_primitive_feature',
+          schema="""
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "seq_int_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "##SEQUENCE##" step: "int_feature"
+                            } } }
+              }
+            }
+          }
+        """,
+          expected_context_features={},
+          expected_sequence_features={
+              'seq_int_feature':
+                  tf.io.RaggedFeature(
+                      dtype=tf.int64,
+                      value_key='int_feature',
+                      row_splits_dtype=tf.int64,
+                      partitions=[])
+          },
+      ),
+      dict(
+          testcase_name='_sparse_feature',
+          schema="""
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 max: 9 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "seq_int_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "##SEQUENCE##" step: "int_feature"
+                            } } }
+              }
+            }
+          }
+        """,
+          expected_context_features={},
+          expected_sequence_features={
+              'seq_int_feature':
+                  tf.io.RaggedFeature(
+                      dtype=tf.int64,
+                      value_key='int_feature',
+                      row_splits_dtype=tf.int64,
+                      partitions=[])
+          },
+      ),
+  ]
+
+
 class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
 
   @parameterized.named_parameters(
@@ -1902,6 +2121,19 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       with self.assertRaisesRegex(ValueError, error):
         tensor_representation_util.ValidateTensorRepresentationsInSchema(
             schema, tensor_representation_group_name)
+
+  @parameterized.named_parameters(
+      *_MakeCreateTfSequenceExampleParserConfigTestCases())
+  @test_util.run_all_in_graph_and_eager_modes
+  def testCreateTfSequenceExampleParserConfig(self, schema,
+                                              expected_context_features,
+                                              expected_sequence_features):
+    context_features, sequence_features = (
+        tensor_representation_util.CreateTfSequenceExampleParserConfig(
+            text_format.Parse(schema, schema_pb2.Schema())))
+    self.assertDictEqual(expected_context_features, context_features)
+    self.assertDictEqual(expected_sequence_features, sequence_features)
+
 
 if __name__ == '__main__':
   absltest.main()

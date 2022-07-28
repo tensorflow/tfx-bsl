@@ -14,15 +14,19 @@
 """Tests for tfx_bsl.tfxio.tf_example_record."""
 
 import os
+import unittest
 
 from absl import flags
 import apache_beam as beam
 from apache_beam.testing import util as beam_testing_util
+import numpy as np
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.arrow import path
+from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry_test_util
 from tfx_bsl.tfxio import tf_sequence_example_record
+
 from google.protobuf import text_format
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -179,13 +183,65 @@ _EXPECTED_COLUMN_VALUES = {
 }
 
 
+def CreateExamplesAsTensors():
+  if tf.executing_eagerly():
+    sparse_tensor_factory = tf.SparseTensor
+  else:
+    sparse_tensor_factory = tf.compat.v1.SparseTensorValue
+  ragged_tensor_factory = tf.ragged.constant
+
+  return [{
+      "int_feature":
+          sparse_tensor_factory(
+              values=[1], indices=[[0, 0]], dense_shape=[1, 1]),
+      "float_feature":
+          sparse_tensor_factory(
+              values=[1.0, 2.0, 3.0, 4.0],
+              indices=[[0, 0], [0, 1], [0, 2], [0, 3]],
+              dense_shape=[1, 4]),
+      "seq_string_feature":
+          ragged_tensor_factory([[]], dtype=tf.string, ragged_rank=2),
+      "seq_int_feature":
+          ragged_tensor_factory([[[1, 2], [3]]], dtype=tf.int64, ragged_rank=2),
+  }, {
+      "int_feature":
+          sparse_tensor_factory(
+              values=[2], indices=[[0, 0]], dense_shape=[1, 1]),
+      "float_feature":
+          sparse_tensor_factory(
+              values=[2.0, 3.0, 4.0, 5.0],
+              indices=[[0, 0], [0, 1], [0, 2], [0, 3]],
+              dense_shape=[1, 4]),
+      "seq_string_feature":
+          ragged_tensor_factory([[[b"foo", b"bar"], []]],
+                                dtype=tf.string,
+                                ragged_rank=2),
+      "seq_int_feature":
+          ragged_tensor_factory([[]], dtype=tf.int64, ragged_rank=2),
+  }, {
+      "int_feature":
+          sparse_tensor_factory(
+              values=[3], indices=[[0, 0]], dense_shape=[1, 1]),
+      "float_feature":
+          sparse_tensor_factory(
+              values=[], indices=np.empty((0, 2)), dense_shape=[1, 0]),
+      "seq_string_feature":
+          ragged_tensor_factory([[[b"baz"]]], dtype=tf.string, ragged_rank=2),
+      "seq_int_feature":
+          ragged_tensor_factory([[[4]]], dtype=tf.int64, ragged_rank=2),
+  }]
+
+
+_EXPECTED_TENSORS = CreateExamplesAsTensors()
+
+
 def _WriteInputs(filename):
   with tf.io.TFRecordWriter(filename, "GZIP") as w:
     for s in _SERIALIZED_EXAMPLES:
       w.write(s)
 
 
-class TfSequenceExampleRecordTest(parameterized.TestCase):
+class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
 
   @classmethod
   def setUpClass(cls):
@@ -194,6 +250,18 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
         FLAGS.test_tmpdir, "tfsequenceexamplerecordtest", "input.recordio.gz")
     tf.io.gfile.makedirs(os.path.dirname(cls._example_file))
     _WriteInputs(cls._example_file)
+
+  def _AssertTensorsEqual(self, left, right, msg=None):
+    if isinstance(left, (tf.SparseTensor, tf.compat.v1.SparseTensorValue)):
+      self.assertAllEqual(left.values, right.values, msg)
+      self.assertAllEqual(left.indices, right.indices, msg)
+      self.assertAllEqual(left.dense_shape, right.dense_shape, msg)
+    elif isinstance(left,
+                    (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue)):
+      self._AssertTensorsEqual(left.values, right.values, msg)
+      self.assertAllEqual(left.row_splits, right.row_splits, msg)
+    else:
+      self.assertAllEqual(left, right, msg)
 
   def _MakeTFXIO(self, schema, raw_record_column_name=None):
     return tf_sequence_example_record.TFSequenceExampleRecord(
@@ -333,6 +401,48 @@ class TfSequenceExampleRecordTest(parameterized.TestCase):
       record_batch_pcoll = p | tfxio.BeamSource(
           batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
+
+  @unittest.skipIf(tf.__version__ < "2", "Skip for TF2")
+  def testTensorAdapter(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    tensor_adapter = tfxio.TensorAdapter()
+
+    def _AssertFn(tensor_dicts_list):
+      # Sort the produced list of batched tensor dicts to avoid errors due to
+      # order of elements in the produced PCollection.
+      tensor_dicts_list = sorted(
+          tensor_dicts_list, key=lambda x: x["int_feature"].values[0])
+
+      for i, tensors_dict in enumerate(tensor_dicts_list):
+        self.assertLen(tensors_dict, 4)
+        for name, tensor in tensors_dict.items():
+          self._AssertTensorsEqual(
+              tensor,
+              _EXPECTED_TENSORS[i][name],
+              msg=f"For tensor {name} at index {i}")
+
+    with beam.Pipeline() as p:
+      # Expected tensors are batched with batch_size = 1.
+      record_batches = p | tfxio.BeamSource(batch_size=1)
+      tensors = record_batches | beam.Map(tensor_adapter.ToBatchTensors)
+      beam_testing_util.assert_that(tensors, _AssertFn)
+
+  @unittest.skipIf(tf.__version__ < "2",
+                   "SequenceExample parsing requires `tf.io.RaggedFeature`s "
+                   "that are not present in TF 1.")
+  def testTensorFlowDataset(self):
+    tfxio = self._MakeTFXIO(_SCHEMA)
+    # Expected tensors are batched with batch_size = 1.
+    options = dataset_options.TensorFlowDatasetOptions(
+        batch_size=1, shuffle=False, num_epochs=1)
+    for i, parsed_examples_dict in enumerate(
+        tfxio.TensorFlowDataset(options=options)):
+      self.assertLen(parsed_examples_dict, 4)
+      for name, tensor in parsed_examples_dict.items():
+        self._AssertTensorsEqual(
+            tensor,
+            _EXPECTED_TENSORS[i][name],
+            msg=f"For tensor {name} at index {i}")
 
 
 class TFSequenceExampleBeamRecordTest(absltest.TestCase):
