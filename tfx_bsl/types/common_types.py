@@ -14,6 +14,8 @@
 """Types common to tfx_bsl.tfxio."""
 
 from typing import Union
+
+import numpy as np
 import tensorflow as tf
 
 # TODO(b/146402007): Replace references with tf.TypeSpec and remove this once
@@ -28,3 +30,10 @@ if hasattr(tf.io, 'RaggedFeature'):
 else:
   FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
                           tf.io.SparseFeature]
+
+TensorType = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor]
+
+TensorValueType = Union[np.ndarray, tf.compat.v1.SparseTensorValue,
+                        tf.compat.v1.ragged.RaggedTensorValue]
+
+TensorAlike = Union[TensorType, TensorValueType]

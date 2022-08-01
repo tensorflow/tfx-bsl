@@ -18,9 +18,9 @@ import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.tfxio import tensor_adapter
 from tfx_bsl.tfxio import tensor_to_arrow
+from tfx_bsl.tfxio import test_case
+
 from google.protobuf import text_format
-from absl.testing import absltest
-from absl.testing import parameterized
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 _TF_TYPE_TO_ARROW_TYPE = {
@@ -501,18 +501,9 @@ _CONVERT_TEST_CASES = [
 ) + _make_3d_sparse_tensor_test_cases()
 
 
-class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
+class TensorToArrowTest(test_case.TfxBslTestCase):
 
-  def _assert_tensor_alike_equal(self, left, right):
-    self.assertIsInstance(left, type(right))
-    if isinstance(left, (tf.SparseTensor, tf.compat.v1.SparseTensorValue)):
-      self.assertAllEqual(left.values, right.values)
-      self.assertAllEqual(left.indices, right.indices)
-      self.assertAllEqual(left.dense_shape, right.dense_shape)
-    else:
-      self.assertAllEqual(left, right)
-
-  @parameterized.named_parameters(*_CONVERT_TEST_CASES)
+  @test_case.named_parameters(*_CONVERT_TEST_CASES)
   def test_convert(
       self,
       type_specs,
@@ -557,7 +548,7 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
       self.assertEqual(adapter_output.keys(), tensors.keys())
       for k in adapter_output.keys():
         if "value" not in k:
-          self._assert_tensor_alike_equal(adapter_output[k], tensors[k])
+          self.assertTensorsEqual(adapter_output[k], tensors[k])
 
     def ragged_tensor_to_value(tensor):
       if isinstance(tensor, tf.RaggedTensor):
@@ -643,7 +634,7 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
                   dense_shape=[4, 1])
       })
 
-  @parameterized.named_parameters(*[
+  @test_case.named_parameters(*[
       dict(
           testcase_name="bool_value_type",
           spec=tf.RaggedTensorSpec(
@@ -672,4 +663,4 @@ class TensorToArrowTest(tf.test.TestCase, parameterized.TestCase):
 
 
 if __name__ == "__main__":
-  absltest.main()
+  test_case.main()

@@ -14,7 +14,6 @@
 """Tests for tfx_bsl.tfxio.tf_example_record."""
 
 import os
-import unittest
 
 from absl import flags
 import apache_beam as beam
@@ -25,11 +24,10 @@ import tensorflow as tf
 from tfx_bsl.arrow import path
 from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import telemetry_test_util
+from tfx_bsl.tfxio import test_case
 from tfx_bsl.tfxio import tf_sequence_example_record
 
 from google.protobuf import text_format
-from absl.testing import absltest
-from absl.testing import parameterized
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
@@ -183,7 +181,7 @@ _EXPECTED_COLUMN_VALUES = {
 }
 
 
-def CreateExamplesAsTensors():
+def _CreateExamplesAsTensors():
   if tf.executing_eagerly():
     sparse_tensor_factory = tf.SparseTensor
   else:
@@ -232,7 +230,7 @@ def CreateExamplesAsTensors():
   }]
 
 
-_EXPECTED_TENSORS = CreateExamplesAsTensors()
+_EXPECTED_TENSORS = _CreateExamplesAsTensors()
 
 
 def _WriteInputs(filename):
@@ -241,7 +239,7 @@ def _WriteInputs(filename):
       w.write(s)
 
 
-class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
+class TfSequenceExampleRecordTest(test_case.TfxBslTestCase):
 
   @classmethod
   def setUpClass(cls):
@@ -250,18 +248,6 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
         FLAGS.test_tmpdir, "tfsequenceexamplerecordtest", "input.recordio.gz")
     tf.io.gfile.makedirs(os.path.dirname(cls._example_file))
     _WriteInputs(cls._example_file)
-
-  def _AssertTensorsEqual(self, left, right, msg=None):
-    if isinstance(left, (tf.SparseTensor, tf.compat.v1.SparseTensorValue)):
-      self.assertAllEqual(left.values, right.values, msg)
-      self.assertAllEqual(left.indices, right.indices, msg)
-      self.assertAllEqual(left.dense_shape, right.dense_shape, msg)
-    elif isinstance(left,
-                    (tf.RaggedTensor, tf.compat.v1.ragged.RaggedTensorValue)):
-      self._AssertTensorsEqual(left.values, right.values, msg)
-      self.assertAllEqual(left.row_splits, right.row_splits, msg)
-    else:
-      self.assertAllEqual(left, right, msg)
 
   def _MakeTFXIO(self, schema, raw_record_column_name=None):
     return tf_sequence_example_record.TFSequenceExampleRecord(
@@ -300,11 +286,9 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
       self.assertEqual(record_batch.columns[-1].flatten().to_pylist(),
                        _SERIALIZED_EXAMPLES)
 
-  @parameterized.named_parameters(*[
-      dict(testcase_name="attach_raw_records",
-           attach_raw_records=True),
-      dict(testcase_name="noattach_raw_records",
-           attach_raw_records=False),
+  @test_case.named_parameters(*[
+      dict(testcase_name="attach_raw_records", attach_raw_records=True),
+      dict(testcase_name="noattach_raw_records", attach_raw_records=False),
   ])
   def testE2E(self, attach_raw_records):
     raw_column_name = "raw_records" if attach_raw_records else None
@@ -332,11 +316,9 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
         self, pipeline_result, _TELEMETRY_DESCRIPTORS,
         "tf_sequence_example", "tfrecords_gzip")
 
-  @parameterized.named_parameters(*[
-      dict(testcase_name="attach_raw_records",
-           attach_raw_records=True),
-      dict(testcase_name="noattach_raw_records",
-           attach_raw_records=False),
+  @test_case.named_parameters(*[
+      dict(testcase_name="attach_raw_records", attach_raw_records=True),
+      dict(testcase_name="noattach_raw_records", attach_raw_records=False),
   ])
   def testProjection(self, attach_raw_records):
     raw_column_name = "raw_records" if attach_raw_records else None
@@ -402,8 +384,8 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
           batch_size=len(_EXAMPLES))
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
-  @unittest.skipIf(tf.__version__ < "2", "Skip for TF2")
   def testTensorAdapter(self):
+    self.SkipIfNotTf2("RaggedTensors have limited support in TF 1.")
     tfxio = self._MakeTFXIO(_SCHEMA)
     tensor_adapter = tfxio.TensorAdapter()
 
@@ -416,7 +398,7 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
       for i, tensors_dict in enumerate(tensor_dicts_list):
         self.assertLen(tensors_dict, 4)
         for name, tensor in tensors_dict.items():
-          self._AssertTensorsEqual(
+          self.assertTensorsEqual(
               tensor,
               _EXPECTED_TENSORS[i][name],
               msg=f"For tensor {name} at index {i}")
@@ -427,10 +409,9 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
       tensors = record_batches | beam.Map(tensor_adapter.ToBatchTensors)
       beam_testing_util.assert_that(tensors, _AssertFn)
 
-  @unittest.skipIf(tf.__version__ < "2",
-                   "SequenceExample parsing requires `tf.io.RaggedFeature`s "
-                   "that are not present in TF 1.")
   def testTensorFlowDataset(self):
+    self.SkipIfNotTf2("SequenceExample parsing requires `tf.io.RaggedFeature`s "
+                      "that are not present in TF 1.")
     tfxio = self._MakeTFXIO(_SCHEMA)
     # Expected tensors are batched with batch_size = 1.
     options = dataset_options.TensorFlowDatasetOptions(
@@ -439,13 +420,13 @@ class TfSequenceExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
         tfxio.TensorFlowDataset(options=options)):
       self.assertLen(parsed_examples_dict, 4)
       for name, tensor in parsed_examples_dict.items():
-        self._AssertTensorsEqual(
+        self.assertTensorsEqual(
             tensor,
             _EXPECTED_TENSORS[i][name],
             msg=f"For tensor {name} at index {i}")
 
 
-class TFSequenceExampleBeamRecordTest(absltest.TestCase):
+class TFSequenceExampleBeamRecordTest(test_case.TfxBslTestCase):
 
   def testE2E(self):
     raw_record_column_name = "raw_record"
@@ -478,4 +459,4 @@ class TFSequenceExampleBeamRecordTest(absltest.TestCase):
 
 
 if __name__ == "__main__":
-  absltest.main()
+  test_case.main()

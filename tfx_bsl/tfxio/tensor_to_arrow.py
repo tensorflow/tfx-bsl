@@ -14,7 +14,7 @@
 """Utils to convert TF Tensors or their values to Arrow arrays."""
 
 import abc
-from typing import Dict, List, Text, Tuple, Union, FrozenSet
+from typing import Dict, List, Text, Tuple, FrozenSet
 
 from absl import logging
 import numpy as np
@@ -23,8 +23,6 @@ import tensorflow as tf
 from tfx_bsl.arrow import array_util
 from tfx_bsl.types import common_types
 
-# CompositeTensor is not public yet.
-from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
@@ -32,12 +30,6 @@ if tf.__version__ < "2":
   logging.warning("tfx_bsl.tfxio.tensor_to_arrow can only handle evaluated "
                   "tensors (i.e. ndarays, SparseTensorValues and "
                   "RaggedTensorValues) in TF 1.x.")
-
-_TensorType = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor,
-                    composite_tensor.CompositeTensor]
-_TensorValueType = Union[np.ndarray, tf.compat.v1.SparseTensorValue,
-                         tf.compat.v1.ragged.RaggedTensorValue]
-TensorAlike = Union[_TensorType, _TensorValueType]
 
 
 class TensorsToRecordBatchConverter(object):
@@ -119,7 +111,8 @@ class TensorsToRecordBatchConverter(object):
         for tensor_name, handler in self._handlers
     }
 
-  def convert(self, tensors: Dict[Text, TensorAlike]) -> pa.RecordBatch:
+  def convert(self, tensors: Dict[Text,
+                                  common_types.TensorAlike]) -> pa.RecordBatch:
     """Converts a dict of tensors to a RecordBatch.
 
     Args:
@@ -150,7 +143,7 @@ class _TypeHandler(abc.ABC):
     self._tensor_name = tensor_name
     self._type_spec = type_spec
 
-  def convert(self, tensor: TensorAlike) -> List[pa.Array]:
+  def convert(self, tensor: common_types.TensorAlike) -> List[pa.Array]:
     """Converts the given TensorAlike to pa.Arrays after validating its spec."""
     if tf.__version__ < "2":
       if isinstance(tensor, np.ndarray):
@@ -186,7 +179,8 @@ class _TypeHandler(abc.ABC):
     """
 
   @abc.abstractmethod
-  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+  def _convert_internal(self,
+                        tensor: common_types.TensorAlike) -> List[pa.Array]:
     """Converts the given TensorAlike to a list of pa.Arrays.
 
     Each element in the list should correspond to one in `arrow_fields()`.
@@ -235,7 +229,8 @@ class _DenseTensorHandler(_TypeHandler):
       result.dense_tensor.shape.dim.add().size = d
     return result
 
-  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+  def _convert_internal(self,
+                        tensor: common_types.TensorAlike) -> List[pa.Array]:
     assert isinstance(tensor, (tf.Tensor, np.ndarray)), type(tensor)
     values_np = np.asarray(tensor)
     shape = values_np.shape
@@ -282,7 +277,8 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
 
-  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+  def _convert_internal(self,
+                        tensor: common_types.TensorAlike) -> List[pa.Array]:
     # Algorithm:
     # Assume:
     #   - the COO indices are sorted (partially checked below)
@@ -347,7 +343,8 @@ class _RaggedTensorHandler(_TypeHandler):
     self._row_partition_dtype = type_spec._row_splits_dtype  # pylint: disable=protected-access
     self._unbatched_shape = type_spec._shape.as_list()[1:]  # pylint: disable=protected-access
 
-  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+  def _convert_internal(self,
+                        tensor: common_types.TensorAlike) -> List[pa.Array]:
     # Unnest all outer ragged dimensions keeping the offsets.
     nested_offsets = []
     while isinstance(tensor,
@@ -446,7 +443,8 @@ class _SparseTensorHandler(_TypeHandler):
         for i in range(len(self._unbatched_shape))
     ]
 
-  def _convert_internal(self, tensor: TensorAlike) -> List[pa.Array]:
+  def _convert_internal(self,
+                        tensor: common_types.TensorAlike) -> List[pa.Array]:
     # Transpose the indices array (and materialize the result in C-order)
     # because later we will use individual columns of the original indices.
     indices_np = (

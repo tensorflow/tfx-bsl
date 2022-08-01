@@ -282,7 +282,7 @@ class TFSequenceExampleRecord(_TFSequenceExampleRecordBase):
       `RaggedTensor` objects.
 
     Raises:
-      ValueError: if there is something wrong with the tensor_representation.
+      ValueError: if there is something wrong with the provided schema.
     """
     file_pattern = tf.convert_to_tensor(self._file_pattern)
     dataset = dataset_util.make_tf_record_dataset(
