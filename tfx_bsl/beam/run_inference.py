@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Opt
 
 from absl import logging
 import apache_beam as beam
+from apache_beam.ml.inference import base
 from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.transforms import resources
@@ -32,7 +33,6 @@ from googleapiclient import discovery
 from googleapiclient import http
 import numpy as np
 import tensorflow as tf
-from tfx_bsl.beam import run_inference_base
 from tfx_bsl.public.proto import model_spec_pb2
 from tfx_bsl.telemetry import util
 
@@ -115,7 +115,7 @@ class RunInferenceImpl(beam.PTransform):
     Args:
       inference_spec_type: InferenceSpecType proto.
       load_override_fn: If provided, overrides the model loader fn of the
-        underlying ModelLoader. This takes a model path and sequence of tags,
+        underlying ModelHandler. This takes a model path and sequence of tags,
         and should return a model with interface compatible with tf.SavedModel.
     """
     self._inference_spec_type = inference_spec_type
@@ -198,20 +198,20 @@ class RunInferenceImpl(beam.PTransform):
 
     # pylint: disable=no-value-for-parameter
     if _using_in_process_inference(self._inference_spec_type):
-      spec = _get_saved_model_spec(self._inference_spec_type,
-                                   self._load_override_fn)
+      handler = _get_saved_model_handler(self._inference_spec_type,
+                                         self._load_override_fn)
     else:
-      spec = _get_remote_model_spec(self._inference_spec_type, examples)
-    spec = _ModelLoaderWrapper(spec)
-    return examples | 'BulkInference' >> run_inference_base.RunInference(
-        spec).with_output_types(output_type)
+      handler = _get_remote_model_handler(self._inference_spec_type, examples)
+    handler = _ModelHandlerWrapper(handler)
+    return examples | 'BulkInference' >> base.RunInference(
+        handler).with_output_types(output_type)
 
 
-def _get_saved_model_spec(
+def _get_saved_model_handler(
     inference_spec_type: model_spec_pb2.InferenceSpecType,
     load_override_fn: Optional[Callable[[str, Sequence[str]], Any]]
-) -> run_inference_base.ModelLoader:
-  """Get an in-process ModelLoader."""
+) -> base.ModelHandler:
+  """Get an in-process ModelHandler."""
   operation_type = _get_operation_type(inference_spec_type)
   if operation_type == _OperationType.CLASSIFICATION:
     return _ClassifyModelSpec(inference_spec_type, load_override_fn)
@@ -225,10 +225,10 @@ def _get_saved_model_spec(
     raise ValueError('Unsupported operation_type %s' % operation_type)
 
 
-def _get_remote_model_spec(
+def _get_remote_model_handler(
     inference_spec_type: model_spec_pb2.InferenceSpecType,
-    pcoll: beam.PCollection) -> run_inference_base.ModelLoader:
-  """Get a remote prediction ModelLoader."""
+    pcoll: beam.PCollection) -> base.ModelHandler:
+  """Get a remote prediction ModelHandler."""
   return _RemotePredictModelSpec(inference_spec_type, pcoll.pipeline.options)
 
 
@@ -247,7 +247,7 @@ class RunInferencePerModelImpl(beam.PTransform):
     Args:
       inference_spec_types: InferenceSpecType proto.
       load_override_fn: If provided, overrides the model loader fn of the
-        underlying ModelLoader. This takes a model path and sequence of tags,
+        underlying ModelHandler. This takes a model path and sequence of tags,
         and should return a model with interface compatible with tf.SavedModel.
     """
     self._inference_spec_types = tuple(inference_spec_types)
@@ -347,8 +347,8 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
           exception.resp.status in (503, 429))
 
 
-class _BaseModelSpec(run_inference_base.InferenceRunner, metaclass=abc.ABCMeta):
-  """A basic TFX implementation of InferenceRunner."""
+class _BaseModelSpec(base.ModelHandler, metaclass=abc.ABCMeta):
+  """A basic TFX implementation of ModelHandler."""
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
     operation_type = _get_operation_type(inference_spec_type)
@@ -359,8 +359,11 @@ class _BaseModelSpec(run_inference_base.InferenceRunner, metaclass=abc.ABCMeta):
     self._metrics_namespace = util.MakeTfxNamespace(
         [_METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
 
-  def run_inference(self, examples: List[_INPUT_TYPE],
-                    model) -> Iterable[prediction_log_pb2.PredictionLog]:
+  def run_inference(
+      self,
+      examples: List[_INPUT_TYPE],
+      model: Any,
+      inference_args=None) -> Iterable[prediction_log_pb2.PredictionLog]:
     serialized_examples = [
         e if isinstance(e, bytes) else e.SerializeToString() for e in examples
     ]
@@ -399,7 +402,7 @@ class _BaseModelSpec(run_inference_base.InferenceRunner, metaclass=abc.ABCMeta):
 
 # TODO(b/151468119): Consider to re-batch with online serving request size
 # limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
-class _RemotePredictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
+class _RemotePredictModelSpec(_BaseModelSpec):
   """Performs predictions from a cloud-hosted TensorFlow model.
 
   Supports both batch and streaming processing modes.
@@ -501,9 +504,6 @@ class _RemotePredictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
     # are run on vertexAI, no local model is present.
     return None
 
-  def get_inference_runner(self):
-    return self
-
   def _check_examples(self, examples: List[_INPUT_TYPE]):
     # TODO(b/131873699): Add support for tf.train.SequenceExample even when
     # use_serialization_config is not enabled (by appropriately modifying
@@ -555,7 +555,7 @@ class _RemotePredictModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
     return result
 
 
-class _BaseSavedModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
+class _BaseSavedModelSpec(_BaseModelSpec):
   """A spec that runs in-process batch inference with a model.
 
     Models need to have the required serving signature as mentioned in
@@ -607,9 +607,6 @@ class _BaseSavedModelSpec(_BaseModelSpec, run_inference_base.ModelLoader):
     result = tf.compat.v1.Session(graph=tf.compat.v1.Graph())
     tf.compat.v1.saved_model.loader.load(result, self._tags, self._model_path)
     return result
-
-  def get_inference_runner(self):
-    return self
 
   def _make_io_tensor_spec(self) -> _IOTensorSpec:
     # Pre process functions will validate for each signature.
@@ -1136,10 +1133,11 @@ def _nest_results(flat_results: Iterable[_T], idx: Optional[List[int]],
   return nested_results
 
 
-class _InferenceRunnerWrapper(run_inference_base.InferenceRunner):
+# TODO(b/231328769): Overload batch args when available.
+class _ModelHandlerWrapper(base.ModelHandler):
   """Wrapper that handles key forwarding and pre-batching of inputs.
 
-  This wrapper accepts an InferenceRunner mapping ExampleType -> PredictType,
+  This wrapper accepts mapping ExampleType -> PredictType,
   and itself maps either
 
   * ExampleType -> PredictType
@@ -1155,10 +1153,16 @@ class _InferenceRunnerWrapper(run_inference_base.InferenceRunner):
   Note that ExampleType can not be a Tuple or a List.
   """
 
-  def __init__(self, inference_runner: run_inference_base.InferenceRunner):
-    self._inference_runner = inference_runner
+  def __init__(self, model_handler: base.ModelHandler):
+    self._model_handler = model_handler
 
-  def run_inference(self, batch: Sequence[Any], model: Any) -> Sequence[Any]:
+  def load_model(self) -> Any:
+    return self._model_handler.load_model()
+
+  def run_inference(self,
+                    batch: Sequence[Any],
+                    model: Any,
+                    inference_args=None) -> Sequence[Any]:
     if not batch:
       return []
     if isinstance(batch[0], tuple):
@@ -1166,7 +1170,7 @@ class _InferenceRunnerWrapper(run_inference_base.InferenceRunner):
     else:
       keys, examples = None, batch
     examples, nested_batch_idx, max_idx = _flatten_examples(examples)
-    predictions = self._inference_runner.run_inference(examples, model)
+    predictions = self._model_handler.run_inference(examples, model)
     predictions = _nest_results(predictions, nested_batch_idx, max_idx)
     if keys:
       return list(zip(keys, predictions))
@@ -1176,21 +1180,7 @@ class _InferenceRunnerWrapper(run_inference_base.InferenceRunner):
     if isinstance(batch[0], tuple):
       _, batch = zip(*batch)
     batch, _, _ = _flatten_examples(batch)
-    return self._inference_runner.get_num_bytes(batch)
+    return self._model_handler.get_num_bytes(batch)
 
   def get_metrics_namespace(self) -> str:
-    return self._inference_runner.get_metrics_namespace()
-
-
-# TODO(b/231328769): Overload batch args when available.
-class _ModelLoaderWrapper(run_inference_base.ModelLoader):
-  """Supplies _InferenceRunnerWrapper."""
-
-  def __init__(self, model_loader: run_inference_base.ModelLoader):
-    self._model_loader = model_loader
-
-  def load_model(self) -> Any:
-    return self._model_loader.load_model()
-
-  def get_inference_runner(self) -> run_inference_base.InferenceRunner:
-    return _InferenceRunnerWrapper(self._model_loader.get_inference_runner())
+    return self._model_handler.get_metrics_namespace()
