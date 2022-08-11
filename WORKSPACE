@@ -37,15 +37,18 @@ http_archive(
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 protobuf_deps()
 
-# LINT.IfChange(arrow_version)
-ARROW_COMMIT = "478286658055bb91737394c2065b92a7e92fb0c1"  # 2.0.0
-# LINT.ThenChange(third_party/arrow/util/config.h)
+# Use the last commit on the relevant release branch to update.
+# LINT.IfChange(arrow_archive_version)
+ARROW_COMMIT = "347a88ff9d20e2a4061eec0b455b8ea1aa8335dc"  # 6.0.1
+# LINT.ThenChange(third_party/arrow.BUILD:arrow_gen_version)
 
+# `shasum -a 256` can be used to get `sha256` from the downloaded archive on
+# Linux.
 http_archive(
     name = "arrow",
     build_file = "//third_party:arrow.BUILD",
     strip_prefix = "arrow-%s" % ARROW_COMMIT,
-    sha256 = "4849ee9de2c76f1d6c481cac9ee7a1077d6d6d6e84f98fec53814455dba74403",
+    sha256 = "55fc466d0043c4cce0756bc18e1e62b3233be74c9afe8dc0d18420b9a5fd9714",
     urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
     patches = ["//third_party:arrow.patch"],
 )

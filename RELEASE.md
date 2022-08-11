@@ -9,9 +9,11 @@
 *   Introduces `CreateTfSequenceExampleParserConfig` that takes TFMD schema as
     input and produces configs for `tf.SequenceExample` parsing.
 *   `TFSequenceExampleRecord` can now produce an equivalent tf.data.Dataset.
-*   Depends on `apache-beam[gcp]>=2.40,<3`.
 
 ## Bug Fixes and Other Changes
+
+*   Depends on `apache-beam[gcp]>=2.40,<3`.
+*   Depends on `pyarrow>=6,<7`.
 
 ## Breaking Changes
 
