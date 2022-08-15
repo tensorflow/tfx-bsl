@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Publich API of batch inference."""
+"""Public API of batch inference."""
 
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Iterable, List, Optional, Tuple, TypeVar, Union
 
 import apache_beam as beam
-import tensorflow as tf
+from apache_beam.ml.inference.base import ModelHandler
 from tfx_bsl.beam import run_inference
 from tfx_bsl.public.proto import model_spec_pb2
 
@@ -24,7 +24,9 @@ from tensorflow_serving.apis import prediction_log_pb2
 
 
 _K = TypeVar('_K')
-_INPUT_TYPE = Union[tf.train.Example, tf.train.SequenceExample, bytes]
+_KeyedBatchesInput = Tuple[_K, List[run_inference.InputType]]
+_MaybeKeyedInput = Union[run_inference.InputType,
+                         Tuple[_K, run_inference.InputType]]
 _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 
 
@@ -38,12 +40,12 @@ _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 #     executing inference server with RPC interface to be launched alongside
 #     each Beam worker (b/195136883).
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(_MaybeKeyedInput)
 @beam.typehints.with_output_types(Union[_OUTPUT_TYPE, Tuple[_K, _OUTPUT_TYPE]])
 def RunInference(
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType,
-    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
+    load_override_fn: Optional[run_inference.LoadOverrideFnType] = None
 ) -> beam.pvalue.PCollection:
   """Run inference with a model.
 
@@ -100,13 +102,13 @@ def RunInference(
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE]])
+@beam.typehints.with_input_types(_MaybeKeyedInput)
 @beam.typehints.with_output_types(Union[Tuple[_OUTPUT_TYPE, ...],
                                         Tuple[_K, Tuple[_OUTPUT_TYPE, ...]]])
 def RunInferencePerModel(
     examples: beam.pvalue.PCollection,
     inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
-    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
+    load_override_fn: Optional[run_inference.LoadOverrideFnType] = None
 ) -> beam.pvalue.PCollection:
   """Vectorized variant of RunInference (useful for ensembles).
 
@@ -170,12 +172,12 @@ def RunInferencePerModel(
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Tuple[_K, List[_INPUT_TYPE]])
+@beam.typehints.with_input_types(_KeyedBatchesInput)
 @beam.typehints.with_output_types(Tuple[_K, List[_OUTPUT_TYPE]])
 def RunInferenceOnKeyedBatches(
     examples: beam.pvalue.PCollection,
     inference_spec_type: model_spec_pb2.InferenceSpecType,
-    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
+    load_override_fn: Optional[run_inference.LoadOverrideFnType] = None
 ) -> beam.pvalue.PCollection:
   """Run inference over pre-batched keyed inputs.
 
@@ -208,12 +210,12 @@ def RunInferenceOnKeyedBatches(
 
 
 @beam.ptransform_fn
-@beam.typehints.with_input_types(Tuple[_K, List[_INPUT_TYPE]])
+@beam.typehints.with_input_types(_KeyedBatchesInput)
 @beam.typehints.with_output_types(Tuple[_K, Tuple[List[_OUTPUT_TYPE]]])
 def RunInferencePerModelOnKeyedBatches(
     examples: beam.pvalue.PCollection,
     inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
-    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]] = None
+    load_override_fn: Optional[run_inference.LoadOverrideFnType] = None
 ) -> beam.pvalue.PCollection:
   """Run inference over pre-batched keyed inputs on multiple models.
 
@@ -250,3 +252,30 @@ def RunInferencePerModelOnKeyedBatches(
           | 'RunInferencePerModelOnKeyedBatchesImpl' >>
           run_inference.RunInferencePerModelImpl(inference_spec_types,
                                                  load_override_fn))
+
+
+def CreateModelHandler(
+    inference_spec_type: model_spec_pb2.InferenceSpecType) -> ModelHandler:
+  """Creates a Beam ModelHandler based on the inference spec type.
+
+  There are two model handlers:
+    1. In-process inference from a SavedModel instance. Used when
+      `saved_model_spec` field is set in `inference_spec_type`.
+    2. Remote inference by using a service endpoint. Used when
+      `ai_platform_prediction_model_spec` field is set in
+      `inference_spec_type`.
+
+  Example Usage:
+    tf_handler = CreateModelHandler(inference_spec_type)
+    # unkeyed
+    beam.run_inference(tf_handler)
+    # keyed
+    beam.run_inference(beam.ml.inference.KeyedHandler(tf_handler))
+
+  Args:
+    inference_spec_type: Model inference endpoint.
+
+  Returns:
+    A Beam RunInference ModelHandler for TensorFlow
+  """
+  return run_inference.create_model_handler(inference_spec_type, None, None)

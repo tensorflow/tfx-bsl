@@ -9,6 +9,8 @@
 *   Introduces `CreateTfSequenceExampleParserConfig` that takes TFMD schema as
     input and produces configs for `tf.SequenceExample` parsing.
 *   `TFSequenceExampleRecord` can now produce an equivalent tf.data.Dataset.
+*   Introduces an api: `CreateModelHandler` that produces a model handler
+    suitable for apache_beam.ml.inference.
 
 ## Bug Fixes and Other Changes
 

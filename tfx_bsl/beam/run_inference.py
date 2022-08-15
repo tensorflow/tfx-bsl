@@ -25,7 +25,6 @@ from absl import logging
 import apache_beam as beam
 from apache_beam.ml.inference import base
 from apache_beam.options.pipeline_options import GoogleCloudOptions
-from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.transforms import resources
 from apache_beam.utils import retry
 import googleapiclient
@@ -74,7 +73,8 @@ class _OperationType(object):
 
 
 _K = TypeVar('_K')
-_INPUT_TYPE = Union[tf.train.Example, tf.train.SequenceExample, bytes]
+InputType = Union[tf.train.Example, tf.train.SequenceExample, bytes]
+LoadOverrideFnType = Callable[[str, Sequence[str]], Any]
 _OUTPUT_TYPE = prediction_log_pb2.PredictionLog
 
 
@@ -100,16 +100,41 @@ def _key_and_result_type(input_type: beam.typehints.typehints.TypeConstraint):
   return key_type, result_type
 
 
+def _using_in_process_inference(
+    inference_spec_type: model_spec_pb2.InferenceSpecType) -> bool:
+  return inference_spec_type.WhichOneof('type') == 'saved_model_spec'
+
+
+def create_model_handler(
+    inference_spec_type: model_spec_pb2.InferenceSpecType,
+    load_override_fn: Optional[LoadOverrideFnType],
+    options_project_id: Optional[str]) -> base.ModelHandler:
+  """Creates a ModelHandler based on the InferenceSpecType.
+
+  Args:
+    inference_spec_type: Model inference endpoint.
+    load_override_fn: An option function to load the model, only used with
+      saved models.
+    options_project_id: The project id from pipeline options, only used if
+      there was no project_id specified in the inference_spec_type proto.
+
+  Returns:
+    A ModelHandler appropriate for the inference_spec_type.
+  """
+  if _using_in_process_inference(inference_spec_type):
+    return _get_saved_model_handler(inference_spec_type, load_override_fn)
+  return _RemotePredictModelHandler(inference_spec_type, options_project_id)
+
+
 # Output type is inferred from input.
-@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE],
-                                       Tuple[_K, List[_INPUT_TYPE]]])
+@beam.typehints.with_input_types(Union[InputType, Tuple[_K, InputType],
+                                       Tuple[_K, List[InputType]]])
 class RunInferenceImpl(beam.PTransform):
   """Implementation of RunInference API."""
 
   def __init__(self,
                inference_spec_type: model_spec_pb2.InferenceSpecType,
-               load_override_fn: Optional[Callable[[str, Sequence[str]],
-                                                   Any]] = None):
+               load_override_fn: Optional[LoadOverrideFnType] = None):
     """Initializes transform.
 
     Args:
@@ -195,13 +220,9 @@ class RunInferenceImpl(beam.PTransform):
           'CloseToResources' >> beam.Map(lambda x: x).with_resource_hints(
               close_to_resources=self._make_close_to_resources(
                   self._inference_spec_type)))
-
-    # pylint: disable=no-value-for-parameter
-    if _using_in_process_inference(self._inference_spec_type):
-      handler = _get_saved_model_handler(self._inference_spec_type,
-                                         self._load_override_fn)
-    else:
-      handler = _get_remote_model_handler(self._inference_spec_type, examples)
+    handler = create_model_handler(
+        self._inference_spec_type, self._load_override_fn,
+        examples.pipeline.options.view_as(GoogleCloudOptions).project)
     handler = _ModelHandlerWrapper(handler)
     return examples | 'BulkInference' >> base.RunInference(
         handler).with_output_types(output_type)
@@ -209,39 +230,30 @@ class RunInferenceImpl(beam.PTransform):
 
 def _get_saved_model_handler(
     inference_spec_type: model_spec_pb2.InferenceSpecType,
-    load_override_fn: Optional[Callable[[str, Sequence[str]], Any]]
-) -> base.ModelHandler:
+    load_override_fn: Optional[LoadOverrideFnType]) -> base.ModelHandler:
   """Get an in-process ModelHandler."""
   operation_type = _get_operation_type(inference_spec_type)
   if operation_type == _OperationType.CLASSIFICATION:
-    return _ClassifyModelSpec(inference_spec_type, load_override_fn)
+    return _ClassifyModelHandler(inference_spec_type, load_override_fn)
   elif operation_type == _OperationType.REGRESSION:
-    return _RegressModelSpec(inference_spec_type, load_override_fn)
+    return _RegressModelHandler(inference_spec_type, load_override_fn)
   elif operation_type == _OperationType.MULTI_INFERENCE:
-    return _MultiInferenceModelSpec(inference_spec_type, load_override_fn)
+    return _MultiInferenceModelHandler(inference_spec_type, load_override_fn)
   elif operation_type == _OperationType.PREDICTION:
-    return _PredictModelSpec(inference_spec_type, load_override_fn)
+    return _PredictModelHandler(inference_spec_type, load_override_fn)
   else:
     raise ValueError('Unsupported operation_type %s' % operation_type)
 
 
-def _get_remote_model_handler(
-    inference_spec_type: model_spec_pb2.InferenceSpecType,
-    pcoll: beam.PCollection) -> base.ModelHandler:
-  """Get a remote prediction ModelHandler."""
-  return _RemotePredictModelSpec(inference_spec_type, pcoll.pipeline.options)
-
-
 # Output type is inferred from input.
-@beam.typehints.with_input_types(Union[_INPUT_TYPE, Tuple[_K, _INPUT_TYPE],
-                                       Tuple[_K, List[_INPUT_TYPE]]])
+@beam.typehints.with_input_types(Union[InputType, Tuple[_K, InputType],
+                                       Tuple[_K, List[InputType]]])
 class RunInferencePerModelImpl(beam.PTransform):
   """Implementation of the vectorized variant of the RunInference API."""
 
   def __init__(self,
                inference_spec_types: Iterable[model_spec_pb2.InferenceSpecType],
-               load_override_fn: Optional[Callable[[str, Sequence[str]],
-                                                   Any]] = None):
+               load_override_fn: Optional[LoadOverrideFnType] = None):
     """Initializes transform.
 
     Args:
@@ -347,7 +359,7 @@ def _retry_on_unavailable_and_resource_error_filter(exception: Exception):
           exception.resp.status in (503, 429))
 
 
-class _BaseModelSpec(base.ModelHandler, metaclass=abc.ABCMeta):
+class _BaseModelHandler(base.ModelHandler, metaclass=abc.ABCMeta):
   """A basic TFX implementation of ModelHandler."""
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
@@ -361,7 +373,7 @@ class _BaseModelSpec(base.ModelHandler, metaclass=abc.ABCMeta):
 
   def run_inference(
       self,
-      examples: List[_INPUT_TYPE],
+      examples: List[InputType],
       model: Any,
       inference_args=None) -> Iterable[prediction_log_pb2.PredictionLog]:
     serialized_examples = [
@@ -386,15 +398,13 @@ class _BaseModelSpec(base.ModelHandler, metaclass=abc.ABCMeta):
 
   @abc.abstractmethod
   def _post_process(
-      self,
-      examples: List[_INPUT_TYPE],
-      serialized_examples: List[bytes],
+      self, examples: List[InputType], serialized_examples: List[bytes],
       outputs: List[Mapping[Text, Union[np.ndarray, Any]]]
-      ) -> List[prediction_log_pb2.PredictionLog]:
+  ) -> List[prediction_log_pb2.PredictionLog]:
     raise NotImplementedError
 
   @abc.abstractmethod
-  def _run_inference(self, examples: List[_INPUT_TYPE],
+  def _run_inference(self, examples: List[InputType],
                      serialized_examples: List[bytes],
                      model) -> List[Mapping[Text, Any]]:
     raise NotImplementedError
@@ -402,7 +412,7 @@ class _BaseModelSpec(base.ModelHandler, metaclass=abc.ABCMeta):
 
 # TODO(b/151468119): Consider to re-batch with online serving request size
 # limit, and re-batch with RPC failures(InvalidArgument) regarding request size.
-class _RemotePredictModelSpec(_BaseModelSpec):
+class _RemotePredictModelHandler(_BaseModelHandler):
   """Performs predictions from a cloud-hosted TensorFlow model.
 
   Supports both batch and streaming processing modes.
@@ -423,15 +433,14 @@ class _RemotePredictModelSpec(_BaseModelSpec):
   """
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
-               pipeline_options: PipelineOptions):
+               pipeline_options_project_id: Optional[str]):
     super().__init__(inference_spec_type)
     self._ai_platform_prediction_model_spec = (
         inference_spec_type.ai_platform_prediction_model_spec)
     self._api_client = None
-
     project_id = (
         inference_spec_type.ai_platform_prediction_model_spec.project_id or
-        pipeline_options.view_as(GoogleCloudOptions).project)
+        pipeline_options_project_id)
     if not project_id:
       raise ValueError('Either a non-empty project id or project flag in '
                        ' beam pipeline options needs be provided.')
@@ -504,7 +513,7 @@ class _RemotePredictModelSpec(_BaseModelSpec):
     # are run on vertexAI, no local model is present.
     return None
 
-  def _check_examples(self, examples: List[_INPUT_TYPE]):
+  def _check_examples(self, examples: List[InputType]):
     # TODO(b/131873699): Add support for tf.train.SequenceExample even when
     # use_serialization_config is not enabled (by appropriately modifying
     # _make_instances).
@@ -518,7 +527,7 @@ class _RemotePredictModelSpec(_BaseModelSpec):
           'serialized tf.SequenceExample and raw bytes (the '
           'latter three only when use_serialization_config is true)')
 
-  def _run_inference(self, examples: List[_INPUT_TYPE],
+  def _run_inference(self, examples: List[InputType],
                      serialized_examples: List[bytes],
                      model) -> List[Mapping[Text, Any]]:
     self._check_examples(examples)
@@ -529,11 +538,9 @@ class _RemotePredictModelSpec(_BaseModelSpec):
     return response['predictions']
 
   def _post_process(
-      self,
-      examples: List[_INPUT_TYPE],
-      serialized_examples: List[bytes],
-      outputs: List[Mapping[Text, Any]]
-      ) -> List[prediction_log_pb2.PredictionLog]:
+      self, examples: List[InputType], serialized_examples: List[bytes],
+      outputs: List[Mapping[Text,
+                            Any]]) -> List[prediction_log_pb2.PredictionLog]:
     del examples
     result = []
     for i, serialized_example in enumerate(serialized_examples):
@@ -555,7 +562,7 @@ class _RemotePredictModelSpec(_BaseModelSpec):
     return result
 
 
-class _BaseSavedModelSpec(_BaseModelSpec):
+class _BaseSavedModelHandler(_BaseModelHandler):
   """A spec that runs in-process batch inference with a model.
 
     Models need to have the required serving signature as mentioned in
@@ -566,7 +573,7 @@ class _BaseSavedModelSpec(_BaseModelSpec):
   """
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType,
-               load_override_fn: Optional[Callable[[str, Sequence[str]], Any]]):
+               load_override_fn: Optional[LoadOverrideFnType]):
     super().__init__(inference_spec_type)
     self._inference_spec_type = inference_spec_type
     self._model_path = inference_spec_type.saved_model_spec.model_path
@@ -639,7 +646,7 @@ class _BaseSavedModelSpec(_BaseModelSpec):
     return _IOTensorSpec(input_tensor_alias, input_tensor_name,
                          output_alias_tensor_names)
 
-  def _run_inference(self, examples: List[_INPUT_TYPE],
+  def _run_inference(self, examples: List[InputType],
                      serialized_examples: List[bytes],
                      model: Any) -> Mapping[Text, np.ndarray]:
     result = model.run(
@@ -650,10 +657,10 @@ class _BaseSavedModelSpec(_BaseModelSpec):
     return result
 
 
-class _ClassifyModelSpec(_BaseSavedModelSpec):
+class _ClassifyModelHandler(_BaseSavedModelHandler):
   """Implements a spec for classification."""
 
-  def _check_examples(self, examples: List[_INPUT_TYPE]):
+  def _check_examples(self, examples: List[InputType]):
     if not all(isinstance(e, (tf.train.Example, bytes)) for e in examples):
       raise ValueError(
           'Classify only supports raw or serialized tf.train.Example')
@@ -683,10 +690,10 @@ class _ClassifyModelSpec(_BaseSavedModelSpec):
     return result
 
 
-class _RegressModelSpec(_BaseSavedModelSpec):
+class _RegressModelHandler(_BaseSavedModelHandler):
   """A DoFn that run inference on regression model."""
 
-  def _check_examples(self, examples: List[_INPUT_TYPE]):
+  def _check_examples(self, examples: List[InputType]):
     if not all(isinstance(e, (tf.train.Example, bytes)) for e in examples):
       raise ValueError(
           'Regress only supports raw or serialized tf.train.Example')
@@ -715,10 +722,10 @@ class _RegressModelSpec(_BaseSavedModelSpec):
     return result
 
 
-class _MultiInferenceModelSpec(_BaseSavedModelSpec):
+class _MultiInferenceModelHandler(_BaseSavedModelHandler):
   """A DoFn that runs inference on multi-head model."""
 
-  def _check_examples(self, examples: List[_INPUT_TYPE]):
+  def _check_examples(self, examples: List[InputType]):
     if not all(isinstance(e, (tf.train.Example, bytes)) for e in examples):
       raise ValueError(
           'Multi inference only supports raw or serialized tf.train.Example')
@@ -774,18 +781,16 @@ class _MultiInferenceModelSpec(_BaseSavedModelSpec):
     return result
 
 
-class _PredictModelSpec(_BaseSavedModelSpec):
+class _PredictModelHandler(_BaseSavedModelHandler):
   """A DoFn that runs inference on predict model."""
 
-  def _check_examples(self, examples: List[_INPUT_TYPE]):
+  def _check_examples(self, examples: List[InputType]):
     pass
 
   def _post_process(
-      self,
-      examples: List[_INPUT_TYPE],
-      serialized_examples: List[bytes],
-      outputs: Mapping[Text, np.ndarray]
-      ) -> List[prediction_log_pb2.PredictionLog]:
+      self, examples: List[InputType], serialized_examples: List[bytes],
+      outputs: Mapping[Text,
+                       np.ndarray]) -> List[prediction_log_pb2.PredictionLog]:
     del examples
     input_tensor_alias = self._io_tensor_spec.input_tensor_alias
     signature_name = self._signatures[0].name
@@ -1017,11 +1022,6 @@ def _signature_pre_process_predict(
       (key, output.name) for key, output in signature.outputs.items()
   ])
   return input_tensor_name, output_alias_tensor_names
-
-
-def _using_in_process_inference(
-    inference_spec_type: model_spec_pb2.InferenceSpecType) -> bool:
-  return inference_spec_type.WhichOneof('type') == 'saved_model_spec'
 
 
 def _get_signatures(model_path: Text, signatures: Sequence[Text],

@@ -73,6 +73,14 @@ class RunInferenceFixture(tf.test.TestCase):
       path = os.path.join(path, sub_dir)
     return path
 
+  def _get_results(self, prediction_log_path):
+    result = []
+    for f in tf.io.gfile.glob(prediction_log_path + '-?????-of-?????'):
+      record_iterator = tf.compat.v1.io.tf_record_iterator(path=f)
+      for record_string in record_iterator:
+        result.append(pickle.loads(record_string))
+    return result
+
   def _prepare_predict_examples(self, example_path):
     with tf.io.TFRecordWriter(example_path) as output_file:
       for example in self._predict_examples:
@@ -110,19 +118,28 @@ class RunInferenceFixture(tf.test.TestCase):
 _RUN_OFFLINE_INFERENCE_TEST_CASES = [{
     'testcase_name': 'unkeyed_encoded',
     'keyed_input': False,
-    'decode_examples': False
+    'decode_examples': False,
+    'use_create_model_handler_beam_api': False
 }, {
     'testcase_name': 'keyed_encoded',
     'keyed_input': True,
-    'decode_examples': False
+    'decode_examples': False,
+    'use_create_model_handler_beam_api': False
 }, {
     'testcase_name': 'unkeyed_decoded',
     'keyed_input': False,
-    'decode_examples': True
+    'decode_examples': True,
+    'use_create_model_handler_beam_api': False
 }, {
     'testcase_name': 'keyed_decoded',
     'keyed_input': True,
-    'decode_examples': True
+    'decode_examples': True,
+    'use_create_model_handler_beam_api': False
+}, {
+    'testcase_name': 'create_model_handler_beam_api',
+    'keyed_input': False,
+    'decode_examples': True,
+    'use_create_model_handler_beam_api': True
 }]
 
 
@@ -227,6 +244,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
       prediction_log_path: str,
       keyed_input: bool,
       decode_examples: bool,
+      use_create_model_handler_beam_api: bool,
       pre_batch_inputs=False,
       load_override_fn: Optional[Callable[[], Any]] = None):
     with self._make_beam_pipeline() as pipeline:
@@ -250,28 +268,34 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         maybe_batch = beam.combiners.ToList()
       else:
         maybe_batch = beam.Map(lambda x: x)
-      _ = (
-          pipeline
-          | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
-          | 'MaybeDecode' >> beam.Map(maybe_decode)
-          | 'MaybeBatch' >> maybe_batch
-          | maybe_pair_with_key
-          | 'RunInference' >> run_inference.RunInferenceImpl(
-              inference_spec_type, load_override_fn)
-          | maybe_verify_key
-          | 'WritePredictions' >> beam.io.WriteToTFRecord(
-              prediction_log_path, coder=beam.coders.PickleCoder()))
-
-  def _get_results(self, prediction_log_path):
-    result = []
-    for f in tf.io.gfile.glob(prediction_log_path + '-?????-of-?????'):
-      record_iterator = tf.compat.v1.io.tf_record_iterator(path=f)
-      for record_string in record_iterator:
-        result.append(pickle.loads(record_string))
-    return result
+      if use_create_model_handler_beam_api:
+        tf_model_handler = run_inference.create_model_handler(
+            inference_spec_type, None, None)
+        with self._make_beam_pipeline() as pipeline:
+          _ = (
+              pipeline
+              | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
+              | 'RunInference' >>
+              beam.ml.inference.base.RunInference(tf_model_handler)
+              | 'WritePredictions' >> beam.io.WriteToTFRecord(
+                  prediction_log_path, coder=beam.coders.PickleCoder()))
+      else:
+        with self._make_beam_pipeline() as pipeline:
+          _ = (
+              pipeline
+              | 'ReadExamples' >> beam.io.ReadFromTFRecord(example_path)
+              | 'MaybeDecode' >> beam.Map(maybe_decode)
+              | 'MaybeBatch' >> maybe_batch
+              | maybe_pair_with_key
+              | 'RunInference' >> run_inference.RunInferenceImpl(
+                  inference_spec_type, load_override_fn)
+              | maybe_verify_key
+              | 'WritePredictions' >> beam.io.WriteToTFRecord(
+                  prediction_log_path, coder=beam.coders.PickleCoder()))
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def test_model_path_invalid(self, keyed_input: bool, decode_examples: bool):
+  def test_model_path_invalid(self, keyed_input: bool, decode_examples: bool,
+                              use_create_model_handler_beam_api: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     prediction_log_path = self._get_output_data_dir('predictions')
@@ -281,11 +305,12 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
           model_spec_pb2.InferenceSpecType(
               saved_model_spec=model_spec_pb2.SavedModelSpec(
                   model_path=self._get_output_data_dir())), prediction_log_path,
-          keyed_input, decode_examples)
+          keyed_input, decode_examples, use_create_model_handler_beam_api)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
   def test_estimator_model_predict(self, keyed_input: bool,
-                                   decode_examples: bool):
+                                   decode_examples: bool,
+                                   use_create_model_handler_beam_api: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_predict_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -296,7 +321,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path)), prediction_log_path, keyed_input,
-        decode_examples)
+        decode_examples, use_create_model_handler_beam_api)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -311,7 +336,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertEqual(outputs.tensor_shape.dim[1].size, 1)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def test_classify_model(self, keyed_input: bool, decode_examples: bool):
+  def test_classify_model(self, keyed_input: bool, decode_examples: bool,
+                          use_create_model_handler_beam_api: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -322,7 +348,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['classify_sum'])),
-        prediction_log_path, keyed_input, decode_examples)
+        prediction_log_path, keyed_input, decode_examples,
+        use_create_model_handler_beam_api)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -336,7 +363,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         classify_log.response.result.classifications[0].classes[0].score, 1.0)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def test_regress_model(self, keyed_input: bool, decode_examples: bool):
+  def test_regress_model(self, keyed_input: bool, decode_examples: bool,
+                         use_create_model_handler_beam_api: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -347,7 +375,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path, signature_name=['regress_diff'])),
-        prediction_log_path, keyed_input, decode_examples)
+        prediction_log_path, keyed_input, decode_examples,
+        use_create_model_handler_beam_api)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -360,8 +389,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
                            0.6)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def testRegressModelSideloaded(self, keyed_input: bool,
-                                 decode_examples: bool):
+  def testRegressModelSideloaded(self, keyed_input: bool, decode_examples: bool,
+                                 use_create_model_handler_beam_api: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -392,6 +421,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         prediction_log_path,
         keyed_input,
         decode_examples,
+        use_create_model_handler_beam_api,
         load_override_fn=_load_override_fn)
 
     results = self._get_results(prediction_log_path)
@@ -407,8 +437,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
     self.assertEqual(called_count, 1)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def test_multi_inference_model(self, keyed_input: bool,
-                                 decode_examples: bool):
+  def test_multi_inference_model(self, keyed_input: bool, decode_examples: bool,
+                                 use_create_model_handler_beam_api: bool):
     example_path = self._get_output_data_dir('examples')
     self._prepare_multihead_examples(example_path)
     model_path = self._get_output_data_dir('model')
@@ -420,7 +450,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path,
                 signature_name=['regress_diff', 'classify_sum'])),
-        prediction_log_path, keyed_input, decode_examples)
+        prediction_log_path, keyed_input, decode_examples,
+        use_create_model_handler_beam_api)
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
     multi_inference_log = results[0].multi_inference_log
@@ -445,7 +476,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         result.classification_result.classifications[0].classes[0].score, 1.0)
 
   @parameterized.named_parameters(_RUN_OFFLINE_INFERENCE_TEST_CASES)
-  def test_keras_model_predict(self, keyed_input: bool, decode_examples: bool):
+  def test_keras_model_predict(self, keyed_input: bool, decode_examples: bool,
+                               use_create_model_handler_beam_api: bool):
     inputs = tf.keras.Input(shape=(1,), name='input1')
     output1 = tf.keras.layers.Dense(
         1, activation=tf.nn.sigmoid, name='output1')(
@@ -491,7 +523,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         model_spec_pb2.InferenceSpecType(
             saved_model_spec=model_spec_pb2.SavedModelSpec(
                 model_path=model_path)), prediction_log_path, keyed_input,
-        decode_examples)
+        decode_examples, use_create_model_handler_beam_api)
 
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 2)
@@ -575,7 +607,8 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
         prediction_log_path,
         keyed_input=True,
         decode_examples=True,
-        pre_batch_inputs=True)
+        pre_batch_inputs=True,
+        use_create_model_handler_beam_api=False)
     results = self._get_results(prediction_log_path)
     self.assertLen(results, 1)
     self.assertLen(results[0], 2)
@@ -836,8 +869,8 @@ class RunRemoteInferenceTest(RunInferenceFixture, parameterized.TestCase):
             project_id='test_project',
             model_name='test_model',
             version_name='test_version'))
-    remote_model_spec = run_inference._RemotePredictModelSpec(
-        inference_spec_type, None)
+    remote_model_spec = run_inference.create_model_handler(
+        inference_spec_type, None, None)
     result = remote_model_spec._make_instances([example],
                                                [example.SerializeToString()])
     self.assertEqual(result, [
@@ -878,8 +911,8 @@ class RunRemoteInferenceTest(RunInferenceFixture, parameterized.TestCase):
             model_name='test_model',
             version_name='test_version',
             use_serialization_config=True))
-    remote_model_spec = run_inference._RemotePredictModelSpec(
-        inference_spec_type, None)
+    remote_model_spec = run_inference.create_model_handler(
+        inference_spec_type, None, None)
     result = remote_model_spec._make_instances(examples, serialized_examples)
     self.assertEqual(
         result,
