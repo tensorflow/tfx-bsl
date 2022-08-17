@@ -11,6 +11,8 @@
 *   `TFSequenceExampleRecord` can now produce an equivalent tf.data.Dataset.
 *   Introduces an api: `CreateModelHandler` that produces a model handler
     suitable for apache_beam.ml.inference.
+*   Quantiles sketch supports GetQuantilesAndCumulativeWeights, which returns
+    the sum of weights in each quantiles bin along with boundaries.
 
 ## Bug Fixes and Other Changes
 
@@ -18,6 +20,9 @@
 *   Depends on `pyarrow>=6,<7`.
 
 ## Breaking Changes
+
+*   GenerateQuantiles removed from weighted_quantiles_summary.h and replaced
+    with GenerateQuantilesAndCumulativeWeights.
 
 ## Deprecations
 

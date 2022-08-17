@@ -78,9 +78,18 @@ class QuantilesSketch {
   // Merges the sketch with `other`.
   absl::Status Merge(const QuantilesSketch& other);
 
-  // Get quantiles of the numbers added so far. `quantiles` will be a
-  // FixedSizeListArray<float64> where lists represent output for each stream.
+  // Get quantiles and cumulative wights of the numbers added so far.
+  // `quantiles` will be a FixedSizeListArray<float64> where lists are
+  // quantiles for each stream, and `weights` will be a
+  // FixedSizeListArray<float64> where lists are corresponding cumulative
+  // weights for each stream.
   // `num_quantiles` must be >= 2.
+  // quantiles must be non-null, but cumul_weights may be nullptr.
+  absl::Status GetQuantilesAndCumulativeWeights(
+      int64_t num_quantiles, std::shared_ptr<arrow::Array>* quantiles,
+      std::shared_ptr<arrow::Array>* cumul_weights);
+
+  // Like GetQuantilesAndCumulativeWeights, but only retrieves quantiles.
   absl::Status GetQuantiles(int64_t num_quantiles,
                             std::shared_ptr<arrow::Array>* quantiles);
 

@@ -16,6 +16,7 @@
 //   - removed dependencies on TensorFlow headers.
 //   - s/int64/int64_t
 //   - changed all the QCHECK* macro invocations to assert.
+//   - added GenerateQuantilesAndWeights
 #ifndef TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_SUMMARY_H_
 #define TENSORFLOW_CONTRIB_BOOSTED_TREES_LIB_QUANTILES_WEIGHTED_QUANTILES_SUMMARY_H_
 
@@ -259,13 +260,23 @@ class WeightedQuantilesSummary {
   // original summary. The following algorithm is an efficient cache-friendly
   // O(n) implementation of that idea which avoids the cost of the repetitive
   // full rank queries O(nlogn).
-  std::vector<ValueType> GenerateQuantiles(int64_t num_quantiles) const {
-    std::vector<ValueType> output;
+  void GenerateQuantilesAndCumulativeWeights(
+      int64_t num_quantiles, std::vector<ValueType>* quantiles_output,
+      std::vector<WeightType>* weights_output) const {
     if (entries_.empty()) {
-      return output;
+      return;
     }
     num_quantiles = std::max(num_quantiles, int64_t{2});
-    output.reserve(num_quantiles + 1);
+    // Add to specified outputs.
+    auto add_entry = [quantiles_output,
+                      weights_output](const SummaryEntry& entry) {
+      if (quantiles_output) {
+        quantiles_output->push_back(entry.value);
+      }
+      if (weights_output) {
+        weights_output->push_back(entry.max_rank);
+      }
+    };
 
     // Make successive rank queries to get boundaries.
     // We always keep the first (min) and last (max) entries.
@@ -284,12 +295,11 @@ class WeightedQuantilesSummary {
       if (next_idx == entries_.size() ||
           d_2 < entries_[cur_idx].NextMinRank() +
                     entries_[next_idx].PrevMaxRank()) {
-        output.push_back(entries_[cur_idx].value);
+        add_entry(entries_[cur_idx]);
       } else {
-        output.push_back(entries_[next_idx].value);
+        add_entry(entries_[next_idx]);
       }
     }
-    return output;
   }
 
   // Calculates current approximation error which should always be <= eps.

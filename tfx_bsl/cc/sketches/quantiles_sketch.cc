@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "tfx_bsl/cc/sketches/quantiles_sketch.h"
 
+#include <vector>
+
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/types/optional.h"
@@ -365,31 +367,66 @@ absl::Status QuantilesSketch::Merge(const QuantilesSketch& other) {
 
 absl::Status QuantilesSketch::GetQuantiles(
     int64_t num_quantiles, std::shared_ptr<arrow::Array>* quantiles) {
+  return GetQuantilesAndCumulativeWeights(num_quantiles, quantiles,
+                                          /*cumul_weights=*/nullptr);
+}
+
+namespace {
+absl::Status MakeResultArray(const std::vector<double>& result_vec,
+                             int num_quantiles,
+                             std::shared_ptr<arrow::Array>* result) {
+  arrow::DoubleBuilder result_builder;
+  TFX_BSL_RETURN_IF_ERROR(
+      FromArrowStatus(result_builder.AppendValues(result_vec)));
+  std::shared_ptr<arrow::Array> result_flat;
+  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(result_builder.Finish(&result_flat)));
+  return FromArrowStatus(
+      arrow::FixedSizeListArray::FromArrays(result_flat, num_quantiles + 1)
+          .Value(result));
+}
+}  // namespace
+
+absl::Status QuantilesSketch::GetQuantilesAndCumulativeWeights(
+    int64_t num_quantiles, std::shared_ptr<arrow::Array>* quantiles,
+    std::shared_ptr<arrow::Array>* cumul_weights) {
   if (num_quantiles <= 1) {
     return absl::InvalidArgumentError(
         "Number of requested quantiles must be >= 2.");
   }
-  // Extract final summaries and generate quantiles.
+  assert(quantiles != nullptr);
   std::vector<Summary> final_summaries = impl_->GetFinalSummaries();
+
+  auto populate_output = [num_quantiles, &final_summaries, quantiles,
+                          cumul_weights](
+                             std::vector<double>* quantiles_vec,
+                             std::vector<double>* cumul_weights_vec) {
+    for (auto& summary : final_summaries) {
+      summary.GenerateQuantilesAndCumulativeWeights(
+          num_quantiles, quantiles_vec, cumul_weights_vec);
+    }
+    // Convert outputs to `FixedSizeListArray` with result for each stream.
+
+    TFX_BSL_RETURN_IF_ERROR(
+        MakeResultArray(*quantiles_vec, num_quantiles, quantiles));
+
+    // Populate weights if requested.
+    if (cumul_weights_vec) {
+      TFX_BSL_RETURN_IF_ERROR(
+          MakeResultArray(*cumul_weights_vec, num_quantiles, cumul_weights));
+    }
+
+    return absl::OkStatus();
+  };
+  // Extract final summaries and generate quantiles.
   std::vector<double> quantiles_vec;
   quantiles_vec.reserve(num_quantiles * impl_->num_streams());
-  for (auto& summary : final_summaries) {
-    auto summary_quantiles = summary.GenerateQuantiles(num_quantiles);
-    quantiles_vec.insert(quantiles_vec.end(), summary_quantiles.begin(),
-                         summary_quantiles.end());
+  if (cumul_weights) {
+    std::vector<double> weights_vec;
+    weights_vec.reserve(num_quantiles * impl_->num_streams());
+    return populate_output(&quantiles_vec, &weights_vec);
+  } else {
+    return populate_output(&quantiles_vec, /*weights_vec=*/nullptr);
   }
-
-  // Convert to a `FixedSizeListArray` with result for each stream.
-  arrow::DoubleBuilder result_builder;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(result_builder.AppendValues(quantiles_vec)));
-  std::shared_ptr<arrow::Array> quantiles_flat;
-  TFX_BSL_RETURN_IF_ERROR(
-      FromArrowStatus(result_builder.Finish(&quantiles_flat)));
-  TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(
-      arrow::FixedSizeListArray::FromArrays(quantiles_flat, num_quantiles + 1)
-          .Value(quantiles)));
-  return absl::OkStatus();
 }
 
 absl::Status QuantilesSketch::Serialize(std::string& serialized) const {

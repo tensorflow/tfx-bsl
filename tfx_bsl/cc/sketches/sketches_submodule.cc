@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <tuple>
 
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
@@ -23,6 +24,7 @@
 #include "tfx_bsl/cc/sketches/kmv_sketch.h"
 #include "tfx_bsl/cc/sketches/misragries_sketch.h"
 #include "tfx_bsl/cc/sketches/quantiles_sketch.h"
+#include "pybind11/cast.h"
 #include "pybind11/pytypes.h"
 #include "pybind11/stl.h"
 
@@ -350,7 +352,28 @@ void DefineQuantilesSketchClass(py::module sketch_module) {
           py::doc("Finalize the sketch and get quantiles of the numbers added "
                   "so far. The result will be a FixedSizeListArray<float64> "
                   "where lists represent output for each stream. num_quantiles "
-                  "must be >= 2."));
+                  "must be >= 2."))
+      .def(
+          "GetQuantilesAndCumulativeWeights",
+          [](QuantilesSketch& sketch, int64_t num_quantiles) {
+            std::shared_ptr<arrow::Array> quantiles;
+            std::shared_ptr<arrow::Array> weights;
+            {
+              py::gil_scoped_release release;
+              absl::Status s = sketch.GetQuantilesAndCumulativeWeights(
+                  num_quantiles, &quantiles, &weights);
+              if (!s.ok()) {
+                throw std::runtime_error(s.ToString());
+              }
+            }
+            return py::make_tuple(quantiles, weights);
+          },
+          py::doc("Finalize the sketch and get quantiles and weights of the  "
+                  "numbers added so far. The results will be a tuple of "
+                  "FixedSizeListArray<float64>  where the first element "
+                  "consists of quantiles (see GetQuantiles) and the second "
+                  "element consists of corresponding cumulative weights "
+                  "num_quantiles must be >= 2."));
 }
 }  // namespace
 
