@@ -21,6 +21,8 @@ import pyarrow as pa
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
+# TODO(b/68154497): remove this. # pylint: disable=no-value-for-parameter
+
 
 def _IncrementCounter(element: int, counter_namespace: str,
                       counter_name: str) -> int:
@@ -30,17 +32,35 @@ def _IncrementCounter(element: int, counter_namespace: str,
 
 
 @beam.ptransform_fn
-def TrackRecordBatchBytes(dataset: beam.PCollection[pa.RecordBatch],
-                          counter_namespace: str,
-                          counter_name: str) -> beam.pvalue.PCollection[int]:
-  """Gathers telemetry on input record batch."""
+def ExtractRecordBatchBytes(
+    dataset: beam.PCollection[pa.RecordBatch]) -> beam.PCollection[int]:
+  """Extracts the total bytes of the input PCollection of RecordBatch."""
   return (dataset
           | "GetRecordBatchSize" >> beam.Map(lambda rb: rb.nbytes)
-          | "SumTotalBytes" >> beam.CombineGlobally(sum)
+          | "SumTotalBytes" >> beam.CombineGlobally(sum))
+
+
+@beam.ptransform_fn
+def IncrementCounter(value: beam.PCollection[int], counter_namespace: str,
+                     counter_name: str) -> beam.PCollection[int]:
+  """Increments the given counter after summing the input values."""
+  return (value
+          | "SumCounterValue" >> beam.CombineGlobally(sum)
           | "IncrementCounter" >> beam.Map(
               _IncrementCounter,
               counter_namespace=counter_namespace,
               counter_name=counter_name))
+
+
+@beam.ptransform_fn
+def TrackRecordBatchBytes(dataset: beam.PCollection[pa.RecordBatch],
+                          counter_namespace: str,
+                          counter_name: str) -> beam.PCollection[int]:
+  """Gathers telemetry on input record batch."""
+  return (dataset
+          | "GetRecordBatchSize" >> ExtractRecordBatchBytes()
+          | "IncrementCounter" >> IncrementCounter(
+              counter_namespace=counter_namespace, counter_name=counter_name))
 
 
 def _IncrementTensorRepresentationCounters(
