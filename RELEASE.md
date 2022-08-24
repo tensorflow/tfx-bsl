@@ -2,6 +2,16 @@
 
 # Current Version (not yet released; still in development)
 
+## Major Features and Improvements
+
+## Bug Fixes and Other Changes
+
+## Breaking Changes
+
+## Deprecations
+
+# Version 1.10.0
+
 # Major Features and Improvements
 
 *   `ExamplesToRecordBatchDecoder` is now picklable.
@@ -18,6 +28,8 @@
 
 *   Depends on `apache-beam[gcp]>=2.40,<3`.
 *   Depends on `pyarrow>=6,<7`.
+*   Depends on `tensorflow-metadata>=1.10,<1.11`.
+*   Depends on `tensorflow>=1.15.5,<2` or `tensorflow>=2.9,<3`.
 
 ## Breaking Changes
 
@@ -25,6 +37,8 @@
     with GenerateQuantilesAndCumulativeWeights.
 
 ## Deprecations
+
+*   N/A
 
 # Version 1.9.0
 
