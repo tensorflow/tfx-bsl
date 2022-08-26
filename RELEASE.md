@@ -6,7 +6,7 @@
 
 ## Bug Fixes and Other Changes
 
-*  Combine a few beam metrics to reduce the number of counters in a pipeline.
+*   N/A
 
 ## Breaking Changes
 
