@@ -1,4 +1,4 @@
-licenses(["notice"])  # Apache 2.0
+licenses(["notice"])
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
 config_setting(
