@@ -665,12 +665,11 @@ class _ClassifyModelHandler(_BaseSavedModelHandler):
       raise ValueError(
           'Classify only supports raw or serialized tf.train.Example')
 
-  def _post_process(
-      self,
-      examples: List[Union[tf.train.Example, bytes]],
-      serialized_examples: List[bytes],
-      outputs: Mapping[Text, np.ndarray]
-  ) -> List[prediction_log_pb2.PredictionLog]:
+  def _post_process(  # pytype: disable=signature-mismatch  # overriding-parameter-type-checks
+      self, examples: List[Union[tf.train.Example,
+                                 bytes]], serialized_examples: List[bytes],
+      outputs: Mapping[Text,
+                       np.ndarray]) -> List[prediction_log_pb2.PredictionLog]:
     del serialized_examples
     # TODO(b/131873699): Can we fold prediction_log_pb2.PredictionLog building
     # into _post_process_classify?
@@ -698,12 +697,11 @@ class _RegressModelHandler(_BaseSavedModelHandler):
       raise ValueError(
           'Regress only supports raw or serialized tf.train.Example')
 
-  def _post_process(
-      self,
-      examples: List[Union[tf.train.Example, bytes]],
-      serialized_examples: List[bytes],
-      outputs: Mapping[Text, np.ndarray]
-      ) -> List[prediction_log_pb2.PredictionLog]:
+  def _post_process(  # pytype: disable=signature-mismatch  # overriding-parameter-type-checks
+      self, examples: List[Union[tf.train.Example,
+                                 bytes]], serialized_examples: List[bytes],
+      outputs: Mapping[Text,
+                       np.ndarray]) -> List[prediction_log_pb2.PredictionLog]:
     del serialized_examples
     # TODO(b/131873699): Can we fold prediction_log_pb2.PredictionLog building
     # into _post_process_regress?
@@ -730,12 +728,11 @@ class _MultiInferenceModelHandler(_BaseSavedModelHandler):
       raise ValueError(
           'Multi inference only supports raw or serialized tf.train.Example')
 
-  def _post_process(
-      self,
-      examples: List[Union[tf.train.Example, bytes]],
-      serialized_examples: List[bytes],
-      outputs: Mapping[Text, np.ndarray]
-      ) -> List[prediction_log_pb2.PredictionLog]:
+  def _post_process(  # pytype: disable=signature-mismatch  # overriding-parameter-type-checks
+      self, examples: List[Union[tf.train.Example,
+                                 bytes]], serialized_examples: List[bytes],
+      outputs: Mapping[Text,
+                       np.ndarray]) -> List[prediction_log_pb2.PredictionLog]:
     del serialized_examples
     classifications = None
     regressions = None
@@ -787,7 +784,7 @@ class _PredictModelHandler(_BaseSavedModelHandler):
   def _check_examples(self, examples: List[InputType]):
     pass
 
-  def _post_process(
+  def _post_process(  # pytype: disable=signature-mismatch  # overriding-parameter-type-checks
       self, examples: List[InputType], serialized_examples: List[bytes],
       outputs: Mapping[Text,
                        np.ndarray]) -> List[prediction_log_pb2.PredictionLog]:
