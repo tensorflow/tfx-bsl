@@ -266,11 +266,14 @@ def CreateModelHandler(
       `inference_spec_type`.
 
   Example Usage:
+    from apache_beam.ml.inference import base
+
     tf_handler = CreateModelHandler(inference_spec_type)
     # unkeyed
-    beam.run_inference(tf_handler)
+    base.RunInference(tf_handler)
+
     # keyed
-    beam.run_inference(beam.ml.inference.KeyedHandler(tf_handler))
+    base.RunInference(base.KeyedModelHandler(tf_handler))
 
   Args:
     inference_spec_type: Model inference endpoint.
