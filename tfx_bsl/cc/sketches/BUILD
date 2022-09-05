@@ -44,6 +44,9 @@ cc_library(
     name = "misragries_sketch",
     srcs = ["misragries_sketch.cc"],
     hdrs = ["misragries_sketch.h"],
+    visibility = [
+        "//learning/processing/sqail:__pkg__",
+    ],
     deps = [
         ":sketches_proto",
         "//tfx_bsl/cc/util:status_util",
@@ -106,6 +109,9 @@ cc_library(
         "weighted_quantiles_summary.h",
     ],
     hdrs = ["quantiles_sketch.h"],
+    visibility = [
+        "//learning/processing/sqail:__pkg__",
+    ],
     deps = [
         ":sketches_proto",
         "//tfx_bsl/cc/util:status_util",
