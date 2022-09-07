@@ -4,6 +4,8 @@
 
 ## Major Features and Improvements
 
+*   `TensorAdapter` now processes `tf.RaggedTensor`s in TF 2 ~10x faster.
+
 ## Bug Fixes and Other Changes
 
 ## Breaking Changes

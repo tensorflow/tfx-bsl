@@ -14,8 +14,9 @@
 """TensorAdapter."""
 
 import abc
+import functools
 import typing
-from typing import Any, Callable, Dict, List, Text, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Text, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
@@ -81,6 +82,9 @@ class TensorAdapter(object):
   It is guaranteed that for any tensor_name in the given TensorRepresentations
   self.TypeSpecs()[tensor_name].is_compatible_with(
       self.ToBatchedTensors(...)[tensor_name])
+
+  Sliced RecordBatches and LargeListArray columns having null elements backed by
+  non-empty sub-lists are not supported and will yield undefined behaviour.
   """
 
   __slots__ = [
@@ -159,8 +163,8 @@ class TensorAdapter(object):
         result[tensor_name] = handler.GetTensor(record_batch,
                                                 produce_eager_tensors)
       except Exception as e:
-        raise ValueError("Error raised when handling tensor {}: {}".format(
-            tensor_name, e))
+        raise ValueError(
+            "Error raised when handling tensor '{}'".format(tensor_name)) from e
 
     return result
 
@@ -192,9 +196,10 @@ class _TypeHandler(abc.ABC):
         conversion.
     """
 
-  @abc.abstractproperty
+  @property
   def type_spec(self) -> common_types.TensorTypeSpec:
     """Returns the TypeSpec of the converted Tensor or CompositeTensor."""
+    raise NotImplementedError
 
   @abc.abstractmethod
   def GetTensor(self, record_batch: pa.RecordBatch,
@@ -437,9 +442,9 @@ class _SparseTensorHandler(_TypeHandler):
     except ValueError as e:
       raise ValueError("Error constructing the COO for SparseTensor. "
                        "number of values: {}; "
-                       "size of each index array: {}; "
-                       "original error {}.".format(
-                           len(values_np), [len(i) for i in indices_arrays], e))
+                       "size of each index array: {}".format(
+                           len(values_np),
+                           [len(i) for i in indices_arrays])) from e
 
     dense_shape = [len(record_batch)] + self._shape
 
@@ -561,7 +566,10 @@ class _RaggedTensorHandler(_TypeHandler):
       offsets_dtype = np.int64
 
     if produce_eager_tensors:
-      factory = tf.RaggedTensor.from_row_splits
+      # Skip expensive validation since it's entirely dependent on the
+      # implementation correctness given that the input RecordBatch is valid.
+      factory = functools.partial(
+          tf.RaggedTensor.from_row_splits, validate=False)
     else:
       factory = tf.compat.v1.ragged.RaggedTensorValue
 
@@ -603,8 +611,11 @@ class _RaggedTensorHandler(_TypeHandler):
         column_path = column_path.suffix(1)
         column_type = column.type
       elif _IsListLike(column_type):
+        # Note that we are using raw offsets and values assuming that the array
+        # is not sliced (validated above) and there is no null elements backed
+        # by non-empty lists (too expensive to validate).
         outer_row_splits.append(np.asarray(column.offsets, dtype=offsets_dtype))
-        column = column.flatten()
+        column = column.values
         column_type = column.type
       else:
         break
@@ -614,13 +625,9 @@ class _RaggedTensorHandler(_TypeHandler):
     # the outermost.
 
     # Take the values and set the shape for the inner most dimensions (Up)
-    values = column
     if self._convert_to_binary_fn is not None:
-      values = self._convert_to_binary_fn(values)
-    values = np.asarray(values)
-    values = np.reshape(values, self._values_fixed_shape)
-
-    ragged_tensor = values
+      column = self._convert_to_binary_fn(column)
+    ragged_tensor = np.reshape(np.asarray(column), self._values_fixed_shape)
 
     # Build the RaggedTensor from the values and the specified partitions.
 
@@ -637,7 +644,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
     # Keep track of the previous dimension to help building row splits when an
     # uniform row length partition is found.
-    prev_dimension = values.shape[0]
+    prev_dimension = ragged_tensor.shape[0]
     for partition in reversed(self._ragged_partitions):
       if partition.HasField("uniform_row_length"):
         # If a uniform row length partition is found, we need to scale down the
@@ -882,10 +889,10 @@ def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
       column_path = column_path.suffix(1)
       try:
         arrow_field = arrow_type[curr_field_name]
-      except KeyError:
+      except KeyError as e:
         raise ValueError(
-            "The field: {} could not be found in the current Struct: {}".format(
-                curr_field_name, arrow_type))
+            "Field '{}' could not be found in the current Struct: '{}'".format(
+                curr_field_name, arrow_type)) from e
       arrow_type = arrow_field.type
     elif _IsListLike(arrow_type):
       arrow_type = arrow_type.value_type
@@ -894,7 +901,7 @@ def _EnumerateTypesAlongPath(arrow_schema: pa.Schema,
       if column_path:
         raise ValueError(
             "The arrow_schema fields are exhausted, but there are remaining "
-            "fields in the column_path: {}".format(column_path))
+            "fields in the column_path: '{}'".format(column_path))
       break
     yield arrow_type
 
@@ -966,7 +973,10 @@ def _GetConvertToBinaryFn(
   return None
 
 
-def _FloorDivide(array: np.ndarray, num_elements: int) -> np.ndarray:
+def _FloorDivide(array, num_elements: int):
+  # The most common trivial case can avoid producing new arrays.
+  if num_elements == 1:
+    return array
   result, remainder = np.divmod(array, num_elements)
   if not np.all(remainder == 0):
     raise RuntimeError(

@@ -1671,7 +1671,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                                            {"output": tensor_representation}))
     with self.assertRaisesRegex(
         ValueError,
-        ".*We currently do not handle converting slices to RaggedTensors."):
+        ".*Error raised when handling tensor 'output'"):
       adapter.ToBatchTensors(record_batch)
 
   @test_util.run_in_graph_and_eager_modes
@@ -1859,7 +1859,8 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                     column_name: "column"
                     shape {}
                   }""", schema_pb2.TensorRepresentation())
-    with self.assertRaisesRegex(ValueError, "size mismatch"):
+    with self.assertRaisesRegex(ValueError,
+                                ".*Error raised when handling tensor 'tensor'"):
       ta = tensor_adapter.TensorAdapter(
           tensor_adapter.TensorAdapterConfig(
               pa.schema([pa.field("column", pa.list_(pa.int64()))]),
