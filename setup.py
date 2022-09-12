@@ -165,15 +165,14 @@ setup(
     ],
     namespace_packages=[],
     # Make sure to sync the versions of common dependencies (absl-py, numpy,
-    # six, and protobuf) with TF.
+    # and protobuf) with TF.
     install_requires=[
         'absl-py>=0.9,<2.0.0',
         'apache-beam[gcp]>=2.40,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.16,<2',
         'pandas>=1.0,<2',
-        # TODO(b/233991867): Replace with major version upper bound.
-        'protobuf>=3.13,<3.21',
+        'protobuf>=3.13,<4',
         'pyarrow>=6,<7',
         'tensorflow>=1.15.5,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.*,<3',
         'tensorflow-metadata' + select_constraint(

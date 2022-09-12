@@ -9,6 +9,7 @@
 ## Bug Fixes and Other Changes
 
 *   Depends on `tensorflow>=1.15.5,<2` or `tensorflow>=2.10,<3`
+*   Depends on `protobuf>=3.13,<4`
 
 ## Breaking Changes
 
