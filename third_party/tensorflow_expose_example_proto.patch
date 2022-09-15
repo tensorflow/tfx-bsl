@@ -1,18 +1,7 @@
-From d71dd5b389c314253d29184ebd01f2fbbb03ba59 Mon Sep 17 00:00:00 2001
-From: Zhuo Peng <1835738+brills@users.noreply.github.com>
-Date: Wed, 20 Jan 2021 15:16:23 -0800
-Subject: [PATCH] Patched tensorflow/core/example/BUILD to expose tf.Example
- protos
-
----
- tensorflow/core/example/BUILD | 174 ++--------------------------------
- 1 file changed, 9 insertions(+), 165 deletions(-)
-
 diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
-index 752a3641b09..c23ddcdf01d 100644
 --- tensorflow/core/example/BUILD
 +++ tensorflow/core/example/BUILD
-@@ -1,166 +1,10 @@
+@@ -1,172 +1,10 @@
 -load("//tensorflow:tensorflow.bzl", "filegroup")
 -load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
 -load(
@@ -26,15 +15,17 @@ index 752a3641b09..c23ddcdf01d 100644
 -)
 -load(
 -    "//tensorflow/core/platform:build_config.bzl",
+-    "tf_jspb_proto_library",
 -    "tf_proto_library",
 -    "tf_pyclif_proto_library",
 -)
--
++load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
+ 
 -package(
 -    default_visibility = [
 -        "//visibility:public",
 -    ],
--    licenses = ["notice"],  # Apache 2.0
+-    licenses = ["notice"],
 -)
 -
 -# TODO(bmzhao): Refactor this target to use granular dependencies
@@ -65,8 +56,7 @@ index 752a3641b09..c23ddcdf01d 100644
 -        ":example_protos_cc",
 -        "//tensorflow/core/platform:protobuf",
 -        "//tensorflow/core/platform:stringpiece",
--        "//tensorflow/core/platform:types",
--        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/strings",
 -    ],
 -    alwayslink = 1,
 -)
@@ -111,6 +101,7 @@ index 752a3641b09..c23ddcdf01d 100644
 -    ],
 -    cc_api_version = 2,
 -    make_default_target_header_only = True,
+-    tags = ["alt_dep=//third_party/tensorflow/core:protos_all"],
 -)
 -
 -tf_proto_library(
@@ -150,6 +141,11 @@ index 752a3641b09..c23ddcdf01d 100644
 -    proto_srcfile = "feature.proto",
 -)
 -
+-tf_jspb_proto_library(
+-    name = "example_jspb_proto",
+-    deps = [":example_protos"],
+-)
+-
 -closure_proto_library(
 -    name = "example_protos_closure",
 -    deps = [":example_protos"],
@@ -178,8 +174,7 @@ index 752a3641b09..c23ddcdf01d 100644
 -    visibility = [
 -        "//tensorflow/core:__pkg__",
 -    ],
-+load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
-+
+-)
 +cc_proto_library(
 +  name = "example_proto",
 +  srcs = [
@@ -187,7 +182,5 @@ index 752a3641b09..c23ddcdf01d 100644
 +      "feature.proto",
 +  ],
 +  visibility = ["//visibility:public"],
- )
--- 
-2.30.0.284.gd98b1dd5eaa7-goog
-
++)
+\ No newline at end of file
