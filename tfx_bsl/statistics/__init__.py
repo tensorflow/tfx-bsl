@@ -19,6 +19,8 @@
 # See b/148667210 for why the ImportError is ignored.
 try:
   from tfx_bsl.cc.tfx_bsl_extension.statistics import DatasetListAccumulator
+  from tfx_bsl.cc.tfx_bsl_extension.statistics_sql import EvaluateUnaryStatsPredicate
+  from tfx_bsl.cc.tfx_bsl_extension.statistics_sql import EvaluateBinaryStatsPredicate
 except ImportError as err:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.statistics. "
