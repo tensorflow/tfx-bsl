@@ -329,7 +329,7 @@ class RecordBatchEvaluatorTableIterator
         status_(absl::OkStatus()),
         zetasql_value_visitors_(columns_name_and_type.size()) {
     for (int i = 0; i < zetasql_value_visitors_.size(); i++) {
-      zetasql_value_visitors_[i] = absl::make_unique<ZetaSQLValueVisitor>(
+      zetasql_value_visitors_[i] = std::make_unique<ZetaSQLValueVisitor>(
           columns_name_and_type[i].second);
     }
 
@@ -434,7 +434,7 @@ absl::Status RecordBatchSQLSliceQuery::Make(
 
   // Build sql table.
   std::unique_ptr<SimpleTable> table =
-      absl::make_unique<SimpleTable>(kTableName, columns_name_and_type);
+      std::make_unique<SimpleTable>(kTableName, columns_name_and_type);
 
   // Build sql Catalog.
   std::unique_ptr<zetasql::SimpleCatalog> catalog =
@@ -445,7 +445,7 @@ absl::Status RecordBatchSQLSliceQuery::Make(
   // Prepare the query.
   const zetasql::EvaluatorOptions evaluator_options;
   std::unique_ptr<zetasql::PreparedQuery> query =
-      absl::make_unique<zetasql::PreparedQuery>(sql, evaluator_options);
+      std::make_unique<zetasql::PreparedQuery>(sql, evaluator_options);
   zetasql::AnalyzerOptions analyzer_options;
 
   absl::Status status = query->Prepare(analyzer_options, catalog.get());
@@ -491,7 +491,7 @@ absl::Status RecordBatchSQLSliceQuery::Execute(
       [&record_batch, this](absl::Span<const int> columns)
           -> zetasql_base::StatusOr<
               std::unique_ptr<zetasql::EvaluatorTableIterator>> {
-        return absl::make_unique<RecordBatchEvaluatorTableIterator>(
+        return std::make_unique<RecordBatchEvaluatorTableIterator>(
             record_batch, this->columns_name_and_type_);
       });
 

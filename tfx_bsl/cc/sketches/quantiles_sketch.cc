@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "tfx_bsl/cc/sketches/quantiles_sketch.h"
 
+#include <memory>
 #include <vector>
 
 #include "absl/memory/memory.h"
@@ -251,7 +252,7 @@ class QuantilesSketchImpl {
       buffer_entries.push_back(std::move(stream_buffer_entries));
     }
 
-    *result = absl::make_unique<QuantilesSketchImpl>(
+    *result = std::make_unique<QuantilesSketchImpl>(
         eps, max_num_elements, num_streams, compacted, std::move(summaries),
         std::move(buffer_entries));
     return absl::OkStatus();
@@ -327,7 +328,7 @@ absl::Status QuantilesSketch::Make(double eps, int64_t max_num_elements,
   // level from `GetQuantiles` that performs final summary compression adding to
   // the final error bound. See weighted_quantiles_stream.h for details.
   *result = absl::WrapUnique(
-      new QuantilesSketch(absl::make_unique<QuantilesSketchImpl>(
+      new QuantilesSketch(std::make_unique<QuantilesSketchImpl>(
           eps / 3, max_num_elements, num_streams)));
   return absl::OkStatus();
 }

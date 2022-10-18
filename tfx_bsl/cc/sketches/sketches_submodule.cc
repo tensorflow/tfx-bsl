@@ -121,9 +121,8 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
                    "Must provide both or neither large_string_threshold and "
                    "large_string_placeholder.");
              }
-             return absl::make_unique<MisraGriesSketch>(
-                 num_buckets,
-                 std::move(invalid_utf8_placeholder),
+             return std::make_unique<MisraGriesSketch>(
+                 num_buckets, std::move(invalid_utf8_placeholder),
                  std::move(large_string_thresehold),
                  std::move(large_string_placeholder));
            }),

@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "tfx_bsl/cc/arrow/array_util.h"
 
+#include <memory>
+
 #include "arrow/array/concatenate.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
@@ -35,10 +37,10 @@ using ::arrow::LargeListArray;
 using ::arrow::ListArray;
 
 std::unique_ptr<Int32Builder> GetOffsetsBuilder(const arrow::ListArray&) {
-  return absl::make_unique<Int32Builder>();
+  return std::make_unique<Int32Builder>();
 }
 std::unique_ptr<Int64Builder> GetOffsetsBuilder(const arrow::LargeListArray&) {
-  return absl::make_unique<Int64Builder>();
+  return std::make_unique<Int64Builder>();
 }
 
 class ElementLengthsVisitor : public arrow::ArrayVisitor {
@@ -308,12 +310,12 @@ absl::Status IndexInBinaryArray(
   switch (values_set.type()->id()) {
     case arrow::Type::BINARY:
     case arrow::Type::STRING:
-      memo_table = absl::make_unique<StringViewMemoTable>(
+      memo_table = std::make_unique<StringViewMemoTable>(
           static_cast<const arrow::BinaryArray&>(values_set));
       break;
     case arrow::Type::LARGE_BINARY:
     case arrow::Type::LARGE_STRING:
-      memo_table = absl::make_unique<StringViewMemoTable>(
+      memo_table = std::make_unique<StringViewMemoTable>(
           static_cast<const arrow::LargeBinaryArray&>(values_set));
       break;
     default:

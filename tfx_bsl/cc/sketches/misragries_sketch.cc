@@ -572,7 +572,7 @@ absl::Status MisraGriesSketch::Deserialize(
     large_string_threshold = mg_proto.large_string_threshold();
     large_string_placeholder = mg_proto.large_string_placeholder();
   }
-  *result = absl::make_unique<MisraGriesSketch>(
+  *result = std::make_unique<MisraGriesSketch>(
       mg_proto.num_buckets(), std::move(invalid_utf8_placeholder),
       std::move(large_string_threshold), std::move(large_string_placeholder));
   if (mg_proto.delta() > 0.) {

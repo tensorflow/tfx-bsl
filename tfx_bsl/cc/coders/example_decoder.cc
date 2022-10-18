@@ -119,7 +119,7 @@ class ListBuilderWrapper : public ListBuilderInterface {
 std::unique_ptr<ListBuilderInterface> MakeListBuilderWrapper(
     const std::shared_ptr<arrow::ArrayBuilder>& values_builder,
     arrow::MemoryPool* memory_pool) {
-  return absl::make_unique<ListBuilderWrapper<arrow::LargeListBuilder>>(
+  return std::make_unique<ListBuilderWrapper<arrow::LargeListBuilder>>(
       values_builder, memory_pool);
 }
 
@@ -302,7 +302,7 @@ class BytesDecoder : public FeatureDecoder {
  public:
   static BytesDecoder* Make() {
     return new BytesDecoder(
-        absl::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
+        std::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
             arrow::default_memory_pool()));
   }
 
@@ -459,7 +459,7 @@ class BytesListDecoder : public FeatureListDecoder {
  public:
   static BytesListDecoder* Make() {
     return new BytesListDecoder(
-        absl::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
+        std::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
             arrow::default_memory_pool()));
   }
 
@@ -711,9 +711,9 @@ absl::Status ExamplesToRecordBatchDecoder::Make(
         absl::WrapUnique(new ExamplesToRecordBatchDecoder(nullptr, nullptr));
     return absl::OkStatus();
   }
-  auto feature_decoders = absl::make_unique<
+  auto feature_decoders = std::make_unique<
       absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>();
-  auto schema = absl::make_unique<tensorflow::metadata::v0::Schema>();
+  auto schema = std::make_unique<tensorflow::metadata::v0::Schema>();
   if (!schema->ParseFromArray(serialized_schema->data(),
                               serialized_schema->size())) {
     return absl::InvalidArgumentError("Unable to parse schema.");
@@ -876,18 +876,18 @@ absl::Status SequenceExamplesToRecordBatchDecoder::Make(
         sequence_feature_column_name, nullptr, nullptr, nullptr, nullptr));
     return absl::OkStatus();
   }
-  auto context_feature_decoders = absl::make_unique<
+  auto context_feature_decoders = std::make_unique<
       absl::flat_hash_map<std::string, std::unique_ptr<FeatureDecoder>>>();
-  auto sequence_feature_decoders = absl::make_unique<
+  auto sequence_feature_decoders = std::make_unique<
       absl::flat_hash_map<std::string, std::unique_ptr<FeatureListDecoder>>>();
-  auto schema = absl::make_unique<tensorflow::metadata::v0::Schema>();
+  auto schema = std::make_unique<tensorflow::metadata::v0::Schema>();
   if (!schema->ParseFromArray(serialized_schema->data(),
                               serialized_schema->size())) {
     return absl::InvalidArgumentError("Unable to parse schema.");
   }
   std::vector<std::shared_ptr<arrow::Field>> arrow_schema_fields;
   auto sequence_feature_schema_fields =
-      absl::make_unique<std::vector<std::shared_ptr<arrow::Field>>>();
+      std::make_unique<std::vector<std::shared_ptr<arrow::Field>>>();
   for (const tensorflow::metadata::v0::Feature& feature : schema->feature()) {
     if (feature.name() == sequence_feature_column_name) {
       // This feature is a top-level feature containing sequence features, as
