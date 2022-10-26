@@ -10,6 +10,9 @@ cc_library(
     name = "merge_util",
     srcs = ["merge_util.cc"],
     hdrs = ["merge_util.h"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//tfx_bsl/cc/util:status_util",
         "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
@@ -44,6 +47,9 @@ cc_library(
     name = "sql_util",
     srcs = ["sql_util.cc"],
     hdrs = ["sql_util.h"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
         "@com_google_absl//absl/status",
