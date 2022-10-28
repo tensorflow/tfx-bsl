@@ -126,5 +126,5 @@ zetasql_deps_step_2(
     testing_deps = False)
 
 # Specify the minimum required bazel version.
-load("@org_tensorflow_no_deps//tensorflow:version_check.bzl", "check_bazel_version_at_least")
-check_bazel_version_at_least("3.7.2")
+load("@bazel_skylib//lib:versions.bzl", "versions")
+versions.check("3.7.2")
