@@ -13,21 +13,12 @@
 # limitations under the License
 """Tests for tfx_bsl.arrow.table_util."""
 
-import collections
-import unittest
-
 import pyarrow as pa
 from tfx_bsl.arrow import table_util
 
 from absl.testing import absltest
 from absl.testing import parameterized
 
-# TODO(b/161712697): this hack is introduced because pandas is PY3 only. It's
-# not needed once tfx_bsl can be PY3 only.
-try:
-  import pandas as pd  # pylint: disable=g-import-not-at-top
-except ImportError:
-  pd = None
 
 _MERGE_TEST_CASES = [
     dict(
@@ -521,57 +512,28 @@ class RecordBatchTakeTest(parameterized.TestCase):
           "Expected {}, got {}".format(expected_output, sliced))
 
 
-@unittest.skipIf(pd is None, "pandas is not available")
-class DataFrameToRecordBatchTest(parameterized.TestCase):
+class CanonicalizeRecordBatchTest(parameterized.TestCase):
 
-  def testDataFrameToRecordBatch(self):
-
-    df_data = pd.DataFrame([{
-        "age": 17,
-        "language": "english",
-        "prediction": False,
-        "label": False,
-        "complex_var": 2 + 3j
-    }, {
-        "age": 30,
-        "language": "spanish",
-        "prediction": True,
-        "label": True,
-        "complex_var": 2 + 3j
-    }])
-
-    expected_fields = {"age", "language", "prediction", "label"}
-    expected_row_counts = collections.Counter({
-        (17, 30): 1,
-        (0, 1): 2,
-        (b"english", b"spanish"): 1
-    })
-
-    rb_data = table_util.DataFrameToRecordBatch(df_data)
-    self.assertSetEqual(set(rb_data.schema.names), expected_fields)
-
-    actual_row_counts = collections.Counter()
-    for col in rb_data.columns:
-      row = tuple(col.to_pylist())
-      actual_row_counts[row] += 1
-    self.assertDictEqual(actual_row_counts, expected_row_counts)
+  def testCanonicalizeRecordBatch(self):
+    rb_data = pa.RecordBatch.from_arrays([
+        pa.array([17, 30], pa.int32()),
+        pa.array(["english", "spanish"]),
+        pa.array([False, True]),
+        pa.array([False, True]),
+        pa.array([["ne"], ["s", "ted"]])
+    ], ["age", "language", "prediction", "label", "nested"])
 
     canonicalized_rb_data = table_util.CanonicalizeRecordBatch(rb_data)
-    self.assertSetEqual(
-        set(canonicalized_rb_data.schema.names), expected_fields)
+    self.assertEqual(canonicalized_rb_data.schema.names, rb_data.schema.names)
 
-    actual_row_counts = collections.Counter()
-    for col in canonicalized_rb_data.columns:
-      col = col.to_pylist()
-      row = (col[0][0], col[1][0])
-      actual_row_counts[row] += 1
-    self.assertDictEqual(actual_row_counts, expected_row_counts)
-
-    expected_age_column = pa.array([[17], [30]], type=pa.list_(pa.int64()))
+    expected_age_column = pa.array([[17], [30]], type=pa.large_list(pa.int64()))
     expected_language_column = pa.array([["english"], ["spanish"]],
-                                        type=pa.list_(pa.binary()))
-    expected_prediction_column = pa.array([[0], [1]], type=pa.list_(pa.int8()))
-    expected_label_column = pa.array([[0], [1]], type=pa.list_(pa.int8()))
+                                        type=pa.large_list(pa.large_binary()))
+    expected_prediction_column = pa.array([[0], [1]],
+                                          type=pa.large_list(pa.int8()))
+    expected_label_column = pa.array([[0], [1]], type=pa.large_list(pa.int8()))
+    expected_nested_column = pa.array([["ne"], ["s", "ted"]],
+                                      type=pa.large_list(pa.large_binary()))
     self.assertTrue(
         canonicalized_rb_data.column(
             canonicalized_rb_data.schema.get_field_index("age")).equals(
@@ -588,6 +550,10 @@ class DataFrameToRecordBatchTest(parameterized.TestCase):
         canonicalized_rb_data.column(
             canonicalized_rb_data.schema.get_field_index("label")).equals(
                 expected_label_column))
+    self.assertTrue(
+        canonicalized_rb_data.column(
+            canonicalized_rb_data.schema.get_field_index("nested")).equals(
+                expected_nested_column))
 
 
 if __name__ == "__main__":

@@ -650,23 +650,25 @@ _TO_SINGLETON_LIST_ARRAY_TEST_CASES = [
     dict(
         testcase_name="empty",
         array=pa.array([], type=pa.int32()),
-        expected_result=pa.array([], type=pa.list_(pa.int32())),
+        expected_result=pa.array([], type=pa.large_list(pa.int32())),
     ),
     dict(
         testcase_name="no_null",
         array=pa.array([1, 2, 3]),
-        expected_result=pa.array([[1], [2], [3]]),
+        expected_result=pa.array([[1], [2], [3]],
+                                 type=pa.large_list(pa.int64())),
     ),
     dict(
         testcase_name="all_nulls",
         array=pa.array([None, None, None], type=pa.binary()),
         expected_result=pa.array([None, None, None],
-                                 type=pa.list_(pa.binary())),
+                                 type=pa.large_list(pa.binary())),
     ),
     dict(
         testcase_name="some_nulls",
         array=pa.array([None, None, 2, 3, None, 4, None, None]),
-        expected_result=pa.array([None, None, [2], [3], None, [4], None, None]),
+        expected_result=pa.array([None, None, [2], [3], None, [4], None, None],
+                                 type=pa.large_list(pa.int64())),
     ),
 ]
 

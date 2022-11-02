@@ -40,20 +40,21 @@ except ImportError:
 # pylint: enable=unused-import
 
 
-def ToSingletonListArray(array: pa.Array):
-  """Converts an array of `type` to a `ListArray<type>`.
+def ToSingletonListArray(array: pa.Array) -> pa.Array:
+  """Converts an array of `type` to a `LargeListArray<type>`.
 
   Where result[i] is null if array[i] is null; [array[i]] otherwise.
 
   Args:
     array: an arrow Array.
+
   Returns:
-    a ListArray.
+    a LargeListArray.
   """
   array_size = len(array)
   # fast path: values are not copied.
   if array.null_count == 0:
-    return pa.ListArray.from_arrays(
+    return pa.LargeListArray.from_arrays(
         pa.array(np.arange(0, array_size + 1, dtype=np.int32)), array)
 
   # null_mask[i] = 1 iff array[i] is null.
@@ -69,7 +70,7 @@ def ToSingletonListArray(array: pa.Array):
   list_array_null_mask = np.zeros((array_size + 1,), bool)
   list_array_null_mask[:array_size] = null_mask.view(bool)
   values_non_null = array.take(pa.array(np.flatnonzero(presence_mask)))
-  return pa.ListArray.from_arrays(
+  return pa.LargeListArray.from_arrays(
       pa.array(offsets_np, mask=list_array_null_mask), values_non_null)
 
 
