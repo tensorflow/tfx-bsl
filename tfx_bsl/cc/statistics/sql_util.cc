@@ -29,9 +29,10 @@ using tensorflow::metadata::v0::FeatureNameStatistics;
 
 namespace {
 
-zetasql_base::StatusOr<bool> GetResult(
+absl::StatusOr<bool> GetResult(
     const zetasql_base::StatusOr<zetasql::Value>& result_or) {
-  if (!result_or.ok()) return result_or.status();
+  // Potentially convert from zetasql to absl on OSS.
+  if (!result_or.ok()) return absl::StatusOr<bool>(result_or.status());
   zetasql::Value value = result_or.value();
   if (value.is_null()) {
     // Maybe this should be false and not an error state?
@@ -48,7 +49,7 @@ zetasql_base::StatusOr<bool> GetResult(
 
 }  // namespace
 
-zetasql_base::StatusOr<bool> EvaluatePredicate(
+absl::StatusOr<bool> EvaluatePredicate(
     const FeatureNameStatistics& feature_statistics,
     const std::string& query) {
   zetasql::TypeFactory type_factory;
@@ -75,7 +76,7 @@ zetasql_base::StatusOr<bool> EvaluatePredicate(
       {{"feature", zetasql::values::Proto(proto_type, feature_statistics)}}));
 }
 
-zetasql_base::StatusOr<bool> EvaluatePredicate(
+absl::StatusOr<bool> EvaluatePredicate(
     const FeatureNameStatistics&
         feature_statistics_base,
     const FeatureNameStatistics&

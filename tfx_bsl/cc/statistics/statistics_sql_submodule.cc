@@ -38,7 +38,7 @@ void DefineEvaluatePredicate(py::module m) {
         if (!feature_stats.ParseFromString(feature_stats_serialized)) {
           throw std::runtime_error("Failed to parse FeatureNameStatistics.");
         }
-        zetasql_base::StatusOr<bool> result_or =
+        absl::StatusOr<bool> result_or =
             statistics::EvaluatePredicate(feature_stats, query);
         if (!result_or.ok()) {
           throw std::runtime_error(result_or.status().ToString());
@@ -63,7 +63,7 @@ void DefineEvaluatePredicate(py::module m) {
                 test_feature_stats_serialized)) {
           throw std::runtime_error("Failed to parse FeatureNameStatistics.");
         }
-        zetasql_base::StatusOr<bool> result_or = statistics::EvaluatePredicate(
+        absl::StatusOr<bool> result_or = statistics::EvaluatePredicate(
             base_feature_stats, test_feature_stats, query);
         if (!result_or.ok()) {
           throw std::runtime_error(result_or.status().ToString());

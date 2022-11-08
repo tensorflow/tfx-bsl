@@ -11,36 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef THIRD_PARTY_PY_TFX_BSL_CC_STATISTICS_SQL_UTIL_H_
-#define THIRD_PARTY_PY_TFX_BSL_CC_STATISTICS_SQL_UTIL_H_
-
-#include <string>
-
 #include "absl/status/statusor.h"
 #include "tensorflow_metadata/proto/v0/statistics.pb.h"
 
 namespace tfx_bsl {
 namespace statistics {
 
-// APIs are experimental.
-
-// Evaluates a GoogleSQL expression returning a bool with `feature_statistics`
-// bound to `feature`.
+// No-op version of EvaluatePredicate for Windows.
 absl::StatusOr<bool> EvaluatePredicate(
     const tensorflow::metadata::v0::FeatureNameStatistics& feature_statistics,
-    const std::string& query);
+    const std::string& query) {
+  return absl::UnimplementedError(
+      "EvaluatePredicate not supported on Windows.");
+}
 
-// Evaluates a GoogleSQL expression returning a bool with
-// `feature_statistics_base` bound to `feature_base` and
-// `feature_statistics_test` bound to `feature_test`.
+// No-op version of EvaluatePredicate for Windows.
 absl::StatusOr<bool> EvaluatePredicate(
     const tensorflow::metadata::v0::FeatureNameStatistics&
         feature_statistics_base,
     const tensorflow::metadata::v0::FeatureNameStatistics&
         feature_statistics_test,
-    const std::string& query);
+    const std::string& query) {
+  return absl::UnimplementedError(
+      "EvaluatePredicate not supported on Windows.");
+}
 
 }  // namespace statistics
 }  // namespace tfx_bsl
-
-#endif  // THIRD_PARTY_PY_TFX_BSL_CC_STATISTICS_SQL_UTIL_H_

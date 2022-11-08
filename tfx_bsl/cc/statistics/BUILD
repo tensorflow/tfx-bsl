@@ -45,18 +45,27 @@ cc_library(
 
 cc_library(
     name = "sql_util",
-    srcs = ["sql_util.cc"],
+    srcs = select({
+        "@bazel_tools//src/conditions:windows": [
+            "sql_util_windows.cc",
+        ],
+        "//conditions:default": ["sql_util.cc"],
+    }),
     hdrs = ["sql_util.h"],
     visibility = [
         "//visibility:public",
     ],
-    deps = [
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
+    deps = select({
+        "@bazel_tools//src/conditions:windows": [],
+        "//conditions:default": [
+            "@com_google_zetasql//zetasql/public:analyzer_options",
+            "@com_google_zetasql//zetasql/public:evaluator",
+            "@com_google_zetasql//zetasql/public:value",
+        ],
+    }) + [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_zetasql//zetasql/public:analyzer_options",
-        "@com_google_zetasql//zetasql/public:evaluator",
-        "@com_google_zetasql//zetasql/public:value",
+        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
     ],
 )
 
