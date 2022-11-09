@@ -605,7 +605,7 @@ def _LegacyInferDefaultValue(
     return default_value
   else:
     logging.info(
-        "Feature %s has min_fraction = 1 (%s). Not setting defalut value.",
+        "Feature %s has min_fraction = 1 (%s). Not setting default value.",
         feature_proto.name, feature_proto.presence)
     return None
 
