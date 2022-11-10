@@ -79,9 +79,10 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         self._schema.SerializeToString()).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
-    result = (
-        tensor_representation_util.GetTensorRepresentationsFromSchema(
-            self._schema))
+    # TODO(b/202791319) Switch to `InferTensorRepresentationsFromMixedSchema`
+    # once it handles `STRUCT` features correctly.
+    result = tensor_representation_util.GetTensorRepresentationsFromSchema(
+        self._schema)
     if result is None:
       raise ValueError("For SequenceExample, TensorRepresentations must be "
                        "specified in the schema.")

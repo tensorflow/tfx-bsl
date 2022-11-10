@@ -186,14 +186,8 @@ class ParquetTFXIO(record_based_tfxio.RecordBasedTFXIO):
       return pq.read_schema(f)
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
-    result = (
-        tensor_representation_util.GetTensorRepresentationsFromSchema(
-            self._schema))
-    if result is None:
-      result = (
-          tensor_representation_util.InferTensorRepresentationsFromSchema(
-              self._schema))
-    return result
+    return tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
+        self._schema)
 
   def _ProjectImpl(self, tensor_names: List[str]) -> tfxio.TFXIO:
     """Returns a projected TFXIO.

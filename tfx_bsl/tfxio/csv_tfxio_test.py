@@ -293,7 +293,21 @@ class CsvRecordTest(parameterized.TestCase):
     tfxio = self._MakeTFXIO(
         _COLUMN_NAMES, schema=schema,
         make_beam_record_tfxio=use_beam_record_csv_tfxio)
-    self.assertEqual(tensor_representations, tfxio.TensorRepresentations())
+
+    expected_tensor_representations = {
+        "int_feature":
+            text_format.Parse(
+                """varlen_sparse_tensor { column_name: "int_feature"}""",
+                schema_pb2.TensorRepresentation()),
+        "float_feature":
+            text_format.Parse(
+                """varlen_sparse_tensor { column_name: "float_feature"}""",
+                schema_pb2.TensorRepresentation()),
+    }
+    expected_tensor_representations.update(tensor_representations)
+
+    self.assertEqual(expected_tensor_representations,
+                     tfxio.TensorRepresentations())
 
   @parameterized.named_parameters(*_CSV_TFXIO_IMPL_TEST_CASES)
   def testProjection(self, use_beam_record_csv_tfxio):
@@ -319,8 +333,8 @@ class CsvRecordTest(parameterized.TestCase):
                                             expected_schema))
       tensor_adapter = projected_tfxio.TensorAdapter()
       dict_of_tensors = tensor_adapter.ToBatchTensors(record_batch)
-      self.assertLen(dict_of_tensors, 1)
       self.assertIn("int_feature", dict_of_tensors)
+      self.assertLen(dict_of_tensors, 1)
 
     p = beam.Pipeline()
     record_batch_pcoll = (

@@ -299,7 +299,19 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
             tensor_representation=tensor_representations))
 
     tfxio = self._MakeTFXIO(schema)
-    self.assertEqual(tensor_representations,
+
+    expected_tensor_representations = {
+        "int_feature":
+            text_format.Parse(
+                """varlen_sparse_tensor { column_name: "int_feature"}""",
+                schema_pb2.TensorRepresentation()),
+        "float_feature":
+            text_format.Parse(
+                """varlen_sparse_tensor { column_name: "float_feature"}""",
+                schema_pb2.TensorRepresentation()),
+    }
+    expected_tensor_representations.update(tensor_representations)
+    self.assertEqual(expected_tensor_representations,
                      tfxio.TensorRepresentations())
 
   def testProjection(self):
@@ -481,11 +493,11 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
         batch_size=1, shuffle=False, num_epochs=1)
     for i, parsed_examples_dict in enumerate(
         tfxio.TensorFlowDataset(options=options)):
-      self.assertLen(parsed_examples_dict, 1)
-      for tensor_name, tensor in parsed_examples_dict.items():
-        self.assertEqual(tensor_name, "var_len_feature")
-        self._AssertSparseTensorEqual(
-            tensor, _EXAMPLES_AS_TENSORS[i]["string_feature"])
+      self.assertLen(parsed_examples_dict, 3)
+      for name in ["var_len_feature", "int_feature", "float_feature"]:
+        self.assertIn(name, parsed_examples_dict)
+      self._AssertSparseTensorEqual(parsed_examples_dict["var_len_feature"],
+                                    _EXAMPLES_AS_TENSORS[i]["string_feature"])
 
   @unittest.skipIf(tf.__version__ < "2", "Skip for TF2")
   def testTensorFlowDatasetWithRaggedTensorRepresentation(self):

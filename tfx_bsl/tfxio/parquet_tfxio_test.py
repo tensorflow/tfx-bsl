@@ -214,7 +214,20 @@ class ParquetRecordTest(absltest.TestCase):
         column_names=_COLUMN_NAMES,
         schema=schema,
         telemetry_descriptors=_TELEMETRY_DESCRIPTORS)
-    self.assertEqual(tensor_representations, tfxio.TensorRepresentations())
+
+    expected_tensor_representations = {
+        "int_feature":
+            text_format.Parse(
+                """varlen_sparse_tensor { column_name: "int_feature"}""",
+                schema_pb2.TensorRepresentation()),
+        "float_feature":
+            text_format.Parse(
+                """varlen_sparse_tensor { column_name: "float_feature"}""",
+                schema_pb2.TensorRepresentation()),
+    }
+    expected_tensor_representations.update(tensor_representations)
+    self.assertEqual(expected_tensor_representations,
+                     tfxio.TensorRepresentations())
 
   def testReadMultipleFiles(self):
     """Tests multiple file input patterns."""

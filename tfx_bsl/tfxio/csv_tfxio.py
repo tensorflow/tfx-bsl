@@ -36,7 +36,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
                physical_format: Text,
                column_names: List[Text],
                delimiter: Optional[Text] = ",",
-               skip_blank_lines: Optional[bool] = True,
+               skip_blank_lines: bool = True,
                multivalent_columns: Optional[Text] = None,
                secondary_delimiter: Optional[Text] = None,
                schema: Optional[schema_pb2.Schema] = None,
@@ -60,6 +60,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
         raise ValueError(
             "Schema features are not a subset of column names: {} vs {}".format(
                 column_names, feature_names))
+    self._schema_projected = False
 
   def SupportAttachingRawRecords(self) -> bool:
     return True
@@ -106,7 +107,11 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
         self._column_names,
         self._schema)
 
-  def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
+  def _TensorRepresentations(
+      self, merge_inferred) -> tensor_adapter.TensorRepresentations:
+    if merge_inferred:
+      return tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
+          self._schema)
     result = (
         tensor_representation_util.GetTensorRepresentationsFromSchema(
             self._schema))
@@ -116,10 +121,13 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
               self._schema))
     return result
 
+  def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
+    return self._TensorRepresentations(not self._schema_projected)
+
   def _ProjectTfmdSchemaTensorRepresentation(
       self, tensor_names: List[Text]) -> schema_pb2.Schema:
     """Creates the tensor representation for choosen tensor_names."""
-    tensor_representations = self.TensorRepresentations()
+    tensor_representations = self._TensorRepresentations(False)
     tensor_names = set(tensor_names)
 
     # The columns in the schema will remain the same, because the csv decoder
@@ -151,6 +159,7 @@ class _CsvTFXIOBase(record_based_tfxio.RecordBasedTFXIO):
     projected_schema = self._ProjectTfmdSchemaTensorRepresentation(tensor_names)
     result = copy.copy(self)
     result._schema = projected_schema  # pylint: disable=protected-access
+    result._schema_projected = True  # pylint: disable=protected-access
     return result
 
 
@@ -183,14 +192,14 @@ class CsvTFXIO(_CsvTFXIOBase):
                file_pattern: Text,
                column_names: List[Text],
                telemetry_descriptors: Optional[List[Text]] = None,
-               validate: Optional[bool] = True,
+               validate: bool = True,
                delimiter: Optional[Text] = ",",
                skip_blank_lines: Optional[bool] = True,
                multivalent_columns: Optional[Text] = None,
                secondary_delimiter: Optional[Text] = None,
                schema: Optional[schema_pb2.Schema] = None,
                raw_record_column_name: Optional[Text] = None,
-               skip_header_lines: Optional[int] = 0):
+               skip_header_lines: int = 0):
     """Initializes a CSV TFXIO.
 
     Args:
@@ -257,7 +266,7 @@ class CsvTFXIO(_CsvTFXIOBase):
       tensor_names: The columns to project.
     """
     projected_schema = self._ProjectTfmdSchemaTensorRepresentation(tensor_names)
-    return CsvTFXIO(
+    result = CsvTFXIO(
         file_pattern=self._file_pattern,
         column_names=self._column_names,
         validate=self._validate,
@@ -269,6 +278,8 @@ class CsvTFXIO(_CsvTFXIOBase):
         raw_record_column_name=self._raw_record_column_name,
         telemetry_descriptors=self.telemetry_descriptors,
         skip_header_lines=self._skip_header_lines)
+    result._schema_projected = True  # pylint: disable=protected-access
+    return result
 
   def RecordBatches(self, options: dataset_options.RecordBatchesOptions):
     raise NotImplementedError

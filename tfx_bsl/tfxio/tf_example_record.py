@@ -25,7 +25,7 @@ from tfx_bsl.tfxio import dataset_options
 from tfx_bsl.tfxio import dataset_util
 from tfx_bsl.tfxio import record_based_tfxio
 from tfx_bsl.tfxio import tensor_adapter
-from tfx_bsl.tfxio import tensor_representation_util as tensor_rep_util
+from tfx_bsl.tfxio import tensor_representation_util
 from tfx_bsl.tfxio import tfxio
 
 from tensorflow_metadata.proto.v0 import schema_pb2
@@ -89,11 +89,8 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         schema.SerializeToString()).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
-    result = tensor_rep_util.GetTensorRepresentationsFromSchema(self._schema)
-    if result is None:
-      result = (
-          tensor_rep_util.InferTensorRepresentationsFromSchema(self._schema))
-    return result
+    return tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
+        self._schema)
 
   def _GetSchemaForDecoding(self) -> schema_pb2.Schema:
     return (self._schema
@@ -124,7 +121,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     features = {}
     feature_name_to_tensor_name = {}
     for tensor_name, tensor_rep in self.TensorRepresentations().items():
-      paths = tensor_rep_util.GetSourceColumnsFromTensorRepresentation(
+      paths = tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
           tensor_rep)
       if len(paths) == 1:
         # The parser config refers to a single tf.Example feature. In this case,
@@ -137,9 +134,10 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         # the tensor representation key.
         column_name = tensor_name
         value_type = column_name_to_type[
-            tensor_rep_util.GetSourceValueColumnFromTensorRepresentation(
+            tensor_representation_util
+            .GetSourceValueColumnFromTensorRepresentation(
                 tensor_rep).initial_step()]
-      parse_config = tensor_rep_util.CreateTfExampleParserConfig(
+      parse_config = tensor_representation_util.CreateTfExampleParserConfig(
           tensor_rep, value_type)
 
       if _is_multi_column_parser_config(parse_config):
@@ -215,8 +213,9 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
     # Note: We only copy projected features into the new schema because the
     # coder, and ArrowSchema() only care about Schema.feature. If they start
     # depending on other Schema fields then those fields must also be projected.
-    projected_schema = tensor_rep_util.ProjectTensorRepresentationsInSchema(
-        self._schema, tensor_names)
+    projected_schema = (
+        tensor_representation_util.ProjectTensorRepresentationsInSchema(
+            self._schema, tensor_names))
     return TFExampleBeamRecord(self._physical_format,
                                self.telemetry_descriptors, projected_schema,
                                self.raw_record_column_name)
@@ -269,8 +268,9 @@ class TFExampleRecord(_TFExampleRecordBase):
     # Note: We only copy projected features into the new schema because the
     # coder, and ArrowSchema() only care about Schema.feature. If they start
     # depending on other Schema fields then those fields must also be projected.
-    projected_schema = tensor_rep_util.ProjectTensorRepresentationsInSchema(
-        self._schema, tensor_names)
+    projected_schema = (
+        tensor_representation_util.ProjectTensorRepresentationsInSchema(
+            self._schema, tensor_names))
     return TFExampleRecord(
         file_pattern=self._file_pattern,
         schema=projected_schema,
