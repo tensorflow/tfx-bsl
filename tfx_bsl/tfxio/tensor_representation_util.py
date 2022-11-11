@@ -168,12 +168,15 @@ def InferTensorRepresentationsFromMixedSchema(
         str(path) for path in GetSourceColumnsFromTensorRepresentation(
             tensor_representation))
   for name, tensor_representation in inferred_tensor_representations.items():
+    if name in source_columns:
+      # This feature is already used in the explicitly provided TRs.
+      continue
     if name in tensor_representations:
       logging.warning(
           "Feature name %s conflicts with tensor representation name in the "
-          "same schema. Ignoring the feature and using the tensor "
-          "representation.", name)
-    elif name not in source_columns:
+          "same schema that does not use the feature as its source column. "
+          "Ignoring the feature and using the tensor representation.", name)
+    else:
       tensor_representations[name] = tensor_representation
   return tensor_representations
 
@@ -370,6 +373,31 @@ def _ShouldIncludeFeature(
               feature.lifecycle_stage in _DISQUALIFYING_LIFECYCLE_STAGES)
 
 
+def _InferTensorRepresentationsFromStruct(
+    feature: schema_pb2.Feature) -> Dict[str, schema_pb2.TensorRepresentation]:
+  """Infers RaggedTensor TensorRepresentations from the given STRUCT feature."""
+  if feature.type != schema_pb2.FeatureType.STRUCT:
+    raise ValueError(
+        f"Expected STRUCT, got {feature.type} for feature {feature.name}.")
+  if feature.struct_domain.sparse_feature:
+    raise NotImplementedError(
+        f"Got sparse features in struct domain of {feature.name}. Struct "
+        "features with sparse domains are not supported.")
+  result = {}
+  struct_path = path.ColumnPath((feature.name,))
+  for child_feature in feature.struct_domain.feature:
+    if child_feature.type == schema_pb2.FeatureType.STRUCT:
+      raise NotImplementedError(
+          f"Got STRUCT feature {child_feature.name} in struct domain of "
+          f"{feature.name}. STRUCT features with multiple levels of nestedness "
+          "are not supported.")
+    child_path = struct_path.child(child_feature.name)
+    result[str(child_path)] = schema_pb2.TensorRepresentation(
+        ragged_tensor=schema_pb2.TensorRepresentation.RaggedTensor(
+            feature_path=child_path.to_proto()))
+  return result
+
+
 def _InferTensorRepresentationFromSchema(
     schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Translate a Feature proto into a TensorRepresentation proto.
@@ -400,7 +428,9 @@ def _InferTensorRepresentationFromSchema(
   for feature in columns_remaining.values():
     if not _ShouldIncludeFeature(feature):
       continue
-    if feature.HasField("shape"):
+    if feature.type == schema_pb2.FeatureType.STRUCT:
+      result.update(_InferTensorRepresentationsFromStruct(feature))
+    elif feature.HasField("shape"):
       if feature.presence.min_fraction != 1:
         raise ValueError(
             "Feature {} had shape {} set but min_fraction {} != 1.  Use"
@@ -537,6 +567,9 @@ def _LegacyInferTensorRepresentationFromSchema(
   result = {}
   for feature in schema.feature:
     if not _ShouldIncludeFeature(feature):
+      continue
+    if feature.type == schema_pb2.FeatureType.STRUCT:
+      result.update(_InferTensorRepresentationsFromStruct(feature))
       continue
     # Infer canonical tensorflow dtype.
     if feature.value_count.min < 0:

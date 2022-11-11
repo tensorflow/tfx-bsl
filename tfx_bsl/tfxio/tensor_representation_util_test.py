@@ -191,7 +191,52 @@ _INFER_TEST_CASES = [
                 }
               }
             """
-        })
+        }),
+    dict(
+        testcase_name='struct',
+        ascii_proto="""
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "string_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }""",
+        expected={
+            '##SEQUENCE##.int_feature':
+                """
+                ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "int_feature"
+                  }
+                }
+                """,
+            '##SEQUENCE##.string_feature':
+                """
+                ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "string_feature"
+                  }
+                }
+                """
+        }),
 ]
 
 _LEGACY_INFER_TEST_CASES = [
@@ -370,7 +415,54 @@ _LEGACY_INFER_TEST_CASES = [
           feature: {name: "x" type: INT deprecated: true}
         """,
         expected={},
-    )
+    ),
+    dict(
+        testcase_name='struct_legacy',
+        ascii_proto="""
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "string_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }""",
+        expected={
+            '##SEQUENCE##.int_feature':
+                """
+                ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "int_feature"
+                  }
+                }
+                """,
+            '##SEQUENCE##.string_feature':
+                """
+                ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "string_feature"
+                  }
+                }
+                """,
+        },
+        generate_legacy_feature_spec=True,
+    ),
 ]
 
 _MIXED_SCHEMA_INFER_TEST_CASES = [
@@ -523,6 +615,153 @@ _MIXED_SCHEMA_INFER_TEST_CASES = [
                   feature_path { step: "y" }
                 }
                 """,
+        },
+        schema_is_mixed=True,
+    ),
+    dict(
+        testcase_name='struct_feature',
+        ascii_proto="""
+          feature {
+            name: "int_feature"
+            type: INT
+            value_count {
+              min: 1
+              max: 1
+            }
+          }
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "string_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "int_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "int_feature"
+                            } } }
+              }
+            }
+          }
+        """,
+        expected={
+            'int_feature':
+                """ragged_tensor {
+                  feature_path {
+                    step: "int_feature"
+                  }
+                }""",
+            '##SEQUENCE##.string_feature':
+                """ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "string_feature"
+                  }
+                }""",
+            '##SEQUENCE##.int_feature':
+                """ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "int_feature"
+                  }
+                }""",
+        },
+        schema_is_mixed=True,
+    ),
+    dict(
+        testcase_name='struct_feature_with_tensor_representations',
+        ascii_proto="""
+          feature {
+            name: "int_feature"
+            type: INT
+            value_count {
+              min: 1
+              max: 1
+            }
+          }
+          feature {
+            name: "##SEQUENCE##"
+            type: STRUCT
+            struct_domain {
+              feature {
+                name: "int_feature"
+                type: INT
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+              feature {
+                name: "string_feature"
+                type: BYTES
+                value_count {
+                  min: 0
+                  max: 2
+                }
+              }
+            }
+          }
+          tensor_representation_group {
+            key: ""
+            value {
+              tensor_representation {
+                key: "seq_string_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "##SEQUENCE##" step: "string_feature"
+                            } } }
+              }
+              tensor_representation {
+                key: "seq_int_feature"
+                value { ragged_tensor {
+                            feature_path {
+                              step: "##SEQUENCE##" step: "int_feature"
+                            } } }
+              }
+            }
+          }
+        """,
+        expected={
+            'int_feature':
+                """
+                varlen_sparse_tensor {
+                  column_name: "int_feature"
+                }
+                """,
+            'seq_string_feature':
+                """ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "string_feature"
+                  }
+                }""",
+            'seq_int_feature':
+                """ragged_tensor {
+                  feature_path {
+                    step: "##SEQUENCE##"
+                    step: "int_feature"
+                  }
+                }""",
         },
         schema_is_mixed=True,
     ),

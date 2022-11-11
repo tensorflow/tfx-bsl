@@ -10,6 +10,10 @@
 ## Major Features and Improvements
 
 *   `TensorAdapter` now processes `tf.RaggedTensor`s in TF 2 ~10x faster.
+*   `InferTensorRepresentationsFromSchema` now infers `RaggedTensor`s for
+    `STRUCT` features.
+*   `TFSequenceExampleRecord` now supports schemas with features not covered or
+    partially covered by `TensorRepresentation`s.
 
 ## Bug Fixes and Other Changes
 
