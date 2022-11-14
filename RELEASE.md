@@ -2,10 +2,15 @@
 
 # Current Version (not yet released; still in development)
 
-*   This is the last version that supports TensorFlow 1.15.x. TF 1.15.x support
-    will be removed in the next version. Please check the
-    [TF2 migration guide](https://www.tensorflow.org/guide/migrate) to migrate
-    to TF2.
+## Major Features and Improvements
+
+## Bug Fixes and Other Changes
+
+## Breaking Changes
+
+## Deprecations
+
+# Version 1.11.0
 
 ## Major Features and Improvements
 
@@ -14,6 +19,11 @@
     `STRUCT` features.
 *   `TFSequenceExampleRecord` now supports schemas with features not covered or
     partially covered by `TensorRepresentation`s.
+
+*   This is the last version that supports TensorFlow 1.15.x. TF 1.15.x support
+    will be removed in the next version. Please check the
+    [TF2 migration guide](https://www.tensorflow.org/guide/migrate) to migrate
+    to TF2.
 
 ## Bug Fixes and Other Changes
 
@@ -25,7 +35,11 @@
 
 ## Breaking Changes
 
+*   N/A
+
 ## Deprecations
+
+*   N/A
 
 # Version 1.10.0
 
