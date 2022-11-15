@@ -144,7 +144,6 @@ def GetTensorRepresentationsFromSchema(
 def InferTensorRepresentationsFromSchema(
     schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Infers TensorRepresentations from the schema's Features."""
-  # TODO(zhuo): Add support for SparseFeature -> SparseTensor representation.
   if _ShouldUseLegacyLogic(schema):
     infer_func = _LegacyInferTensorRepresentationFromSchema
   else:
@@ -253,7 +252,8 @@ def CreateTfExampleParserConfig(
         index_key=sparse_tensor_rep.index_column_names,
         value_key=sparse_tensor_rep.value_column_name,
         dtype=value_dtype,
-        size=_GetDimsFromFixedShape(sparse_tensor_rep.dense_shape))
+        size=_GetDimsFromFixedShape(sparse_tensor_rep.dense_shape),
+        already_sorted=getattr(sparse_tensor_rep, "already_sorted", False))
   elif tensor_representation_kind == "ragged_tensor":
     if not hasattr(tf.io, "RaggedFeature"):
       raise NotImplementedError("TF1 does not support parsing ragged tensors.")
@@ -507,13 +507,15 @@ def _InferSparseTensorRepresentationsFromSchema(
       else:
         # Use -1 to denote unknown dimension size.
         shape.dim.add(size=-1)
-
+    # Explicitly set `already_sorted` only when it's set to true in the
+    # `SparseFeature` for backwards compatiblity.
     sparse_tensor_representations[sparse_feature.name] = (
         schema_pb2.TensorRepresentation(
             sparse_tensor=schema_pb2.TensorRepresentation.SparseTensor(
                 dense_shape=shape,
                 index_column_names=index_keys,
-                value_column_name=value_key)))
+                value_column_name=value_key,
+                already_sorted=sparse_feature.is_sorted or None)))
 
   return sparse_tensor_representations, columns_remaining
 

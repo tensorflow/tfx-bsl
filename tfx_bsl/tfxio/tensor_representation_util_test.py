@@ -124,6 +124,61 @@ _INFER_TEST_CASES = [
             """
         }),
     dict(
+        testcase_name='sparse_already_sorted',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+            int_domain { min: 0 max: 11 }
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+            is_sorted: true
+          }""",
+        expected={
+            'x':
+                """
+              sparse_tensor {
+                index_column_names: ["index_key"]
+                value_column_name: "value_key"
+                dense_shape {
+                  dim {
+                    size: 12
+                  }
+                }
+                already_sorted: true
+              }
+            """
+        }),
+    dict(
+        testcase_name='sparse_already_sorted_false',
+        ascii_proto="""
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            value_feature {name: "value_key"}
+            is_sorted: false
+          }""",
+        expected={
+            'x':
+                """
+              sparse_tensor {
+                value_column_name: "value_key"
+                dense_shape {
+                }
+              }
+            """
+        }),
+    dict(
         testcase_name='deprecated_feature',
         ascii_proto="""
           feature: {name: "x" type: INT lifecycle_stage: DEPRECATED}
@@ -1370,6 +1425,7 @@ _PROJECT_TENSOR_REPRESENTATIONS_IN_SCHEMA_TEST_CASES = [
                     }
                     index_column_names: "index_key"
                     value_column_name: "value_key"
+                    already_sorted: true
                   }
                 }
               }
@@ -1910,6 +1966,36 @@ def _MakeSparseFeatureTestCases():
           sparse_tensor_factory(
               indices=np.zeros((0, 1)), values=np.array([]), dense_shape=[-1])
   })
+  for already_sorted in (True, False):
+    result.append({
+        'testcase_name':
+            f'SparseFeature_already_sorted_{already_sorted}',
+        'tensor_representation':
+            f"""
+                  sparse_tensor {{
+                    index_column_names: ["key"]
+                    value_column_name: "value"
+                    dense_shape {{
+                      dim {{
+                        size: 1
+                      }}
+                    }}
+                    already_sorted: {'true' if already_sorted else 'false'}
+                  }}""",
+        'feature_type':
+            schema_pb2.FeatureType.BYTES,
+        'tf_example':
+            text_format.Parse('', tf.train.Example()).SerializeToString(),
+        'expected_feature':
+            tf.io.SparseFeature(
+                index_key=['key'],
+                value_key='value',
+                dtype=tf.string,
+                size=[1],
+                already_sorted=already_sorted),
+        'expected_parsed_results':
+            expected_parsed_results
+    })
   return result
 
 
