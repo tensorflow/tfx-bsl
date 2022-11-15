@@ -3,6 +3,9 @@
 # Current Version (not yet released; still in development)
 
 ## Major Features and Improvements
+*   `InferTensorRepresentationsFromSchema`, `TensorAdapter` and
+    `TensorsToRecordBatchConverter` now support `SparseTensor`s with unknown
+    `dense_shape`.
 
 ## Bug Fixes and Other Changes
 

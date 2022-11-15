@@ -419,9 +419,10 @@ class _SparseTensorHandler(_TypeHandler):
 
   @property
   def type_spec(self) -> common_types.TensorTypeSpec:
+    batched_shape = [None] + [dim if dim != -1 else None for dim in self._shape]
     return typing.cast(
         tf.TypeSpec,
-        tf.SparseTensorSpec(tf.TensorShape([None] + self._shape), self._dtype))
+        tf.SparseTensorSpec(tf.TensorShape(batched_shape), self._dtype))
 
   def GetTensor(self, record_batch: pa.RecordBatch,
                 produce_eager_tensors: bool) -> Any:
@@ -463,8 +464,6 @@ class _SparseTensorHandler(_TypeHandler):
     sparse_representation = tensor_representation.sparse_tensor
     if (len(sparse_representation.dense_shape.dim) != len(
         sparse_representation.index_column_names)):
-      return False
-    if any([d.size <= 0 for d in sparse_representation.dense_shape.dim]):
       return False
 
     # All the index columns must be of integral types.

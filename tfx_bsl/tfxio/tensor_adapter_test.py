@@ -1165,23 +1165,6 @@ _INVALID_SPARSE_TENSOR_TEST_CASES = [
             "value": pa.list_(pa.int64()),
         }),
     dict(
-        testcase_name="invalid_dense_shape_dim_size",
-        tensor_representation_textpb="""
-         sparse_tensor {
-           index_column_names: ["key"]
-           value_column_name: "value"
-           dense_shape {
-             dim {
-               size: -1
-             }
-           }
-         }
-         """,
-        arrow_schema={
-            "key": pa.list_(pa.int64()),
-            "value": pa.list_(pa.int64()),
-        }),
-    dict(
         testcase_name="invalid_index_column_type",
         tensor_representation_textpb="""
          sparse_tensor {
@@ -1359,22 +1342,26 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
 
     self.assertAdapterCanProduceNonEagerInEagerMode(adapter, record_batch)
 
+  @parameterized.named_parameters(
+      dict(testcase_name="known_dense_shape", is_dense_shape_known=True),
+      dict(testcase_name="unknown_dense_shape", is_dense_shape_known=False))
   @test_util.run_in_graph_and_eager_modes
-  def test2DSparseTensor(self):
+  def test2DSparseTensor(self, is_dense_shape_known):
+    dense_shape = [10, 20] if is_dense_shape_known else [-1, -1]
     tensor_representation = text_format.Parse(
-        """
-        sparse_tensor {
+        f"""
+        sparse_tensor {{
           value_column_name: "values"
           index_column_names: ["d0", "d1"]
-          dense_shape {
-            dim {
-              size: 10
-            }
-            dim {
-              size: 20
-            }
-          }
-        }
+          dense_shape {{
+            dim {{
+              size: {dense_shape[0]}
+            }}
+            dim {{
+              size: {dense_shape[1]}
+            }}
+          }}
+        }}
         """, schema_pb2.TensorRepresentation())
     record_batch = pa.RecordBatch.from_arrays(
         [
@@ -1398,7 +1385,7 @@ class TensorAdapterTest(parameterized.TestCase, tf.test.TestCase):
                           (tf.SparseTensor, tf.compat.v1.SparseTensorValue))
     self.assertSparseAllEqual(
         tf.compat.v1.SparseTensorValue(
-            dense_shape=[5, 10, 20],
+            dense_shape=[5]+dense_shape,
             indices=[[0, 9, 0], [2, 9, 0], [3, 7, 0], [3, 8, 1], [3, 9, 2]],
             values=tf.convert_to_tensor([1, 2, 3, 4, 5], dtype=tf.int64)),
         actual_output)

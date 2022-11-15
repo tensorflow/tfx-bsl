@@ -193,6 +193,37 @@ _INFER_TEST_CASES = [
             """
         }),
     dict(
+        testcase_name='sparse_feature_no_index_int_domain',
+        ascii_proto="""
+          feature {
+            name: "index_key"
+            type: INT
+          }
+          feature {
+            name: "value_key"
+            type: INT
+          }
+          sparse_feature {
+            name: "x"
+            index_feature {name: "index_key"}
+            value_feature {name: "value_key"}
+          }
+        """,
+        expected={
+            'x':
+                """
+              sparse_tensor {
+                index_column_names: "index_key"
+                value_column_name: "value_key"
+                dense_shape {
+                  dim {
+                    size: -1
+                  }
+                }
+              }
+            """
+        }),
+    dict(
         testcase_name='struct',
         ascii_proto="""
           feature {
@@ -768,24 +799,6 @@ _MIXED_SCHEMA_INFER_TEST_CASES = [
 ]
 
 _INVALID_SCHEMA_INFER_TEST_CASES = [
-    dict(
-        testcase_name='sparse_feature_no_index_int_domain',
-        ascii_proto="""
-          feature {
-            name: "index_key"
-            type: INT
-          }
-          feature {
-            name: "value_key"
-            type: INT
-          }
-          sparse_feature {
-            name: "x"
-            index_feature {name: "index_key"}
-            value_feature {name: "value_key"}
-          }
-        """,
-        error_msg=r'Cannot determine dense shape of sparse feature'),
     dict(
         testcase_name='sparse_feature_no_index_int_domain_min',
         ascii_proto="""
@@ -1848,16 +1861,16 @@ def _MakeVarLenSparseFeatureTestCases():
 
 def _MakeSparseFeatureTestCases():
   result = []
-  tensor_representation_textpb = """
-                 sparse_tensor {
+  tensor_representation_textpb_template = """
+                 sparse_tensor {{
                    index_column_names: ["key"]
                    value_column_name: "value"
-                   dense_shape {
-                     dim {
-                       size: 1
-                     }
-                   }
-                 }"""
+                   dense_shape {{
+                     dim {{
+                       size: {dim}
+                     }}
+                   }}
+                 }}"""
   if tf.executing_eagerly():
     sparse_tensor_factory = tf.SparseTensor
   else:
@@ -1871,7 +1884,7 @@ def _MakeSparseFeatureTestCases():
         'testcase_name':
             'SparseFeature_{}'.format(schema_pb2.FeatureType.Name(t)),
         'tensor_representation':
-            tensor_representation_textpb,
+            tensor_representation_textpb_template.format(dim=1),
         'feature_type':
             t,
         'tf_example':
@@ -1881,6 +1894,22 @@ def _MakeSparseFeatureTestCases():
         'expected_parsed_results':
             expected_parsed_results
     })
+  result.append({
+      'testcase_name':
+          'SparseFeature_unknown_dense_shape',
+      'tensor_representation':
+          tensor_representation_textpb_template.format(dim=-1),
+      'feature_type':
+          schema_pb2.FeatureType.BYTES,
+      'tf_example':
+          text_format.Parse('', tf.train.Example()).SerializeToString(),
+      'expected_feature':
+          tf.io.SparseFeature(
+              index_key=['key'], value_key='value', dtype=tf.string, size=[-1]),
+      'expected_parsed_results':
+          sparse_tensor_factory(
+              indices=np.zeros((0, 1)), values=np.array([]), dense_shape=[-1])
+  })
   return result
 
 

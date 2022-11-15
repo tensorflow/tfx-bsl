@@ -505,9 +505,8 @@ def _InferSparseTensorRepresentationsFromSchema(
                                                  index_key))
         shape.dim.add(size=index_feature.int_domain.max + 1)
       else:
-        raise ValueError("Cannot determine dense shape of sparse feature {}."
-                         " The index feature {} had no int_domain set.".format(
-                             sparse_feature.name, index_key))
+        # Use -1 to denote unknown dimension size.
+        shape.dim.add(size=-1)
 
     sparse_tensor_representations[sparse_feature.name] = (
         schema_pb2.TensorRepresentation(

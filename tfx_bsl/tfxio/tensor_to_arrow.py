@@ -485,7 +485,7 @@ class _SparseTensorHandler(_TypeHandler):
   def tensor_representation(self) -> schema_pb2.TensorRepresentation:
     result = schema_pb2.TensorRepresentation()
     for d in self._unbatched_shape:
-      result.sparse_tensor.dense_shape.dim.add().size = d
+      result.sparse_tensor.dense_shape.dim.add().size = -1 if d is None else d
     result.sparse_tensor.value_column_name = self._value_column_name
     result.sparse_tensor.index_column_names.extend(self._index_column_names)
     return result
@@ -499,8 +499,6 @@ class _SparseTensorHandler(_TypeHandler):
       return False
     if (type_spec.shape.rank == 2 and
         tensor_name not in options.generic_sparse_tensor_names):
-      return False
-    if any(d is None for d in type_spec.shape.as_list()[1:]):
       return False
     return True
 

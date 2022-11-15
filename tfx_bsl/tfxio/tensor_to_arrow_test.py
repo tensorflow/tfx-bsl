@@ -495,6 +495,86 @@ _CONVERT_TEST_CASES = [
         expected_record_batch={
             "dt": pa.array([[], []], type=pa.large_list(pa.float32()))
         }),
+    dict(
+        testcase_name="generic_sparse_unknown_dense_shape",
+        type_specs={"sp": tf.SparseTensorSpec([None, None], tf.float32)},
+        expected_schema={
+            "sp$values": pa.large_list(pa.float32()),
+            "sp$index0": pa.large_list(pa.int64()),
+        },
+        expected_tensor_representations={
+            "sp":
+                """sparse_tensor {
+                dense_shape {
+                  dim {
+                    size: -1
+                  }
+                }
+                value_column_name: "sp$values"
+                index_column_names: "sp$index0"
+                }""",
+        },
+        tensor_input={
+            "sp":
+                tf.SparseTensor(
+                    values=np.asarray([2, 3, 6, 7], dtype=np.float32),
+                    indices=[[0, 0], [0, 2], [0, 4], [2, 1]],
+                    dense_shape=[4, -1]),
+        },
+        expected_record_batch={
+            "sp$values":
+                pa.array([[2, 3, 6], [], [7], []],
+                         type=pa.large_list(pa.float32())),
+            "sp$index0":
+                pa.array([[0, 2, 4], [], [1], []],
+                         type=pa.large_list(pa.int64())),
+        },
+        options=tensor_to_arrow.TensorsToRecordBatchConverter.Options(
+            generic_sparse_tensor_names=frozenset({"sp"}))),
+    dict(
+        testcase_name="generic_sparse_partially_known_dense_shape",
+        type_specs={"sp": tf.SparseTensorSpec([None, None, 10], tf.float32)},
+        expected_schema={
+            "sp$values": pa.large_list(pa.float32()),
+            "sp$index0": pa.large_list(pa.int64()),
+            "sp$index1": pa.large_list(pa.int64()),
+        },
+        expected_tensor_representations={
+            "sp":
+                """sparse_tensor {
+                dense_shape {
+                  dim {
+                    size: -1
+                  }
+                  dim {
+                    size: 10
+                  }
+                }
+                value_column_name: "sp$values"
+                index_column_names: "sp$index0"
+                index_column_names: "sp$index1"
+                }""",
+        },
+        tensor_input={
+            "sp":
+                tf.SparseTensor(
+                    values=np.asarray([2, 3], dtype=np.float32),
+                    indices=[[0, 0, 0], [1, 2, 7]],
+                    dense_shape=[2, -1, 10]),
+        },
+        expected_record_batch={
+            "sp$values":
+                pa.array([[2], [3]],
+                         type=pa.large_list(pa.float32())),
+            "sp$index0":
+                pa.array([[0], [2]],
+                         type=pa.large_list(pa.int64())),
+            "sp$index1":
+                pa.array([[0], [7]],
+                         type=pa.large_list(pa.int64())),
+        },
+        options=tensor_to_arrow.TensorsToRecordBatchConverter.Options(
+            generic_sparse_tensor_names=frozenset({"sp"})))
 ] + _make_2d_varlen_sparse_tensor_test_cases(
 ) + _make_2d_generic_sparse_tensor_test_cases(
 ) + _make_3d_ragged_tensor_test_cases() + _make_2d_dense_tensor_test_cases(
@@ -611,10 +691,6 @@ class TensorToArrowTest(test_case.TfxBslTestCase):
     self.assertAllEqual(adapter_output["sp"].dense_shape, [4, 1])
 
   def test_unable_to_handle(self):
-    with self.assertRaisesRegex(ValueError, "No handler found"):
-      tensor_to_arrow.TensorsToRecordBatchConverter(
-          {"sp": tf.SparseTensorSpec([None, None, None], tf.int32)})
-
     with self.assertRaisesRegex(ValueError, "No handler found"):
       tensor_to_arrow.TensorsToRecordBatchConverter(
           {"sp": tf.SparseTensorSpec([None, None], tf.bool)})
