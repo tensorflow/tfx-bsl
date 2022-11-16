@@ -36,6 +36,27 @@ _ALL_EXAMPLE_CODER_TYPES = {
     schema_pb2.FeatureType.BYTES: tf.string
 }
 
+
+def _DisqualifiedFeatureTestCases(generate_legacy_feature_spec=False):
+  result = []
+  for stage in tensor_representation_util._DISQUALIFYING_LIFECYCLE_STAGES:
+    stage_name = schema_pb2.LifecycleStage.Name(stage)
+    testcase_name_prefix = 'legacy' if generate_legacy_feature_spec else ''
+    result.append(
+        dict(
+            testcase_name=(
+                f'{testcase_name_prefix}_disqualified_feature_{stage_name}'),
+            ascii_proto=f"""
+                       feature {{
+                         name: "feature"
+                         type: INT
+                         lifecycle_stage: {stage_name}
+                       }}
+                       """,
+            expected={},
+            generate_legacy_feature_spec=generate_legacy_feature_spec))
+  return result
+
 _INFER_TEST_CASES = [
     # Test different shapes
     dict(
@@ -323,7 +344,7 @@ _INFER_TEST_CASES = [
                 }
                 """
         }),
-]
+] + _DisqualifiedFeatureTestCases()
 
 _LEGACY_INFER_TEST_CASES = [
     dict(
@@ -549,7 +570,7 @@ _LEGACY_INFER_TEST_CASES = [
         },
         generate_legacy_feature_spec=True,
     ),
-]
+] + _DisqualifiedFeatureTestCases(True)
 
 _MIXED_SCHEMA_INFER_TEST_CASES = [
     dict(

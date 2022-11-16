@@ -25,10 +25,10 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 
 _DEFAULT_TENSOR_REPRESENTATION_GROUP = ""
 
-_DISQUALIFYING_LIFECYCLE_STAGES = [
-    schema_pb2.DEPRECATED, schema_pb2.PLANNED, schema_pb2.ALPHA,
-    schema_pb2.DEBUG_ONLY
-]
+_DISQUALIFYING_LIFECYCLE_STAGES = (
+    schema_pb2.DEPRECATED, schema_pb2.DISABLED, schema_pb2.PLANNED,
+    schema_pb2.ALPHA, schema_pb2.DEBUG_ONLY, schema_pb2.VALIDATION_DERIVED,
+)
 
 # The schema proto may not contain this field, which means the legacy logic
 # does not apply.
@@ -249,7 +249,7 @@ def CreateTfExampleParserConfig(
   elif tensor_representation_kind == "sparse_tensor":
     sparse_tensor_rep = tensor_representation.sparse_tensor
     return tf.io.SparseFeature(
-        index_key=sparse_tensor_rep.index_column_names,
+        index_key=list(sparse_tensor_rep.index_column_names),
         value_key=sparse_tensor_rep.value_column_name,
         dtype=value_dtype,
         size=_GetDimsFromFixedShape(sparse_tensor_rep.dense_shape),
