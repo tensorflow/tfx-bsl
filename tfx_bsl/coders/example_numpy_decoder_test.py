@@ -63,7 +63,7 @@ _TF_EXAMPLE_DECODER_TESTS = [
           }
         ''',
         'decoded_example': {'x': np.array([b'string', b'list'],
-                                          dtype=np.object)}
+                                          dtype=object)}
     },
     {
         'testcase_name': 'int_feature_empty',
@@ -99,7 +99,7 @@ _TF_EXAMPLE_DECODER_TESTS = [
             }
           }
         ''',
-        'decoded_example': {'x': np.array([], dtype=np.object)}
+        'decoded_example': {'x': np.array([], dtype=object)}
     },
     {
         'testcase_name': 'feature_missing',

@@ -314,7 +314,7 @@ def AppendRawRecordColumn(
         "Record indices must be aligned with the record batch, but got "
         "different lengths: {} vs {}".format(
             len(record_indices), len(record_batch)))
-    raw_records = np.asarray(raw_records, dtype=np.object)[record_indices]
+    raw_records = np.asarray(raw_records, dtype=object)[record_indices]
   assert schema.get_field_index(column_name) == -1
   raw_record_column = CreateRawRecordColumn(raw_records)
   return pa.RecordBatch.from_arrays(

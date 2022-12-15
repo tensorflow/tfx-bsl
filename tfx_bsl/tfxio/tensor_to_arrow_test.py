@@ -335,7 +335,7 @@ _CONVERT_TEST_CASES = [
                     row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64)),
             "sp2":
                 tf.RaggedTensor.from_row_splits(
-                    values=np.asarray([b"x", b"y", b"z"], dtype=np.str),
+                    values=np.asarray([b"x", b"y", b"z"], dtype=str),
                     row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64))
         },
         expected_record_batch={
@@ -418,7 +418,7 @@ _CONVERT_TEST_CASES = [
                         [[[b"x", b"a", b"a"], [b"x", b"c", b"a"]],
                          [[b"y", b"a", b"a"], [b"y", b"c", b"a"]],
                          [[b"z", b"a", b"a"], [b"z", b"c", b"a"]]],
-                        dtype=np.str),
+                        dtype=str),
                     row_splits=np.asarray([0, 2, 2, 3], dtype=np.int64)),
             "rt3":
                 tf.RaggedTensor.from_row_splits(
