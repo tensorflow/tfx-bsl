@@ -646,7 +646,7 @@ class _BaseSavedModelHandler(_BaseModelHandler):
     return _IOTensorSpec(input_tensor_alias, input_tensor_name,
                          output_alias_tensor_names)
 
-  def _run_inference(self, examples: List[InputType],
+  def _run_inference(self, examples: List[InputType],  # pytype: disable=signature-mismatch  # overriding-return-type-checks
                      serialized_examples: List[bytes],
                      model: Any) -> Mapping[Text, np.ndarray]:
     result = model.run(
