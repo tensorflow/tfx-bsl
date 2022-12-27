@@ -15,7 +15,6 @@
 
 import os
 import tempfile
-import unittest
 
 from absl import flags
 import tensorflow as tf
@@ -60,8 +59,6 @@ class _DecoderForTestWithInvalidRecordIndexTensorName(_DecoderForTesting):
     return "does_not_exist"
 
 
-@unittest.skipIf(tf.__version__ < "2",
-                 "TfGraphRecordDecoder does not support TF 1.x")
 class TfGraphRecordDecoderTest(tf.test.TestCase):
 
   def setUp(self):

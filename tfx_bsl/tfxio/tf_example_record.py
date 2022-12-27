@@ -14,7 +14,7 @@
 """TFXIO implementation for tf.Example records."""
 
 import abc
-from typing import Any, Dict, Iterator, List, Optional, Text, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import apache_beam as beam
 import pyarrow as pa
@@ -38,9 +38,9 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
 
   def __init__(self,
                schema: Optional[schema_pb2.Schema] = None,
-               raw_record_column_name: Optional[Text] = None,
-               telemetry_descriptors: Optional[List[Text]] = None,
-               physical_format: Optional[Text] = None,
+               raw_record_column_name: Optional[str] = None,
+               telemetry_descriptors: Optional[List[str]] = None,
+               physical_format: Optional[str] = None,
                schema_for_decoding: Optional[schema_pb2.Schema] = None):
     # TODO(b/154648951): make telemetry_descriptors and physical_format required
     # arguments, when TFT's compatibility TFXIO starts setting them.
@@ -96,9 +96,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     return (self._schema
             if self._schema_for_decoding is None else self._schema_for_decoding)
 
-  def _GetTfExampleParserConfig(
-      self
-  ) -> Tuple[Dict[Text, Any], Dict[Text, Text]]:
+  def _GetTfExampleParserConfig(self) -> Tuple[Dict[str, Any], Dict[str, str]]:
     """Creates a dict feature spec that can be used in tf.io.parse_example().
 
     To reduce confusion: 'tensor name' are the keys of TensorRepresentations.
@@ -160,8 +158,8 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     return features, feature_name_to_tensor_name
 
   def _RenameFeatures(
-      self, feature_dict: Dict[Text, Any],
-      feature_name_to_tensor_name: Dict[Text, Text]) -> Dict[Text, Any]:
+      self, feature_dict: Dict[str, Any],
+      feature_name_to_tensor_name: Dict[str, str]) -> Dict[str, Any]:
     """Renames the feature keys to use the tensor representation keys."""
     renamed_feature_dict = {}
     for feature_name, tensor in feature_dict.items():
@@ -179,10 +177,10 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
   """
 
   def __init__(self,
-               physical_format: Text,
-               telemetry_descriptors: Optional[List[Text]] = None,
+               physical_format: str,
+               telemetry_descriptors: Optional[List[str]] = None,
                schema: Optional[schema_pb2.Schema] = None,
-               raw_record_column_name: Optional[Text] = None):
+               raw_record_column_name: Optional[str] = None):
     """Initializer.
 
     Args:
@@ -209,7 +207,7 @@ class TFExampleBeamRecord(_TFExampleRecordBase):
             .with_input_types(bytes)
             .with_output_types(bytes))
 
-  def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
+  def _ProjectImpl(self, tensor_names: List[str]) -> tfxio.TFXIO:
     # Note: We only copy projected features into the new schema because the
     # coder, and ArrowSchema() only care about Schema.feature. If they start
     # depending on other Schema fields then those fields must also be projected.
@@ -231,11 +229,11 @@ class TFExampleRecord(_TFExampleRecordBase):
   """TFXIO implementation for tf.Example on TFRecord."""
 
   def __init__(self,
-               file_pattern: Union[List[Text], Text],
+               file_pattern: Union[List[str], str],
                validate: bool = True,
                schema: Optional[schema_pb2.Schema] = None,
-               raw_record_column_name: Optional[Text] = None,
-               telemetry_descriptors: Optional[List[Text]] = None):
+               raw_record_column_name: Optional[str] = None,
+               telemetry_descriptors: Optional[List[str]] = None):
     """Initializes a TFExampleRecord TFXIO.
 
     Args:
@@ -264,7 +262,7 @@ class TFExampleRecord(_TFExampleRecordBase):
   def _RawRecordBeamSourceInternal(self) -> beam.PTransform:
     return record_based_tfxio.ReadTfRecord(self._file_pattern)
 
-  def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
+  def _ProjectImpl(self, tensor_names: List[str]) -> tfxio.TFXIO:
     # Note: We only copy projected features into the new schema because the
     # coder, and ArrowSchema() only care about Schema.feature. If they start
     # depending on other Schema fields then those fields must also be projected.
@@ -351,7 +349,7 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
   """Batches serialized protos bytes and decode them into an Arrow table."""
 
   def __init__(self, schema: Optional[schema_pb2.Schema],
-               raw_record_column_name: Optional[Text]):
+               raw_record_column_name: Optional[str]):
     """Initializer."""
     self._serialized_schema = None
     if schema is not None:
@@ -376,7 +374,7 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
           decoded, self._raw_record_column_name, examples)
 
 
-def _validate_tf_example_parser_config(config: Dict[Text, Any],
+def _validate_tf_example_parser_config(config: Dict[str, Any],
                                        schema: schema_pb2.Schema) -> None:
   """Validate a tf_example_parse_config by tracing parse_example."""
 
@@ -398,10 +396,4 @@ def _validate_tf_example_parser_config(config: Dict[Text, Any],
 
 
 def _is_multi_column_parser_config(parser_config):
-  if isinstance(parser_config, tf.io.SparseFeature):
-    return True
-  # Not all TF versions have tf.io.RaggedFeature.
-  if (hasattr(tf.io, "RaggedFeature") and
-      isinstance(parser_config, tf.io.RaggedFeature)):
-    return True
-  return False
+  return isinstance(parser_config, (tf.io.SparseFeature, tf.io.RaggedFeature))

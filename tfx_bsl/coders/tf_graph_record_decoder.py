@@ -14,10 +14,9 @@
 """TFGraphRecordDecoder and utilities to save and load them."""
 
 import abc
-from typing import Dict, Optional, Text, Union
+from typing import Dict, Optional, Union
 
 import tensorflow as tf
-from tfx_bsl.types import common_types
 
 from tensorflow.python.framework import composite_tensor  # pylint: disable=g-direct-tensorflow-import
 
@@ -40,7 +39,7 @@ class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
   interfaces listed in this base class available.
   """
 
-  def output_type_specs(self) -> Dict[Text, common_types.TensorTypeSpec]:
+  def output_type_specs(self) -> Dict[str, tf.TypeSpec]:
     """Returns the tf.TypeSpecs of the decoded tensors.
 
     Returns:
@@ -54,7 +53,7 @@ class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
     }
 
   @abc.abstractmethod
-  def decode_record(self, records: tf.Tensor) -> Dict[Text, TensorAlike]:
+  def decode_record(self, records: tf.Tensor) -> Dict[str, TensorAlike]:
     """Sub-classes should implement this.
 
     Implementations must use TF ops to derive the result (composite) tensors, as
@@ -77,7 +76,7 @@ class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
     """
 
   @property
-  def record_index_tensor_name(self) -> Optional[Text]:
+  def record_index_tensor_name(self) -> Optional[str]:
     """The name of the tensor indicating which record a slice is from.
 
     The decoded tensors are batch-aligned among themselves, but they don't
@@ -108,7 +107,7 @@ class TFGraphRecordDecoder(metaclass=abc.ABCMeta):
             autograph=False)
         .get_concrete_function())
 
-  def save(self, path: Text) -> None:
+  def save(self, path: str) -> None:
     """Saves this TFGraphRecordDecoder to a SavedModel at `path`.
 
     This functions the same as `tf_graph_record_decoder.save_decoder()`. This is
@@ -147,18 +146,18 @@ class LoadedDecoder(object):
     # TensorSpecs (instead of TensorAlikes).
     self._output_type_specs = self._decode_fun.structured_outputs.copy()
 
-  def decode_record(self, record: tf.Tensor) -> Dict[Text, TensorAlike]:
+  def decode_record(self, record: tf.Tensor) -> Dict[str, TensorAlike]:
     return self._decode_fun(record)
 
-  def output_type_specs(self) -> Dict[Text, tf.TypeSpec]:
+  def output_type_specs(self) -> Dict[str, tf.TypeSpec]:
     return self._output_type_specs
 
   @property
-  def record_index_tensor_name(self) -> Optional[Text]:
+  def record_index_tensor_name(self) -> Optional[str]:
     return self._record_index_tensor_name
 
 
-def save_decoder(decoder: TFGraphRecordDecoder, path: Text) -> None:
+def save_decoder(decoder: TFGraphRecordDecoder, path: str) -> None:
   """Saves a TFGraphRecordDecoder to a SavedModel."""
   m = tf.Module()
   m.decode_fun = decoder._make_concrete_decode_function()  # pylint:disable=protected-access
@@ -187,7 +186,7 @@ def save_decoder(decoder: TFGraphRecordDecoder, path: Text) -> None:
   tf.saved_model.save(m, path, signatures=signatures)
 
 
-def load_decoder(path: Text) -> LoadedDecoder:
+def load_decoder(path: str) -> LoadedDecoder:
   """Loads a TFGraphRecordDecoder from a SavedModel."""
   loaded_module = tf.saved_model.load(path)
   assert hasattr(loaded_module, "decode_fun"), (

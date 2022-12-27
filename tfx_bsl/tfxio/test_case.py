@@ -29,10 +29,6 @@ main = tf.test.main
 class TfxBslTestCase(parameterized.TestCase, tf.test.TestCase):
   """Base test class for testing tfxio code."""
 
-  def SkipIfNotTf2(self, reason: str):
-    if tf.__version__ < "2":
-      raise SkipTest(reason)
-
   def assertTensorsEqual(self,
                          left: common_types.TensorAlike,
                          right: common_types.TensorAlike,

@@ -15,7 +15,6 @@
 
 import os
 import tempfile
-import unittest
 
 from absl import flags
 import apache_beam as beam
@@ -109,8 +108,6 @@ def _write_decoder(decoder=_DecoderForTesting()):
   return result
 
 
-@unittest.skipIf(tf.__version__ < "2",
-                 "RecordToTensorTFXIO does not support TF 1.x")
 class RecordToTensorTfxioTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):

@@ -16,18 +16,17 @@
 import abc
 import functools
 import typing
-from typing import Any, Callable, Dict, List, Optional, Text, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
 import tensorflow as tf
 from tfx_bsl.arrow import array_util
 from tfx_bsl.arrow import path
-from tfx_bsl.types import common_types
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
-TensorRepresentations = Dict[Text, schema_pb2.TensorRepresentation]
+TensorRepresentations = Dict[str, schema_pb2.TensorRepresentation]
 
 
 class TensorAdapterConfig(object):
@@ -36,12 +35,10 @@ class TensorAdapterConfig(object):
   Contains all the information needed to create a TensorAdapter.
   """
 
-  def __init__(
-      self,
-      arrow_schema: pa.Schema,
-      tensor_representations: TensorRepresentations,
-      original_type_specs: Optional[Dict[Text,
-                                         common_types.TensorTypeSpec]] = None):
+  def __init__(self,
+               arrow_schema: pa.Schema,
+               tensor_representations: TensorRepresentations,
+               original_type_specs: Optional[Dict[str, tf.TypeSpec]] = None):
     self.arrow_schema = arrow_schema
     self.tensor_representations = tensor_representations
     self.original_type_specs = original_type_specs
@@ -113,7 +110,7 @@ class TensorAdapter(object):
             "TensorRepresentations. But for tensor {}, got {} vs {}".format(
                 tensor_name, original_type_spec, type_spec))
 
-  def OriginalTypeSpecs(self) -> Dict[Text, common_types.TensorTypeSpec]:
+  def OriginalTypeSpecs(self) -> Dict[str, tf.TypeSpec]:
     """Returns the origin's type specs.
 
     A TFXIO 'Y' may be a result of projection of another TFXIO 'X', in which
@@ -126,14 +123,14 @@ class TensorAdapter(object):
     """
     return self._original_type_specs
 
-  def TypeSpecs(self) -> Dict[Text, common_types.TensorTypeSpec]:
+  def TypeSpecs(self) -> Dict[str, tf.TypeSpec]:
     """Returns the TypeSpec for each tensor."""
     return self._type_specs
 
   def ToBatchTensors(
       self,
       record_batch: pa.RecordBatch,
-      produce_eager_tensors: Optional[bool] = None) -> Dict[Text, Any]:
+      produce_eager_tensors: Optional[bool] = None) -> Dict[str, Any]:
     """Returns a batch of tensors translated from `record_batch`.
 
     Args:
@@ -197,7 +194,7 @@ class _TypeHandler(abc.ABC):
     """
 
   @property
-  def type_spec(self) -> common_types.TensorTypeSpec:
+  def type_spec(self) -> tf.TypeSpec:
     """Returns the TypeSpec of the converted Tensor or CompositeTensor."""
     raise NotImplementedError
 
@@ -252,7 +249,7 @@ class _BaseDenseTensorHandler(_TypeHandler):
     self._unbatched_flat_len = int(np.prod(unbatched_shape, initial=1))
 
   @property
-  def type_spec(self) -> common_types.TensorTypeSpec:
+  def type_spec(self) -> tf.TypeSpec:
     # TF's type stub is not correct about TypeSpec and its sub-classes.
     return typing.cast(tf.TypeSpec, tf.TensorSpec(self._shape, self._dtype))
 
@@ -357,7 +354,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
-  def type_spec(self) -> common_types.TensorTypeSpec:
+  def type_spec(self) -> tf.TypeSpec:
     return typing.cast(
         tf.TypeSpec,
         tf.SparseTensorSpec(tf.TensorShape([None, None]), self._dtype))
@@ -418,7 +415,7 @@ class _SparseTensorHandler(_TypeHandler):
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
-  def type_spec(self) -> common_types.TensorTypeSpec:
+  def type_spec(self) -> tf.TypeSpec:
     batched_shape = [None] + [dim if dim != -1 else None for dim in self._shape]
     return typing.cast(
         tf.TypeSpec,
@@ -538,7 +535,7 @@ class _RaggedTensorHandler(_TypeHandler):
     self._convert_to_binary_fn = _GetConvertToBinaryFn(value_type)
 
   @property
-  def type_spec(self) -> common_types.TensorTypeSpec:
+  def type_spec(self) -> tf.TypeSpec:
     row_splits_dtype = tf.int64
     if (self._row_partition_dtype ==
         schema_pb2.TensorRepresentation.RowPartitionDType.INT32):
@@ -792,8 +789,8 @@ _TYPE_HANDLER_MAP = {
 
 
 def _BuildTypeHandlers(
-    tensor_representations: Dict[Text, schema_pb2.TensorRepresentation],
-    arrow_schema: pa.Schema) -> List[Tuple[Text, _TypeHandler]]:
+    tensor_representations: Dict[str, schema_pb2.TensorRepresentation],
+    arrow_schema: pa.Schema) -> List[Tuple[str, _TypeHandler]]:
   """Builds type handlers according to TensorRepresentations."""
   result = []
   for tensor_name, rep in tensor_representations.items():

@@ -18,18 +18,8 @@ from typing import Union
 import numpy as np
 import tensorflow as tf
 
-# TODO(b/146402007): Replace references with tf.TypeSpec and remove this once
-# pytype starts recognizing subclasses of TF classes.
-TensorTypeSpec = Union[tf.TensorSpec, tf.SparseTensorSpec, tf.RaggedTensorSpec,
-                       tf.TypeSpec]
-
-# RaggedFeature is not present in TF 1.x.
-if hasattr(tf.io, 'RaggedFeature'):
-  FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
-                          tf.io.SparseFeature, tf.io.RaggedFeature]
-else:
-  FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
-                          tf.io.SparseFeature]
+FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
+                        tf.io.SparseFeature, tf.io.RaggedFeature]
 
 TensorType = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor]
 

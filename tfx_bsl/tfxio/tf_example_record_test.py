@@ -499,7 +499,6 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
       self._AssertSparseTensorEqual(parsed_examples_dict["var_len_feature"],
                                     _EXAMPLES_AS_TENSORS[i]["string_feature"])
 
-  @unittest.skipIf(tf.__version__ < "2", "Skip for TF2")
   def testTensorFlowDatasetWithRaggedTensorRepresentation(self):
     schema = text_format.Parse(
         """
@@ -788,8 +787,6 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(expected_parsing_config, parser_config)
     self.assertAllEqual(expected_rename_dict, rename_dict)
 
-  @absltest.skipIf(tf.__version__ < "2",
-                     "RaggedFeature not supported on TF1.")
   def testValidGetTfExampleParserConfigWithRaggedFeature(self):
     schema_pbtxt = """
       feature {

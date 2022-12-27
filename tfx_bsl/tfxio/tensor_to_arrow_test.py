@@ -652,9 +652,6 @@ class TensorToArrowTest(test_case.TfxBslTestCase):
             "Only support converting SparseTensors, Tensors and RaggedTensors. "
             "Got: {}".format(type(tensor)))
 
-    if tf.__version__ >= "2":
-      convert_and_check(tensor_input, test_values_conversion=False)
-
     if tf.executing_eagerly():
       values_input = {
           k: convert_eager_to_value(v) for k, v in tensor_input.items()
@@ -676,16 +673,14 @@ class TensorToArrowTest(test_case.TfxBslTestCase):
         values=np.array([1, 2], np.int32),
         indices=[[0, 0], [2, 0]],
         dense_shape=[4, 2])
-    if tf.__version__ >= "2":
-      sp = tf.SparseTensor.from_value(sp)
+    sp = tf.SparseTensor.from_value(sp)
     converter = tensor_to_arrow.TensorsToRecordBatchConverter(type_specs)
     rb = converter.convert({"sp": sp})
     adapter = tensor_adapter.TensorAdapter(
         tensor_adapter.TensorAdapterConfig(
             arrow_schema=converter.arrow_schema(),
             tensor_representations=converter.tensor_representations()))
-    adapter_output = adapter.ToBatchTensors(
-        rb, produce_eager_tensors=tf.__version__ >= "2")
+    adapter_output = adapter.ToBatchTensors(rb, produce_eager_tensors=True)
     self.assertAllEqual(sp.values, adapter_output["sp"].values)
     self.assertAllEqual(sp.indices, adapter_output["sp"].indices)
     self.assertAllEqual(adapter_output["sp"].dense_shape, [4, 1])
@@ -698,13 +693,10 @@ class TensorToArrowTest(test_case.TfxBslTestCase):
   def test_incompatible_type_spec(self):
     converter = tensor_to_arrow.TensorsToRecordBatchConverter(
         {"sp": tf.SparseTensorSpec([None, None], tf.int32)})
-    sp_cls = (
-        tf.SparseTensor
-        if tf.__version__ >= "2" else tf.compat.v1.SparseTensorValue)
     with self.assertRaisesRegex(TypeError, "Expected SparseTensorSpec"):
       converter.convert({
           "sp":
-              sp_cls(
+              tf.SparseTensor(
                   indices=[[0, 1]],
                   values=tf.constant([0], dtype=tf.int64),
                   dense_shape=[4, 1])

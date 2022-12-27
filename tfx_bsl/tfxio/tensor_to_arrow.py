@@ -14,9 +14,8 @@
 """Utils to convert TF Tensors or their values to Arrow arrays."""
 
 import abc
-from typing import Dict, List, Text, Tuple, FrozenSet
+from typing import Dict, List, Tuple, FrozenSet
 
-from absl import logging
 import numpy as np
 import pyarrow as pa
 import tensorflow as tf
@@ -26,14 +25,8 @@ from tfx_bsl.types import common_types
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 
-if tf.__version__ < "2":
-  logging.warning("tfx_bsl.tfxio.tensor_to_arrow can only handle evaluated "
-                  "tensors (i.e. ndarays, SparseTensorValues and "
-                  "RaggedTensorValues) in TF 1.x.")
-
-
 class TensorsToRecordBatchConverter(object):
-  """Converts a Dict[Text, TensorAlike] to a RecordBatch."""
+  """Converts a Dict[str, TensorAlike] to a RecordBatch."""
 
   __slots__ = ["_handlers", "_arrow_schema"]
 
@@ -42,9 +35,9 @@ class TensorsToRecordBatchConverter(object):
 
     def __init__(
         self,
-        sparse_tensor_value_column_name_template: Text = "{tensor_name}$values",
+        sparse_tensor_value_column_name_template: str = "{tensor_name}$values",
         sparse_tensor_index_column_name_template:
-        Text = "{tensor_name}$index{index}",
+        str = "{tensor_name}$index{index}",
         generic_sparse_tensor_names: FrozenSet[str] = frozenset()):
       """Initialzier.
 
@@ -68,7 +61,8 @@ class TensorsToRecordBatchConverter(object):
           sparse_tensor_index_column_name_template)
       self.generic_sparse_tensor_names = generic_sparse_tensor_names
 
-  def __init__(self, type_specs: Dict[Text, common_types.TensorTypeSpec],
+  def __init__(self,
+               type_specs: Dict[str, tf.TypeSpec],
                options: Options = Options()):
     """Initializer.
 
@@ -95,7 +89,7 @@ class TensorsToRecordBatchConverter(object):
     return self._arrow_schema
 
   def tensor_representations(
-      self) -> Dict[Text, schema_pb2.TensorRepresentation]:
+      self) -> Dict[str, schema_pb2.TensorRepresentation]:
     """Returns the TensorRepresentations for each TensorAlike.
 
     The TypeSpecs of those TensorAlikes are specified in the initializer.
@@ -111,7 +105,7 @@ class TensorsToRecordBatchConverter(object):
         for tensor_name, handler in self._handlers
     }
 
-  def convert(self, tensors: Dict[Text,
+  def convert(self, tensors: Dict[str,
                                   common_types.TensorAlike]) -> pa.RecordBatch:
     """Converts a dict of tensors to a RecordBatch.
 
@@ -139,31 +133,13 @@ class _TypeHandler(abc.ABC):
 
   __slots__ = ["_tensor_name", "_type_spec"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec):
+  def __init__(self, tensor_name: str, type_spec: tf.TypeSpec):
     self._tensor_name = tensor_name
     self._type_spec = type_spec
 
   def convert(self, tensor: common_types.TensorAlike) -> List[pa.Array]:
     """Converts the given TensorAlike to pa.Arrays after validating its spec."""
-    if tf.__version__ < "2":
-      if isinstance(tensor, np.ndarray):
-        actual_spec = tf.TensorSpec(tensor.shape,
-                                    tf.dtypes.as_dtype(tensor.dtype))
-      elif isinstance(tensor, tf.compat.v1.SparseTensorValue):
-        actual_spec = tf.SparseTensorSpec(tensor.dense_shape,
-                                          tensor.values.dtype)
-      elif isinstance(tensor, tf.compat.v1.ragged.RaggedTensorValue):
-        actual_spec = tf.RaggedTensorSpec(
-            tensor.shape,
-            tensor.values.dtype,
-            ragged_rank=tensor.ragged_rank,
-            row_splits_dtype=tensor.row_splits.dtype)
-      else:
-        raise TypeError("Only ndarrays, SparseTensorValues and "
-                        "RaggedTensorValues are supported with TF 1.x, "
-                        "got {}".format(type(tensor)))
-    else:
-      actual_spec = tf.type_spec_from_value(tensor)
+    actual_spec = tf.type_spec_from_value(tensor)
     if not self._type_spec.is_compatible_with(actual_spec):
       raise TypeError("Expected {} but got {}".format(self._type_spec,
                                                       actual_spec))
@@ -199,7 +175,7 @@ class _TypeHandler(abc.ABC):
 
   @staticmethod
   @abc.abstractmethod
-  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: tf.TypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
     """Returns `True` if the handler can handle the given `tf.TypeSpec`."""
 
@@ -209,7 +185,7 @@ class _DenseTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type", "_unbatched_shape"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+  def __init__(self, tensor_name: str, type_spec: tf.TypeSpec,
                options: TensorsToRecordBatchConverter.Options):
     del options
     super().__init__(tensor_name, type_spec)
@@ -248,7 +224,7 @@ class _DenseTensorHandler(_TypeHandler):
         values_np, self._values_arrow_type))]
 
   @staticmethod
-  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: tf.TypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
     del tensor_name
     del options
@@ -271,7 +247,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+  def __init__(self, tensor_name: str, type_spec: tf.TypeSpec,
                options: TensorsToRecordBatchConverter.Options):
     del options
     super().__init__(tensor_name, type_spec)
@@ -319,7 +295,7 @@ class _VarLenSparseTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: tf.TypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
     if not isinstance(type_spec, tf.SparseTensorSpec):
       return False
@@ -333,7 +309,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
   __slots__ = ["_values_arrow_type", "_row_partition_dtype", "_unbatched_shape"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+  def __init__(self, tensor_name: str, type_spec: tf.TypeSpec,
                options: TensorsToRecordBatchConverter.Options):
     del options
     super().__init__(tensor_name, type_spec)
@@ -394,7 +370,7 @@ class _RaggedTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: tf.TypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
     del tensor_name
     del options
@@ -429,7 +405,7 @@ class _SparseTensorHandler(_TypeHandler):
   __slots__ = ["_values_arrow_type", "_unbatched_shape",
                "_value_column_name", "_index_column_names"]
 
-  def __init__(self, tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+  def __init__(self, tensor_name: str, type_spec: tf.TypeSpec,
                options: TensorsToRecordBatchConverter.Options):
     super().__init__(tensor_name, type_spec)
     self._values_arrow_type = _tf_dtype_to_arrow_type(type_spec.dtype)
@@ -491,7 +467,7 @@ class _SparseTensorHandler(_TypeHandler):
     return result
 
   @staticmethod
-  def can_handle(tensor_name: str, type_spec: common_types.TensorTypeSpec,
+  def can_handle(tensor_name: str, type_spec: tf.TypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
     if not isinstance(type_spec, tf.SparseTensorSpec):
       return False
@@ -520,15 +496,15 @@ def _tf_dtype_to_arrow_type(dtype: tf.DType):
 
 
 def _make_handlers(
-    type_specs: Dict[Text, common_types.TensorTypeSpec],
+    type_specs: Dict[str, tf.TypeSpec],
     options: TensorsToRecordBatchConverter.Options
-) -> List[Tuple[Text, _TypeHandler]]:
+) -> List[Tuple[str, _TypeHandler]]:
   return [(tensor_name, _get_handler(tensor_name, type_spec, options))
           for tensor_name, type_spec in sorted(type_specs.items())]
 
 
 def _get_handler(
-    tensor_name: Text, type_spec: common_types.TensorTypeSpec,
+    tensor_name: str, type_spec: tf.TypeSpec,
     options: TensorsToRecordBatchConverter.Options) -> _TypeHandler:
   """Returns a TypeHandler that can handle `type_spec`."""
   for handler_cls in _ALL_HANDLERS_CLS:

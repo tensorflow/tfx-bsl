@@ -13,8 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.tensor_representation_util."""
 
-import unittest
-
 import numpy as np
 import tensorflow as tf
 
@@ -2022,9 +2020,6 @@ def _MakeSparseFeatureTestCases():
 
 def _MakeRaggedFeatureTestCases():
   result = []
-  if tf.__version__ < '2':
-    # Skip the RaggedFeature tests as it wasn't available on TF1.
-    return result
 
   tensor_representation_textpb = """
     ragged_tensor {
@@ -2092,12 +2087,10 @@ _PARSE_EXAMPLE_TEST_CASES = _MakeFixedLenFeatureTestCases(
 ) + _MakeVarLenSparseFeatureTestCases() + _MakeSparseFeatureTestCases(
 ) + _MakeRaggedFeatureTestCases()
 
-
-def _MakeCreateTfSequenceExampleParserConfigTestCases():
-  result = [
-      dict(
-          testcase_name='_no_struct_feature',
-          schema="""
+_CREATE_SEQUENCE_EXAMPLE_PARSER_CONFIG_TEST_CASES = [
+    dict(
+        testcase_name='_no_struct_feature',
+        schema="""
           feature {
             name: "int_feature"
             type: INT
@@ -2116,20 +2109,14 @@ def _MakeCreateTfSequenceExampleParserConfigTestCases():
             }
           }
         """,
-          expected_context_features={
-              'int_feature': tf.io.VarLenFeature(dtype=tf.int64)
-          },
-          expected_sequence_features={},
-      )
-  ]
-  if tf.__version__ < '2':
-    # Sequence features can only be represented by `tf.io.RaggedFeatures` which
-    # are not present in TF 1.
-    return result
-  return result + [
-      dict(
-          testcase_name='_simple',
-          schema="""
+        expected_context_features={
+            'int_feature': tf.io.VarLenFeature(dtype=tf.int64)
+        },
+        expected_sequence_features={},
+    ),
+    dict(
+        testcase_name='_simple',
+        schema="""
           feature {
             name: "int_feature"
             type: INT
@@ -2196,28 +2183,28 @@ def _MakeCreateTfSequenceExampleParserConfigTestCases():
             }
           }
         """,
-          expected_context_features={
-              'int_feature': tf.io.VarLenFeature(dtype=tf.int64),
-              'float_feature': tf.io.VarLenFeature(dtype=tf.float32)
-          },
-          expected_sequence_features={
-              'seq_string_feature':
-                  tf.io.RaggedFeature(
-                      dtype=tf.string,
-                      value_key='string_feature',
-                      row_splits_dtype=tf.int64,
-                      partitions=[]),
-              'seq_int_feature':
-                  tf.io.RaggedFeature(
-                      dtype=tf.int64,
-                      value_key='int_feature',
-                      row_splits_dtype=tf.int64,
-                      partitions=[])
-          },
-      ),
-      dict(
-          testcase_name='_no_primitive_feature',
-          schema="""
+        expected_context_features={
+            'int_feature': tf.io.VarLenFeature(dtype=tf.int64),
+            'float_feature': tf.io.VarLenFeature(dtype=tf.float32)
+        },
+        expected_sequence_features={
+            'seq_string_feature':
+                tf.io.RaggedFeature(
+                    dtype=tf.string,
+                    value_key='string_feature',
+                    row_splits_dtype=tf.int64,
+                    partitions=[]),
+            'seq_int_feature':
+                tf.io.RaggedFeature(
+                    dtype=tf.int64,
+                    value_key='int_feature',
+                    row_splits_dtype=tf.int64,
+                    partitions=[])
+        },
+    ),
+    dict(
+        testcase_name='_no_primitive_feature',
+        schema="""
           feature {
             name: "##SEQUENCE##"
             type: STRUCT
@@ -2245,19 +2232,19 @@ def _MakeCreateTfSequenceExampleParserConfigTestCases():
             }
           }
         """,
-          expected_context_features={},
-          expected_sequence_features={
-              'seq_int_feature':
-                  tf.io.RaggedFeature(
-                      dtype=tf.int64,
-                      value_key='int_feature',
-                      row_splits_dtype=tf.int64,
-                      partitions=[])
-          },
-      ),
-      dict(
-          testcase_name='_sparse_feature',
-          schema="""
+        expected_context_features={},
+        expected_sequence_features={
+            'seq_int_feature':
+                tf.io.RaggedFeature(
+                    dtype=tf.int64,
+                    value_key='int_feature',
+                    row_splits_dtype=tf.int64,
+                    partitions=[])
+        },
+    ),
+    dict(
+        testcase_name='_sparse_feature',
+        schema="""
           feature {
             name: "index_key"
             type: INT
@@ -2299,17 +2286,17 @@ def _MakeCreateTfSequenceExampleParserConfigTestCases():
             }
           }
         """,
-          expected_context_features={},
-          expected_sequence_features={
-              'seq_int_feature':
-                  tf.io.RaggedFeature(
-                      dtype=tf.int64,
-                      value_key='int_feature',
-                      row_splits_dtype=tf.int64,
-                      partitions=[])
-          },
-      ),
-  ]
+        expected_context_features={},
+        expected_sequence_features={
+            'seq_int_feature':
+                tf.io.RaggedFeature(
+                    dtype=tf.int64,
+                    value_key='int_feature',
+                    row_splits_dtype=tf.int64,
+                    partitions=[])
+        },
+    ),
+]
 
 
 class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
@@ -2438,7 +2425,6 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
       tensor_representation_util.CreateTfExampleParserConfig(
           tensor_representation, feature_type)
 
-  @unittest.skipIf(tf.__version__ < '2', 'Skip for TF1.')
   def testCreateTfExampleParserConfigRagged(self):
     feature_type = schema_pb2.INT
     tensor_representation = text_format.Parse(
@@ -2498,7 +2484,7 @@ class TensorRepresentationUtilTest(parameterized.TestCase, tf.test.TestCase):
             schema, tensor_representation_group_name)
 
   @parameterized.named_parameters(
-      *_MakeCreateTfSequenceExampleParserConfigTestCases())
+      *_CREATE_SEQUENCE_EXAMPLE_PARSER_CONFIG_TEST_CASES)
   @test_util.run_all_in_graph_and_eager_modes
   def testCreateTfSequenceExampleParserConfig(self, schema,
                                               expected_context_features,

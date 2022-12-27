@@ -385,7 +385,6 @@ class TfSequenceExampleRecordTest(test_case.TfxBslTestCase):
       beam_testing_util.assert_that(record_batch_pcoll, _AssertFn)
 
   def testTensorAdapter(self):
-    self.SkipIfNotTf2("RaggedTensors have limited support in TF 1.")
     tfxio = self._MakeTFXIO(_SCHEMA)
     tensor_adapter = tfxio.TensorAdapter()
 
@@ -410,8 +409,6 @@ class TfSequenceExampleRecordTest(test_case.TfxBslTestCase):
       beam_testing_util.assert_that(tensors, _AssertFn)
 
   def testTensorFlowDataset(self):
-    self.SkipIfNotTf2("SequenceExample parsing requires `tf.io.RaggedFeature`s "
-                      "that are not present in TF 1.")
     tfxio = self._MakeTFXIO(_SCHEMA)
     # Expected tensors are batched with batch_size = 1.
     options = dataset_options.TensorFlowDatasetOptions(

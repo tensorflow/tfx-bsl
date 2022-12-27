@@ -255,8 +255,6 @@ def CreateTfExampleParserConfig(
         size=_GetDimsFromFixedShape(sparse_tensor_rep.dense_shape),
         already_sorted=getattr(sparse_tensor_rep, "already_sorted", False))
   elif tensor_representation_kind == "ragged_tensor":
-    if not hasattr(tf.io, "RaggedFeature"):
-      raise NotImplementedError("TF1 does not support parsing ragged tensors.")
     ragged_tensor_rep = tensor_representation.ragged_tensor
     if (ragged_tensor_rep.row_partition_dtype ==
         schema_pb2.TensorRepresentation.RowPartitionDType.INT32):
