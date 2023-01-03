@@ -32,35 +32,18 @@ def _IncrementCounter(element: int, counter_namespace: str,
 
 
 @beam.ptransform_fn
-def ExtractRecordBatchBytes(
-    dataset: beam.PCollection[pa.RecordBatch]) -> beam.PCollection[int]:
-  """Extracts the total bytes of the input PCollection of RecordBatch."""
-  return (dataset
-          | "GetRecordBatchSize" >> beam.Map(lambda rb: rb.nbytes)
-          | "SumTotalBytes" >> beam.CombineGlobally(sum))
-
-
-@beam.ptransform_fn
-def IncrementCounter(value: beam.PCollection[int], counter_namespace: str,
-                     counter_name: str) -> beam.PCollection[int]:
-  """Increments the given counter after summing the input values."""
-  return (value
-          | "SumCounterValue" >> beam.CombineGlobally(sum)
-          | "IncrementCounter" >> beam.Map(
-              _IncrementCounter,
-              counter_namespace=counter_namespace,
-              counter_name=counter_name))
-
-
-@beam.ptransform_fn
 def TrackRecordBatchBytes(dataset: beam.PCollection[pa.RecordBatch],
                           counter_namespace: str,
                           counter_name: str) -> beam.PCollection[int]:
   """Gathers telemetry on input record batch."""
-  return (dataset
-          | "GetRecordBatchSize" >> ExtractRecordBatchBytes()
-          | "IncrementCounter" >> IncrementCounter(
-              counter_namespace=counter_namespace, counter_name=counter_name))
+  counter = beam.metrics.Metrics.counter(counter_namespace, counter_name)
+
+  def counted_bytes(rb: pa.RecordBatch):
+    result = rb.nbytes
+    counter.inc(result)
+    return result
+
+  return dataset | "CountedBytes" >> beam.Map(counted_bytes)
 
 
 def _IncrementTensorRepresentationCounters(
