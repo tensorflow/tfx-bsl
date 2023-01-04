@@ -142,6 +142,25 @@ _RUN_OFFLINE_INFERENCE_TEST_CASES = [{
     'use_create_model_handler_beam_api': True
 }]
 
+_RUN_ALL_SAVED_INFERENCE_TYPES = [
+    dict(
+        testcase_name='multi_inference',
+        signature=['regress_diff', 'classify_sum'],
+    ),
+    dict(
+        testcase_name='regression',
+        signature=['regress_diff'],
+    ),
+    dict(
+        testcase_name='classification',
+        signature=['classify_sum'],
+    ),
+    dict(
+        testcase_name='prediction',
+        signature=[],
+    ),
+]
+
 
 class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
 
@@ -669,6 +688,52 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
       inference = (
           pipeline | beam.Create([input_element]) | inference_transform)
       self.assertEqual(inference.element_type, output_type)
+
+  @parameterized.named_parameters(_RUN_ALL_SAVED_INFERENCE_TYPES)
+  def test_create_model_handler_batch_elements_kwargs_no_param(self, signature):
+    # Tests that when no batch_elements_kwargs param is set that
+    # an empty dictionary is returned.
+    model_path = self._get_output_data_dir('model')
+    if not signature:
+      self._build_predict_model(model_path)
+    else:
+      self._build_multihead_model(model_path)
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+        saved_model_spec=model_spec_pb2.SavedModelSpec(
+            model_path=model_path, signature_name=signature))
+    model_handler = run_inference.create_model_handler(inference_spec_type,
+                                                       None, None)
+    self.assertEqual(model_handler.batch_elements_kwargs(), {})
+
+  @parameterized.named_parameters(_RUN_ALL_SAVED_INFERENCE_TYPES)
+  def test_create_model_handler_batch_elements_kwargs(self, signature):
+    # Tests that when batch_elements_kwargs param is set that
+
+    # the same dictionary is passed to batch_elements_kwargs.
+    test_batch_kwargs = {
+        'min_batch_size': 1,
+        'max_batch_size': 10,
+        'target_batch_overhead': 1.1,
+        'target_batch_duration_secs': 2.2,
+        'variance': 3.3,
+    }
+    model_path = self._get_output_data_dir('model')
+    if not signature:
+      self._build_predict_model(model_path)
+    else:
+      self._build_multihead_model(model_path)
+    inference_spec_type = model_spec_pb2.InferenceSpecType(
+        saved_model_spec=model_spec_pb2.SavedModelSpec(
+            model_path=model_path, signature_name=signature),
+        batch_parameters=model_spec_pb2.BatchParameters(
+            min_batch_size=1,
+            max_batch_size=10,
+            target_batch_overhead=1.1,
+            target_batch_duration_secs=2.2,
+            variance=3.3))
+    model_handler = run_inference.create_model_handler(inference_spec_type,
+                                                       None, None)
+    self.assertEqual(model_handler.batch_elements_kwargs(), test_batch_kwargs)
 
 
 _RUN_REMOTE_INFERENCE_TEST_CASES = [{

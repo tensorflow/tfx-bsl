@@ -370,6 +370,9 @@ class _BaseModelHandler(base.ModelHandler, metaclass=abc.ABCMeta):
         _METRICS_DESCRIPTOR_CLOUD_AI_PREDICTION)
     self._metrics_namespace = util.MakeTfxNamespace(
         [_METRICS_DESCRIPTOR_INFERENCE, operation_type, proximity_descriptor])
+    self._batch_elements_kwargs = {}
+    for desc, val in inference_spec_type.batch_parameters.ListFields():
+      self._batch_elements_kwargs[desc.name] = val
 
   def run_inference(
       self,
@@ -395,6 +398,9 @@ class _BaseModelHandler(base.ModelHandler, metaclass=abc.ABCMeta):
 
   def get_metrics_namespace(self):
     return self._metrics_namespace
+
+  def batch_elements_kwargs(self) -> Mapping[str, Any]:
+    return self._batch_elements_kwargs
 
   @abc.abstractmethod
   def _post_process(

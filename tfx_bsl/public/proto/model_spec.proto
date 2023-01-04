@@ -33,6 +33,12 @@ message InferenceSpecType {
     // TODO(b/151468119): Update user guide.
     AIPlatformPredictionModelSpec ai_platform_prediction_model_spec = 2;
   }
+
+  // Parameters that the RunInference transform will use in batching.
+  // These parameters should correspond to the parameters as defined in
+  // the [Apache Beam BatchElements
+  // Transform](https://beam.apache.org/releases/pydoc/2.42.0/apache_beam.transforms.util.html#apache_beam.transforms.util.BatchElements).
+  BatchParameters batch_parameters = 3;
 }
 
 // Used for models which are loaded in memory and run locally.
@@ -97,4 +103,29 @@ message AIPlatformPredictionModelSpec {
     // ]
     bool use_serialization_config = 4;
   }
+}
+
+// Parameters passed to the Apache Beam BatchElements transform.
+message BatchParameters {
+  // Optional.
+  // The smallest size of a batch.
+  int64 min_batch_size = 1;
+
+  // Optional.
+  // The largest size of a batch.
+  int64 max_batch_size = 2;
+
+  // Optional.
+  // A target for fixed_cost / time, as used in the formula
+  // time = fixed_cost + num_elements * per_element_cost
+  double target_batch_overhead = 3;
+
+  // Optional.
+  // A target for total time per bundle, in seconds.
+  double target_batch_duration_secs = 4;
+
+  // Optional.
+  // The permitted (relative) amount of deviation from the (estimated) ideal
+  // batch size used to produce a wider base for linear interpolation.
+  double variance = 5;
 }
