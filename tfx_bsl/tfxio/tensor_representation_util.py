@@ -21,6 +21,7 @@ import tensorflow as tf
 from tfx_bsl.arrow import path
 from tfx_bsl.types import common_types
 
+from tensorflow_metadata.proto.v0 import path_pb2
 from tensorflow_metadata.proto.v0 import schema_pb2
 
 _DEFAULT_TENSOR_REPRESENTATION_GROUP = ""
@@ -396,6 +397,18 @@ def _InferTensorRepresentationsFromStruct(
   return result
 
 
+def _MakeVarLenTensorRepresentation(
+    name: str, ragged: bool) -> schema_pb2.TensorRepresentation:
+  """Constructs TensorRepresentation for a variable length feature."""
+  if ragged:
+    return schema_pb2.TensorRepresentation(
+        ragged_tensor=schema_pb2.TensorRepresentation.RaggedTensor(
+            feature_path=path_pb2.Path(step=[name])))
+  return schema_pb2.TensorRepresentation(
+      varlen_sparse_tensor=schema_pb2.TensorRepresentation.VarLenSparseTensor(
+          column_name=name))
+
+
 def _InferTensorRepresentationFromSchema(
     schema: schema_pb2.Schema) -> Dict[str, schema_pb2.TensorRepresentation]:
   """Translate a Feature proto into a TensorRepresentation proto.
@@ -440,11 +453,11 @@ def _InferTensorRepresentationFromSchema(
           dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
               column_name=feature.name, shape=feature.shape))
     else:
-      logging.info("Feature %s has no shape. Setting to VarLenSparseTensor.",
-                   feature.name)
-      result[feature.name] = schema_pb2.TensorRepresentation(
-          varlen_sparse_tensor=schema_pb2.TensorRepresentation
-          .VarLenSparseTensor(column_name=feature.name))
+      representation = _MakeVarLenTensorRepresentation(
+          feature.name, schema.represent_variable_length_as_ragged)
+      logging.info("Feature %s has no shape. Setting to %s.", feature.name,
+                   representation.WhichOneof("kind"))
+      result[feature.name] = representation
 
   return result
 
@@ -613,13 +626,13 @@ def _LegacyInferTensorRepresentationFromSchema(
     else:
       # Case 3: Either value_count.min != value_count.max or
       # value_count.min == value_count.max == 0.  Infer a VarLenSparseTensor.
+      representation = _MakeVarLenTensorRepresentation(
+          feature.name, schema.represent_variable_length_as_ragged)
       logging.info(
           "Feature %s has value_count.min != value_count.max or "
           "value_count.min == value_count.max == 0. "
-          "Setting to VarLenSparseTensor.", feature.name)
-      result[feature.name] = schema_pb2.TensorRepresentation(
-          varlen_sparse_tensor=schema_pb2.TensorRepresentation
-          .VarLenSparseTensor(column_name=feature.name))
+          "Setting to %s.", feature.name, representation.WhichOneof("kind"))
+      result[feature.name] = representation
 
   return result
 

@@ -58,6 +58,9 @@ Schema interpretation logic has two versions controlled by
     always be present (`presence.min_fraction` == 1.0), and a
     `tf.io.FixedLenFeature` with the given shape and type will be produced for
     it.
+1.  If the feature has no fixed shape and `represent_variable_length_as_ragged`
+    is set to true (defaults to false), then `tf.io.RaggedFeature` with no
+    partitions and value key being the feature name will be produced.
 1.  Otherwise, a `tf.io.VarLenFeature` of the corresponding type will be
     produced.
 
@@ -81,7 +84,7 @@ min = max = 1               | 1                     | `tf.io.FixedLenFeature(`<b
 min = max = 1               | <1                    | `tf.io.FixedLenFeature(`<br> &nbsp;&nbsp;&nbsp;&nbsp;`shape=(),`<br> &nbsp;&nbsp;&nbsp;&nbsp;`dtype=<TF type>,`<br> &nbsp;&nbsp;&nbsp;&nbsp;`default_value=<default>)`
 min = max = k > 1           | 1                     | `tf.io.FixedLenFeature(`<br> &nbsp;&nbsp;&nbsp;&nbsp;`shape=(k,),`<br>&nbsp;&nbsp;&nbsp;&nbsp; `dtype=<TF type>,`<br> &nbsp;&nbsp;&nbsp;&nbsp;`default_value=None)`<br>
 min = max = k > 1           | <1                    | `tf.io.FixedLenFeature(`<br> &nbsp;&nbsp;&nbsp;&nbsp;`shape=(k,),`<br> &nbsp;&nbsp;&nbsp;&nbsp;`dtype=<TF type>,`<br> &nbsp;&nbsp;&nbsp;&nbsp;`default_value=<default>)`
-min = max = 0 or min != max | any                   | `tf.io.VarLenFeature(`<br> &nbsp;&nbsp;&nbsp;&nbsp;`dtype=<TF type>)`
+min = max = 0 or min != max | any                   | `tf.io.RaggedFeature(`<br> &nbsp;&nbsp;&nbsp;&nbsp;`dtype=<TF type>,`<br> &nbsp;&nbsp;&nbsp;&nbsp;`value_key=<name>,`<br> &nbsp;&nbsp;&nbsp;&nbsp;`partitions=[],`<br> &nbsp;&nbsp;&nbsp;&nbsp;`row_splits_dtype=tf.int64)`<br><br> if `represent_variable_length_as_ragged` else: <br><br> `tf.io.VarLenFeature(`<br> &nbsp;&nbsp;&nbsp;&nbsp;`dtype=<TF type>)`
 
 </section>
  END GOOGLE-INTERNAL -->

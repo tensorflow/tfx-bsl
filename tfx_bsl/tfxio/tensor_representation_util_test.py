@@ -112,6 +112,22 @@ _INFER_TEST_CASES = [
             """
         }),
     dict(
+        testcase_name='var_len_ragged',
+        ascii_proto="""
+          feature: {name: "x" type: INT}
+          represent_variable_length_as_ragged: true
+          """,
+        expected={
+            'x':
+                """
+              ragged_tensor {
+                feature_path {
+                  step: "x"
+                }
+              }
+            """
+        }),
+    dict(
         testcase_name='sparse',
         ascii_proto="""
           feature {
@@ -440,6 +456,26 @@ _LEGACY_INFER_TEST_CASES = [
                 """
               varlen_sparse_tensor {
                 column_name: "x"
+              }
+            """
+        },
+        generate_legacy_feature_spec=True,
+    ),
+    dict(
+        testcase_name='var_len_ragged_legacy',
+        ascii_proto="""
+          feature: {
+            name: "x" type: INT
+          }
+          represent_variable_length_as_ragged: true
+        """,
+        expected={
+            'x':
+                """
+              ragged_tensor {
+                feature_path {
+                  step: "x"
+                }
               }
             """
         },
