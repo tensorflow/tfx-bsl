@@ -348,16 +348,6 @@ absl::Status ValidateProducedFeatureNames(
           "RecordBatch contains duplicate column names.");
     }
   }
-  // Checking that nested feature component names are different from field
-  // names.
-  for (const auto& nested_feature : nested_features) {
-    for (const auto& component_name : nested_feature.second) {
-      if (!distinct_field_names.insert(component_name).second) {
-        return absl::InvalidArgumentError(
-            "RecordBatch contains nested component name conflicts.");
-      }
-    }
-  }
   return absl::OkStatus();
 }
 

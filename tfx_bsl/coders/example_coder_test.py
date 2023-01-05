@@ -379,7 +379,7 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
 _ENCODE_NESTED_TEST_EXAMPLES = [
     """
     features {
-      feature { key: "x$values" value { bytes_list { value: ["a", "b"] } } }
+      feature { key: "x" value { bytes_list { value: ["a", "b"] } } }
       feature { key: "y$values" value { float_list { value: [1.0, 2.0] } } }
       feature { key: "y$row_length_1" value { int64_list { value: [2] } } }
       feature { key: "z$values" value { int64_list { value: [4, 5] } } }
@@ -389,7 +389,7 @@ _ENCODE_NESTED_TEST_EXAMPLES = [
     """,
     """
     features {
-      feature { key: "x$values" value { } }
+      feature { key: "x" value { } }
       feature { key: "y$values" value { float_list { value: [3.0] } } }
       feature { key: "y$row_length_1" value { int64_list { value: [1] } } }
       feature { key: "z$values" value { } }
@@ -399,7 +399,7 @@ _ENCODE_NESTED_TEST_EXAMPLES = [
     """,
     """
     features {
-      feature { key: "x$values" value { } }
+      feature { key: "x" value { } }
       feature { key: "y$values" value { } }
       feature { key: "y$row_length_1" value { } }
       feature { key: "z$values" value { int64_list { value: [6] } } }
@@ -409,7 +409,7 @@ _ENCODE_NESTED_TEST_EXAMPLES = [
     """,
     """
     features {
-      feature { key: "x$values" value { bytes_list { value: [] } } }
+      feature { key: "x" value { bytes_list { value: [] } } }
       feature { key: "y$values" value { float_list { value: [] } } }
       feature { key: "y$row_length_1" value { int64_list { value: [0] } } }
       feature { key: "z$values" value { int64_list { value: [] } } }
@@ -441,7 +441,7 @@ _ENCODE_NESTED_CASES = [
             key: "x"
             value {
               ragged_tensor {
-                feature_path { step: "x$values"}
+                feature_path { step: "x"}
                 partition { uniform_row_length: 2 }
               }
             }
@@ -479,7 +479,7 @@ _ENCODE_NESTED_CASES = [
             pa.array([[[[4], [5]]], None, [[[6]]], [[[]]]],
                      type=pa.large_list(
                          pa.large_list(pa.large_list(pa.int64()))))
-        ], ["x$values", "y", "z"]),
+        ], ["x", "y", "z"]),
         examples_text_proto=_ENCODE_NESTED_TEST_EXAMPLES,
         schema=text_format.Parse(
             """
@@ -517,7 +517,7 @@ _ENCODE_NESTED_CASES = [
             pa.array([[[[4], [5]]], None, [[[6]]], [[[]]]],
                      type=pa.large_list(
                          pa.large_list(pa.large_list(pa.int64()))))
-        ], ["x$values", "y", "z"]),
+        ], ["x", "y", "z"]),
         examples_text_proto=_ENCODE_NESTED_TEST_EXAMPLES,
         schema=text_format.Parse(
             """
@@ -553,32 +553,6 @@ _ENCODE_NESTED_CASES = [
 ]
 
 _INVALID_ENCODE_NESTED_TYPE_CASES = [
-    # Ragged value feature name conflicts with a different feature in the batch.
-    dict(
-        record_batch=pa.RecordBatch.from_arrays([
-            pa.array([[b"a", b"b"], None, None, []],
-                     type=pa.large_list(pa.large_binary())),
-            pa.array([[[1.0, 2.0]], [[3.0]], None, [[]]],
-                     type=pa.large_list(pa.large_list(pa.int64())))
-        ], ["x", "x$values"]),
-        error=RuntimeError,
-        error_msg_regex="RecordBatch contains nested component name conflicts",
-        schema=text_format.Parse(
-            """
-            tensor_representation_group {
-              key: ""
-              value {
-                tensor_representation {
-                  key: "x"
-                  value {
-                    ragged_tensor {
-                      feature_path { step: "x$values"}
-                    }
-                  }
-                }
-              }
-            }""", schema_pb2.Schema()),
-    ),
     # Two ragged features have same value feature name.
     dict(
         record_batch=pa.RecordBatch.from_arrays([
@@ -588,7 +562,7 @@ _INVALID_ENCODE_NESTED_TYPE_CASES = [
                      type=pa.large_list(pa.large_list(pa.int64())))
         ], ["x", "y"]),
         error=RuntimeError,
-        error_msg_regex="RecordBatch contains nested component name conflicts",
+        error_msg_regex="Expected to produce 1 features, got 2",
         schema=text_format.Parse(
             """
             tensor_representation_group {
@@ -598,7 +572,7 @@ _INVALID_ENCODE_NESTED_TYPE_CASES = [
                   key: "x"
                   value {
                     ragged_tensor {
-                      feature_path { step: "x$values"}
+                      feature_path { step: "y$values"}
                     }
                   }
                 }
@@ -606,7 +580,7 @@ _INVALID_ENCODE_NESTED_TYPE_CASES = [
                   key: "y"
                   value {
                     ragged_tensor {
-                      feature_path { step: "x$values"}
+                      feature_path { step: "y$values"}
                     }
                   }
                 }
@@ -630,7 +604,7 @@ _INVALID_ENCODE_NESTED_TYPE_CASES = [
                   key: "x"
                   value {
                     ragged_tensor {
-                      feature_path { step: "x$values"}
+                      feature_path { step: "x"}
                       partition { row_length: "x$row_length_1" }
                     }
                   }
