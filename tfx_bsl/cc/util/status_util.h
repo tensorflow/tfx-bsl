@@ -40,6 +40,12 @@ inline absl::Status FromArrowStatus(::arrow::Status arrow_status) {
     if (ABSL_PREDICT_FALSE(!_status.ok())) return _status; \
   } while (0)
 
+#define TFX_BSL_RETURN_IF_ERROR_ARROW(...)                                  \
+  do {                                                                      \
+    const ::arrow::Status _status = (__VA_ARGS__);                          \
+    if (ABSL_PREDICT_FALSE(!_status.ok())) return FromArrowStatus(_status); \
+  } while (0)
+
 #define _ASSIGN_OR_RETURN_ARROW_NAME(x, y) x##y
 
 #define _TFX_BSL_ASSIGN_OR_RETURN_ARROW_IMPL(result_name, lhs, rexpr) \

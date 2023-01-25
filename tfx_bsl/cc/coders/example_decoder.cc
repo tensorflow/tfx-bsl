@@ -74,84 +74,6 @@ absl::Status ParseSequenceExample(
   return absl::OkStatus();
 }
 
-// LargeListBuilder and ListBuilder don't share the same base class. We create
-// wrappers of them so the wrappers can share.
-// TODO(b/154119411): we should start always producing LargeList. Clean this
-// up.
-class ListBuilderInterface {
- public:
-  virtual ~ListBuilderInterface() = default;
-  virtual absl::Status Append() = 0;
-  virtual absl::Status AppendNull() = 0;
-  virtual absl::Status AppendNulls(int64_t num_nulls) = 0;
-  virtual absl::Status Finish(std::shared_ptr<arrow::Array>* out) = 0;
-  virtual std::shared_ptr<arrow::ArrayBuilder> wrapped() = 0;
-};
-
-template <typename ListBuilderT>
-class ListBuilderWrapper : public ListBuilderInterface {
- public:
-  ListBuilderWrapper(const std::shared_ptr<arrow::ArrayBuilder>& values_builder,
-                     arrow::MemoryPool* memory_pool)
-      : list_builder_(
-            std::make_shared<ListBuilderT>(memory_pool, values_builder)) {}
-
-  absl::Status Append() override {
-    return FromArrowStatus(list_builder_->Append());
-  }
-  absl::Status AppendNull() override {
-    return FromArrowStatus(list_builder_->AppendNull());
-  }
-  absl::Status AppendNulls(int64_t num_nulls) override {
-    return FromArrowStatus(list_builder_->AppendNulls(num_nulls));
-  }
-  absl::Status Finish(std::shared_ptr<arrow::Array>* out) override {
-    return FromArrowStatus(list_builder_->Finish(out));
-  }
-  std::shared_ptr<arrow::ArrayBuilder> wrapped() override {
-    return list_builder_;
-  }
-
-  // private:
-  std::shared_ptr<ListBuilderT> list_builder_;
-};
-
-std::unique_ptr<ListBuilderInterface> MakeListBuilderWrapper(
-    const std::shared_ptr<arrow::ArrayBuilder>& values_builder,
-    arrow::MemoryPool* memory_pool) {
-  return std::make_unique<ListBuilderWrapper<arrow::LargeListBuilder>>(
-      values_builder, memory_pool);
-}
-
-// BinaryBuilder and LargeBinaryBuilder don't share the same base class. We
-// create wrappers of them so the wrappers can share.
-// TODO(b/154119411): we should start always producing LargeBinary. Clean this
-// up.
-class BinaryBuilderInterface {
- public:
-  virtual ~BinaryBuilderInterface() = default;
-  virtual absl::Status Append(const std::string& str) = 0;
-  virtual std::shared_ptr<arrow::ArrayBuilder> wrapped() const = 0;
-};
-
-template <typename BinaryBuilderT>
-class BinaryBuilderWrapper : public BinaryBuilderInterface {
- public:
-  BinaryBuilderWrapper(arrow::MemoryPool* memory_pool)
-      : binary_builder_(std::make_shared<BinaryBuilderT>(memory_pool)) {}
-
-  absl::Status Append(const std::string& str) override {
-    return FromArrowStatus(binary_builder_->Append(str));
-  }
-
-  std::shared_ptr<arrow::ArrayBuilder> wrapped() const override {
-    return binary_builder_;
-  }
-
- private:
-  std::shared_ptr<BinaryBuilderT> binary_builder_;
-};
-
 absl::Status TfmdFeatureToArrowField(
     const bool is_sequence_feature,
     const tensorflow::metadata::v0::Feature& feature,
@@ -195,17 +117,17 @@ absl::Status TfmdFeatureToArrowField(
 class FeatureDecoder {
  public:
   FeatureDecoder(const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
-      : list_builder_(MakeListBuilderWrapper(values_builder,
-                                             arrow::default_memory_pool())),
+      : list_builder_(std::make_unique<arrow::LargeListBuilder>(
+            arrow::default_memory_pool(), values_builder)),
         feature_was_added_(false) {}
   virtual ~FeatureDecoder() {}
 
   // Called if the feature is present in the Example.
   absl::Status DecodeFeature(const tensorflow::Feature& feature) {
     if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
-      TFX_BSL_RETURN_IF_ERROR(list_builder_->AppendNull());
+      TFX_BSL_RETURN_IF_ERROR_ARROW(list_builder_->AppendNull());
     } else {
-      TFX_BSL_RETURN_IF_ERROR(list_builder_->Append());
+      TFX_BSL_RETURN_IF_ERROR_ARROW(list_builder_->Append());
       TFX_BSL_RETURN_IF_ERROR(DecodeFeatureValues(feature));
     }
     if (feature_was_added_) {
@@ -217,20 +139,22 @@ class FeatureDecoder {
     return absl::OkStatus();
   }
 
-  absl::Status AppendNull() { return list_builder_->AppendNull(); }
+  absl::Status AppendNull() {
+    return FromArrowStatus(list_builder_->AppendNull());
+  }
 
   // Called after a (possible) call to DecodeFeature. If DecodeFeature was
   // called, this will do nothing. Otherwise, it will add to the null count.
   absl::Status FinishFeature() {
     if (!feature_was_added_) {
-      TFX_BSL_RETURN_IF_ERROR(list_builder_->AppendNull());
+      TFX_BSL_RETURN_IF_ERROR_ARROW(list_builder_->AppendNull());
     }
     feature_was_added_ = false;
     return absl::OkStatus();
   }
 
   absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
-    return list_builder_->Finish(out);
+    return FromArrowStatus(list_builder_->Finish(out));
   }
 
  protected:
@@ -238,7 +162,7 @@ class FeatureDecoder {
       const tensorflow::Feature& feature) = 0;
 
  private:
-  std::unique_ptr<ListBuilderInterface> list_builder_;
+  std::unique_ptr<arrow::LargeListBuilder> list_builder_;
   bool feature_was_added_;
 };
 
@@ -258,7 +182,7 @@ class FloatDecoder : public FeatureDecoder {
                        KindToStr(feature.kind_case())));
     }
     for (float value : feature.float_list().value()) {
-      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
+      TFX_BSL_RETURN_IF_ERROR_ARROW(values_builder_->Append(value));
     }
     return absl::OkStatus();
   }
@@ -286,7 +210,7 @@ class IntDecoder : public FeatureDecoder {
                        KindToStr(feature.kind_case())));
     }
     for (auto value : feature.int64_list().value()) {
-      TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_builder_->Append(value)));
+      TFX_BSL_RETURN_IF_ERROR_ARROW(values_builder_->Append(value));
     }
     return absl::OkStatus();
   }
@@ -301,9 +225,8 @@ class IntDecoder : public FeatureDecoder {
 class BytesDecoder : public FeatureDecoder {
  public:
   static BytesDecoder* Make() {
-    return new BytesDecoder(
-        std::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
-            arrow::default_memory_pool()));
+    return new BytesDecoder(std::make_shared<arrow::LargeBinaryBuilder>(
+        arrow::default_memory_pool()));
   }
 
  protected:
@@ -315,35 +238,35 @@ class BytesDecoder : public FeatureDecoder {
                        KindToStr(feature.kind_case())));
     }
     for (const std::string& value : feature.bytes_list().value()) {
-      TFX_BSL_RETURN_IF_ERROR(values_builder_->Append(value));
+      TFX_BSL_RETURN_IF_ERROR_ARROW(values_builder_->Append(value));
     }
     return absl::OkStatus();
   }
 
  private:
-  BytesDecoder(std::unique_ptr<BinaryBuilderInterface> values_builder)
-      : FeatureDecoder(values_builder->wrapped()),
+  BytesDecoder(std::shared_ptr<arrow::LargeBinaryBuilder> values_builder)
+      : FeatureDecoder(values_builder),
         values_builder_(std::move(values_builder)) {}
 
-  std::unique_ptr<BinaryBuilderInterface> values_builder_;
+  std::shared_ptr<arrow::LargeBinaryBuilder> values_builder_;
 };
 
 class FeatureListDecoder {
  public:
   FeatureListDecoder(const std::shared_ptr<arrow::ArrayBuilder>& values_builder)
-      : inner_list_builder_(MakeListBuilderWrapper(
-            values_builder, arrow::default_memory_pool())),
-        outer_list_builder_(MakeListBuilderWrapper(
-            inner_list_builder_->wrapped(), arrow::default_memory_pool())),
+      : inner_list_builder_(std::make_shared<arrow::LargeListBuilder>(
+            arrow::default_memory_pool(), values_builder)),
+        outer_list_builder_(std::make_unique<arrow::LargeListBuilder>(
+            arrow::default_memory_pool(), inner_list_builder_)),
         feature_list_was_added_(false) {}
   virtual ~FeatureListDecoder() {}
 
   // Called if the feature list is present in the SequenceExample.
   absl::Status DecodeFeatureList(const tensorflow::FeatureList& feature_list) {
     if (feature_list.feature().empty()) {
-      TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->Append());
+      TFX_BSL_RETURN_IF_ERROR_ARROW(outer_list_builder_->Append());
     } else {
-      TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->Append());
+      TFX_BSL_RETURN_IF_ERROR_ARROW(outer_list_builder_->Append());
       TFX_BSL_RETURN_IF_ERROR(DecodeFeatureListValues(feature_list));
     }
     if (feature_list_was_added_) {
@@ -355,11 +278,13 @@ class FeatureListDecoder {
     return absl::OkStatus();
   }
 
-  absl::Status AppendNull() { return outer_list_builder_->AppendNull(); }
+  absl::Status AppendNull() {
+    return FromArrowStatus(outer_list_builder_->AppendNull());
+  }
 
   absl::Status AppendInnerNulls(const int num_nulls) {
-    TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->Append());
-    TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNulls(num_nulls));
+    TFX_BSL_RETURN_IF_ERROR_ARROW(outer_list_builder_->Append());
+    TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->AppendNulls(num_nulls));
     return absl::OkStatus();
   }
 
@@ -367,21 +292,21 @@ class FeatureListDecoder {
   // was called this will do nothing.  Otherwise it will add to the null count.
   absl::Status FinishFeatureList() {
     if (!feature_list_was_added_) {
-      TFX_BSL_RETURN_IF_ERROR(outer_list_builder_->AppendNull());
+      TFX_BSL_RETURN_IF_ERROR_ARROW(outer_list_builder_->AppendNull());
     }
     feature_list_was_added_ = false;
     return absl::OkStatus();
   }
 
   absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
-    return outer_list_builder_->Finish(out);
+    return FromArrowStatus(outer_list_builder_->Finish(out));
   }
 
  protected:
   virtual absl::Status DecodeFeatureListValues(
       const tensorflow::FeatureList& feature_list) = 0;
-  std::unique_ptr<ListBuilderInterface> inner_list_builder_;
-  std::unique_ptr<ListBuilderInterface> outer_list_builder_;
+  std::shared_ptr<arrow::LargeListBuilder> inner_list_builder_;
+  std::unique_ptr<arrow::LargeListBuilder> outer_list_builder_;
   bool feature_list_was_added_;
 };
 
@@ -397,13 +322,12 @@ class FloatListDecoder : public FeatureListDecoder {
       const tensorflow::FeatureList& feature_list) override {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() == tensorflow::Feature::kFloatList) {
-        TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->Append());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->Append());
         for (float value : feature.float_list().value()) {
-          TFX_BSL_RETURN_IF_ERROR(
-              FromArrowStatus(values_builder_->Append(value)));
+          TFX_BSL_RETURN_IF_ERROR_ARROW(values_builder_->Append(value));
         }
       } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
-        TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNull());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->AppendNull());
       } else {
         return absl::InvalidArgumentError(
             absl::StrCat("Feature had wrong type, expected float_list, found ",
@@ -432,13 +356,12 @@ class IntListDecoder : public FeatureListDecoder {
       const tensorflow::FeatureList& feature_list) override {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() == tensorflow::Feature::kInt64List) {
-        TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->Append());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->Append());
         for (int value : feature.int64_list().value()) {
-          TFX_BSL_RETURN_IF_ERROR(
-              FromArrowStatus(values_builder_->Append(value)));
+          TFX_BSL_RETURN_IF_ERROR_ARROW(values_builder_->Append(value));
         }
       } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
-        TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNull());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->AppendNull());
       } else {
         return absl::InvalidArgumentError(
             absl::StrCat("Feature had wrong type, expected int64_list, found ",
@@ -458,9 +381,8 @@ class IntListDecoder : public FeatureListDecoder {
 class BytesListDecoder : public FeatureListDecoder {
  public:
   static BytesListDecoder* Make() {
-    return new BytesListDecoder(
-        std::make_unique<BinaryBuilderWrapper<arrow::LargeBinaryBuilder>>(
-            arrow::default_memory_pool()));
+    return new BytesListDecoder(std::make_shared<arrow::LargeBinaryBuilder>(
+        arrow::default_memory_pool()));
   }
 
  protected:
@@ -468,12 +390,12 @@ class BytesListDecoder : public FeatureListDecoder {
       const tensorflow::FeatureList& feature_list) override {
     for (const auto& feature : feature_list.feature()) {
       if (feature.kind_case() == tensorflow::Feature::kBytesList) {
-        TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->Append());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->Append());
         for (const std::string& value : feature.bytes_list().value()) {
-          TFX_BSL_RETURN_IF_ERROR(values_builder_->Append(value));
+          TFX_BSL_RETURN_IF_ERROR_ARROW(values_builder_->Append(value));
         }
       } else if (feature.kind_case() == tensorflow::Feature::KIND_NOT_SET) {
-        TFX_BSL_RETURN_IF_ERROR(inner_list_builder_->AppendNull());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(inner_list_builder_->AppendNull());
       } else {
         return absl::InvalidArgumentError(
             absl::StrCat("Feature had wrong type, expected bytes_list, found ",
@@ -484,11 +406,11 @@ class BytesListDecoder : public FeatureListDecoder {
   }
 
  private:
-  BytesListDecoder(std::unique_ptr<BinaryBuilderInterface> values_builder)
-      : FeatureListDecoder(values_builder->wrapped()),
+  BytesListDecoder(std::shared_ptr<arrow::LargeBinaryBuilder> values_builder)
+      : FeatureListDecoder(values_builder),
         values_builder_(std::move(values_builder)) {}
 
-  std::unique_ptr<BinaryBuilderInterface> values_builder_;
+  std::shared_ptr<arrow::LargeBinaryBuilder> values_builder_;
 };
 
 // Decodes a sequence feature where its type is not known.
@@ -563,20 +485,20 @@ class UnknownTypeFeatureListDecoder {
   // list_type(null). Here, null indicates that the inner list is of an unknown
   // type.
   absl::Status Finish(std::shared_ptr<arrow::Array>* out) {
-    std::shared_ptr<arrow::NullBuilder> values_builder =
+    auto values_builder =
         std::make_shared<arrow::NullBuilder>(arrow::default_memory_pool());
-    std::unique_ptr<ListBuilderInterface> list_builder =
-        MakeListBuilderWrapper(values_builder, arrow::default_memory_pool());
+    auto list_builder = std::make_unique<arrow::LargeListBuilder>(
+        arrow::default_memory_pool(), values_builder);
     for (int i = 0; i < null_counts_.size(); ++i) {
       if (null_counts_[i] == -1) {
-        TFX_BSL_RETURN_IF_ERROR(list_builder->AppendNull());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(list_builder->AppendNull());
       } else {
-        TFX_BSL_RETURN_IF_ERROR(list_builder->Append());
-        TFX_BSL_RETURN_IF_ERROR(
-            FromArrowStatus(values_builder->AppendNulls(null_counts_[i])));
+        TFX_BSL_RETURN_IF_ERROR_ARROW(list_builder->Append());
+        TFX_BSL_RETURN_IF_ERROR_ARROW(
+            values_builder->AppendNulls(null_counts_[i]));
       }
     }
-    return list_builder->Finish(out);
+    return FromArrowStatus(list_builder->Finish(out));
   }
 
  private:
