@@ -51,6 +51,9 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
             pa.array([None, None, None, None], type=pa.null()),
         ], ["f1", "f2", "f3", "f4"]),
         expected_distributions={
+            _GetMetricName("num_rows"): _Distribution(
+                min=1, max=3, count=2, sum=4
+            ),
             # byte size of an arrow array may change over time. Do not test
             # for exact values.
             _GetMetricName("record_batch_byte_size"): _IGNORE_VALUES,
@@ -68,7 +71,6 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
                 _Distribution(sum=4, count=4, min=1, max=1),
         },
         expected_counters={
-            _GetMetricName("num_rows"): 4,
             _GetMetricName("num_cells[NULL]"): 4,
             _GetMetricName("num_cells[STRING]"): 3,
             _GetMetricName("num_cells[INT]"): 4,
@@ -82,6 +84,9 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
         record_batch=pa.RecordBatch.from_arrays(
             [pa.array([[[[1, 2, 3], [4]], [[5]]], [[None, [1]]]])], ["f1"]),
         expected_distributions={
+            _GetMetricName("num_rows"): _Distribution(
+                min=1, max=1, count=2, sum=2
+            ),
             _GetMetricName("record_batch_byte_size"): _IGNORE_VALUES,
             _GetMetricName("num_columns"):
                 _Distribution(min=1, max=1, count=2, sum=2),
@@ -92,7 +97,6 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
                 _Distribution(sum=6, count=2, min=1, max=5),
         },
         expected_counters={
-            _GetMetricName("num_rows"): 2,
             _GetMetricName("num_cells[OTHER]"): 2,
         }),
     dict(
@@ -113,6 +117,9 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
             }]])
         ], ["f1"]),
         expected_distributions={
+            _GetMetricName("num_rows"): _Distribution(
+                min=1, max=1, count=2, sum=2
+            ),
             _GetMetricName("record_batch_byte_size"): _IGNORE_VALUES,
             _GetMetricName("num_columns"):
                 _Distribution(min=1, max=1, count=2, sum=2),
@@ -128,7 +135,6 @@ _PROFILE_RECORD_BATCHES_TEST_CASES = [
                 _Distribution(sum=3, count=2, min=0, max=3),
         },
         expected_counters={
-            _GetMetricName("num_rows"): 2,
             _GetMetricName("num_cells[OTHER]"): 2,
         }),
 ]

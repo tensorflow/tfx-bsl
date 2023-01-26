@@ -109,8 +109,9 @@ class _ProfileRecordBatchDoFn(beam.DoFn):
     metric_namespace = telemetry_util.MakeTfxNamespace(telemetry_descriptors +
                                                        _IO_TELEMETRY_DESCRIPTOR)
     namer = _GetMetricNamer(logical_format, physical_format)
-    self._num_rows = beam.metrics.Metrics.counter(metric_namespace,
-                                                  namer("num_rows"))
+    self._num_rows_dist = beam.metrics.Metrics.distribution(
+        metric_namespace, namer("num_rows")
+    )
     self._byte_size_dist = beam.metrics.Metrics.distribution(
         metric_namespace, namer("record_batch_byte_size"))
     self._num_columns_dist = beam.metrics.Metrics.distribution(
@@ -198,8 +199,7 @@ class _ProfileRecordBatchDoFn(beam.DoFn):
       self._num_cells_by_type[value_type].inc(num_rows - column.null_count)
 
   def process(self, record_batch: pa.RecordBatch) -> Iterable[pa.RecordBatch]:
-    num_rows = record_batch.num_rows
-    self._num_rows.inc(num_rows)
+    self._num_rows_dist.update(record_batch.num_rows)
     self._UpdateNumCellsCounters(record_batch)
     total_byte_size = table_util.TotalByteSize(
         record_batch, ignore_unsupported=True)
@@ -261,7 +261,7 @@ class _ProfileRawRecordDoFn(beam.DoFn):
 
 def _GetMetricNamer(
     logical_format: Text, physical_format: Text) -> Callable[[Text], Text]:
-  """Returns a function to contruct beam metric names."""
+  """Returns a function to construct beam metric names."""
   for f in (logical_format, physical_format):
     assert "[" not in f, "Invalid logical / physical format string: %s" % f
     assert "]" not in f, "Invalid logical / physical format string: %s" % f
