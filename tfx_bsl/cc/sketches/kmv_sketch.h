@@ -20,6 +20,7 @@
 #include <set>
 #include <string>
 
+#include "absl/container/btree_set.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "arrow/api.h"
@@ -70,7 +71,7 @@ class KmvSketch {
   // Ordered set to store the sketch. Ordering is needed because sketch
   // operations require querying the max element and keeping the k smallest
   // elements.
-  std::set<uint64_t> hashes_;
+  absl::btree_set<uint64_t> hashes_;
   // Upper bound on the k smallest hashes. Any items with hashes larger than
   // max_limit_ will not be considered.
   uint64_t max_limit_;
