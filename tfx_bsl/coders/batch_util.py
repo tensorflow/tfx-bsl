@@ -13,7 +13,10 @@
 # limitations under the License.
 """Utilities for batching."""
 
+import inspect
 from typing import Optional
+
+import apache_beam as beam
 
 # Beam might grow the batch size too large for Arrow BinaryArray / ListArray
 # to hold the contents (e.g. if the sum of the length of a string feature in
@@ -24,9 +27,27 @@ _BATCH_SIZE_CAP = 1000
 
 def GetBatchElementsKwargs(batch_size: Optional[int]):
   """Returns the kwargs to pass to beam.BatchElements()."""
-  if batch_size is None:
-    return {"max_batch_size": _BATCH_SIZE_CAP}
-  return {
-      "min_batch_size": batch_size,
-      "max_batch_size": batch_size,
+  if batch_size is not None:
+    return {
+        "min_batch_size": batch_size,
+        "max_batch_size": batch_size,
+    }
+  # Allow `BatchElements` to tune the values with the given parameters.
+  result = {
+      "min_batch_size": 1,
+      "max_batch_size": _BATCH_SIZE_CAP,
+      "target_batch_overhead": 0.05,
+      "target_batch_duration_secs": 1,
+      "variance": 0.25,
   }
+  # We fix the parameters here to prevent Beam changes from immediately
+  # affecting all dependencies.
+  # TODO(b/266803710): Clean this up after deciding on optimal batch_size
+  # selection logic.
+  batch_elements_signature = inspect.signature(beam.BatchElements)
+  if (
+      "target_batch_duration_secs_including_fixed_cost"
+      in batch_elements_signature.parameters
+  ):
+    result["target_batch_duration_secs_including_fixed_cost"] = 1
+  return result

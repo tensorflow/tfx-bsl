@@ -21,13 +21,25 @@ class BatchUtilTest(absltest.TestCase):
 
   def testGetBatchElementsKwargs(self):
     kwargs = batch_util.GetBatchElementsKwargs(batch_size=None)
-    self.assertDictEqual(kwargs, {'max_batch_size': 1000})
+    target_batch_duration_secs_including_fixed_cost = kwargs.pop(
+        "target_batch_duration_secs_including_fixed_cost", None
+    )
+    self.assertIn(target_batch_duration_secs_including_fixed_cost, {1, None})
+    self.assertDictEqual(
+        kwargs,
+        {
+            "min_batch_size": 1,
+            "max_batch_size": 1000,
+            "target_batch_overhead": 0.05,
+            "target_batch_duration_secs": 1,
+            "variance": 0.25,
+        },
+    )
     kwargs = batch_util.GetBatchElementsKwargs(batch_size=5000)
-    self.assertDictEqual(kwargs, {
-        'max_batch_size': 5000,
-        'min_batch_size': 5000
-    })
+    self.assertDictEqual(
+        kwargs, {"max_batch_size": 5000, "min_batch_size": 5000}
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   absltest.main()
