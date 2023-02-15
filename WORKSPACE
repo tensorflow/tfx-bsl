@@ -107,12 +107,12 @@ http_archive(
     ],
 )
 
-ZETASQL_COMMIT = "5ccb05880e72ab9ff75dd6b05d7b0acce53f1ea2" # 04/22/2021
+ZETASQL_COMMIT = "d9958cb1f3fc3d6e584b7a3ba3b6f791cf06745c.tar.gz" # 04/22/2021
 http_archive(
     name = "com_google_zetasql",
     urls = ["https://github.com/google/zetasql/archive/%s.zip" % ZETASQL_COMMIT],
     strip_prefix = "zetasql-%s" % ZETASQL_COMMIT,
-    sha256 = '4ca4e45f457926484822701ec15ca4d0172b01d7ce43c0b34c6f3ab98c95b241'
+    sha256 = '4ae8eb1174e012520d2433ed24fec8c400fcab932aeb51aecff05471a0be47ac'
 )
 
 load("@com_google_zetasql//bazel:zetasql_deps_step_1.bzl", "zetasql_deps_step_1")
