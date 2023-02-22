@@ -489,14 +489,14 @@ absl::Status RecordBatchSQLSliceQuery::Execute(
   // Add record batch to the table.
   table_->SetEvaluatorTableIteratorFactory(
       [&record_batch, this](absl::Span<const int> columns)
-          -> zetasql_base::StatusOr<
+          -> absl::StatusOr<
               std::unique_ptr<zetasql::EvaluatorTableIterator>> {
         return std::make_unique<RecordBatchEvaluatorTableIterator>(
             record_batch, this->columns_name_and_type_);
       });
 
   // Excute.
-  zetasql_base::StatusOr<std::unique_ptr<zetasql::EvaluatorTableIterator>>
+  absl::StatusOr<std::unique_ptr<zetasql::EvaluatorTableIterator>>
       query_result_iterator = query_->Execute();
   TFX_BSL_RETURN_IF_ERROR(query_result_iterator.status());
 

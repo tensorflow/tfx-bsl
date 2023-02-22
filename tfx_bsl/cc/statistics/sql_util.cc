@@ -30,7 +30,7 @@ using tensorflow::metadata::v0::FeatureNameStatistics;
 namespace {
 
 absl::StatusOr<bool> GetResult(
-    const zetasql_base::StatusOr<zetasql::Value>& result_or) {
+    const absl::StatusOr<zetasql::Value>& result_or) {
   // Potentially convert from zetasql to absl on OSS.
   if (!result_or.ok()) return absl::StatusOr<bool>(result_or.status());
   zetasql::Value value = result_or.value();

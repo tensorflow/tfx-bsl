@@ -10,6 +10,8 @@
 
 ## Bug Fixes and Other Changes
 
+*   Bumped the mininum bazel version required to build `tfx_bsl` to 5.3.0.
+
 ## Breaking Changes
 
 ## Deprecations
