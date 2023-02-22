@@ -121,12 +121,14 @@ class ParquetTFXIO(record_based_tfxio.RecordBasedTFXIO):
         raw_records_pcoll: beam.PCollection[bytes]
     ) -> beam.PCollection[pa.RecordBatch]:
       """Decodes raw records and converts them to RecordBatches."""
-      return (raw_records_pcoll
-              | "DecodeRawRecords" >> beam.Map(pickle.loads)
-              | "Batch" >> beam.BatchElements(
-                  **batch_util.GetBatchElementsKwargs(batch_size))
-              | "ToRecordBatch" >> beam.Map(
-                  _RecordDictsToRecordBatch, schema=self.ArrowSchema()))
+      return (
+          raw_records_pcoll
+          | "DecodeRawRecords" >> beam.Map(pickle.loads)
+          | "Batch"
+          >> batch_util.BatchRecords(batch_size, self._telemetry_descriptors)
+          | "ToRecordBatch"
+          >> beam.Map(_RecordDictsToRecordBatch, schema=self.ArrowSchema())
+      )
 
     return beam.ptransform_fn(_PTransformFn)()
 
@@ -148,14 +150,16 @@ class ParquetTFXIO(record_based_tfxio.RecordBasedTFXIO):
                 min_bundle_size=self._min_bundle_size,
                 validate=self._validate,
                 columns=self._column_names))
-      max_batch_size = (
-          batch_util.GetBatchElementsKwargs(batch_size)["max_batch_size"])
       return (
-          source_pcolls | "FlattenPCollsFromPatterns" >> beam.Flatten()
-          | "ToRecordBatch" >>
-          beam.FlatMap(lambda table: table.to_batches(max_batch_size))
-          | "CollectRecordBatchTelemetry" >> telemetry.ProfileRecordBatches(
-              self._telemetry_descriptors, _PARQUET_FORMAT, _PARQUET_FORMAT))
+          source_pcolls
+          | "FlattenPCollsFromPatterns" >> beam.Flatten()
+          | "ToRecordBatch"
+          >> beam.FlatMap(lambda table: table.to_batches(batch_size))
+          | "CollectRecordBatchTelemetry"
+          >> telemetry.ProfileRecordBatches(
+              self._telemetry_descriptors, _PARQUET_FORMAT, _PARQUET_FORMAT
+          )
+      )
 
     return beam.ptransform_fn(_PTransformFn)()
 

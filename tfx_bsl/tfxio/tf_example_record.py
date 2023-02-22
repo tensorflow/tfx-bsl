@@ -71,12 +71,17 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def ptransform_fn(raw_records_pcoll: beam.pvalue.PCollection):
-      return (raw_records_pcoll
-              | "Batch" >> beam.BatchElements(
-                  **batch_util.GetBatchElementsKwargs(batch_size))
-              | "Decode" >> beam.ParDo(
-                  _DecodeBatchExamplesDoFn(self._GetSchemaForDecoding(),
-                                           self.raw_record_column_name)))
+      return (
+          raw_records_pcoll
+          | "Batch"
+          >> batch_util.BatchRecords(batch_size, self._telemetry_descriptors)
+          | "Decode"
+          >> beam.ParDo(
+              _DecodeBatchExamplesDoFn(
+                  self._GetSchemaForDecoding(), self.raw_record_column_name
+              )
+          )
+      )
 
     return beam.ptransform_fn(ptransform_fn)()
 

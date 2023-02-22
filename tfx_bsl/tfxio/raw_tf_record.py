@@ -60,11 +60,13 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
     @beam.typehints.with_input_types(bytes)
     @beam.typehints.with_output_types(pa.RecordBatch)
     def _PTransformFn(raw_record_pcoll: beam.pvalue.PCollection):
-      return (raw_record_pcoll
-              | "Batch" >> beam.BatchElements(
-                  **batch_util.GetBatchElementsKwargs(batch_size))
-              | "ToRecordBatch" >>
-              beam.Map(_BatchedRecordsToArrow, self.raw_record_column_name))
+      return (
+          raw_record_pcoll
+          | "Batch"
+          >> batch_util.BatchRecords(batch_size, self._telemetry_descriptors)
+          | "ToRecordBatch"
+          >> beam.Map(_BatchedRecordsToArrow, self.raw_record_column_name)
+      )
 
     return beam.ptransform_fn(_PTransformFn)()
 

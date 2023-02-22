@@ -102,14 +102,19 @@ class RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
     def _PTransformFn(raw_records_pcoll: beam.pvalue.PCollection):
       return (
           raw_records_pcoll
-          | "BatchElements" >> beam.BatchElements(
-              **batch_util.GetBatchElementsKwargs(batch_size))
-          | "Decode" >> beam.ParDo(_RecordsToRecordBatch(
-              self._saved_decoder_path,
-              self.telemetry_descriptors,
-              shared.Shared() if self._use_singleton_decoder else None,
-              self.raw_record_column_name,
-              self._record_index_column_name)))
+          | "BatchElements"
+          >> batch_util.BatchRecords(batch_size, self._telemetry_descriptors)
+          | "Decode"
+          >> beam.ParDo(
+              _RecordsToRecordBatch(
+                  self._saved_decoder_path,
+                  self.telemetry_descriptors,
+                  shared.Shared() if self._use_singleton_decoder else None,
+                  self.raw_record_column_name,
+                  self._record_index_column_name,
+              )
+          )
+      )
 
     return beam.ptransform_fn(_PTransformFn)()
 

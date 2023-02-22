@@ -140,16 +140,26 @@ def CSVToRecordBatch(lines: beam.pvalue.PCollection,
                 secondary_delimiter=secondary_delimiter)))
 
   # Do second pass to generate the RecordBatches.
-  return (csv_lines_and_raw_records
-          | "BatchCSVLines" >> beam.BatchElements(
-              **batch_util.GetBatchElementsKwargs(desired_batch_size))
-          | "BatchedCSVRowsToArrow" >> beam.ParDo(
-              BatchedCSVRowsToRecordBatch(
-                  skip_blank_lines=skip_blank_lines,
-                  multivalent_columns=multivalent_columns,
-                  secondary_delimiter=secondary_delimiter,
-                  raw_record_column_name=raw_record_column_name),
-              column_infos))
+  return (
+      csv_lines_and_raw_records
+      | "BatchCSVLines"
+      >> batch_util.BatchRecords(
+          desired_batch_size,
+          telemetry_descriptors=["CSVToRecordBatch"],
+          # The elements are tuples of parsed and unparsed CSVlines.
+          record_size_fn=lambda kv: len(kv[1]) << 1,
+      )
+      | "BatchedCSVRowsToArrow"
+      >> beam.ParDo(
+          BatchedCSVRowsToRecordBatch(
+              skip_blank_lines=skip_blank_lines,
+              multivalent_columns=multivalent_columns,
+              secondary_delimiter=secondary_delimiter,
+              raw_record_column_name=raw_record_column_name,
+          ),
+          column_infos,
+      )
+  )
 
 
 @beam.typehints.with_input_types(CSVLine)
