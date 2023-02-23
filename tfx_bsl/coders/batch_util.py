@@ -52,6 +52,15 @@ _TARGET_BATCH_BYTES_SIZE = 104_857_600  # 100MB
 _BATCH_SIZE_CAP_WITH_BYTE_TARGET = 10000
 
 
+def _UseByteSizeBatching() -> bool:
+  """Cautious access to `tfxio_use_byte_size_batching` flag value."""
+  return (
+      _USE_BYTE_SIZE_BATCHING.value
+      if flags.FLAGS.is_parsed()
+      else _USE_BYTE_SIZE_BATCHING.default
+  )
+
+
 def GetBatchElementsKwargs(
     batch_size: Optional[int], element_size_fn: Callable[[Any], int] = len
 ) -> Dict[str, Any]:
@@ -61,7 +70,7 @@ def GetBatchElementsKwargs(
         "min_batch_size": batch_size,
         "max_batch_size": batch_size,
     }
-  if _USE_BYTE_SIZE_BATCHING.value:
+  if _UseByteSizeBatching():
     min_element_size = int(
         math.ceil(_TARGET_BATCH_BYTES_SIZE / _BATCH_SIZE_CAP_WITH_BYTE_TARGET)
     )
@@ -99,7 +108,7 @@ def _MakeAndIncrementBatchingMetrics(
       telemetry_descriptors or ["Unknown"]
   )
   beam.metrics.Metrics.counter(namespace, "tfxio_use_byte_size_batching").inc(
-      int(_USE_BYTE_SIZE_BATCHING.value)
+      int(_UseByteSizeBatching())
   )
   beam.metrics.Metrics.counter(namespace, "desired_batch_size").inc(
       batch_size or 0
