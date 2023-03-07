@@ -11,6 +11,10 @@
 ## Bug Fixes and Other Changes
 
 *   Bumped the mininum bazel version required to build `tfx_bsl` to 5.3.0.
+*   `RecordBatchToExamplesEncoder` now encodes arrays representing
+    `RaggedTensor`s in a way that is consistent with `tf.io.parse_example`. Note
+    that this change is backwards compatible with `ExamplesToRecordBatchDecoder`
+    and the decoding workflow as well.
 
 ## Breaking Changes
 

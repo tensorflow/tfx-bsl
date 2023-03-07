@@ -14,7 +14,9 @@
 #ifndef TFX_BSL_CC_CODERS_EXAMPLE_CODER_H_
 #define TFX_BSL_CC_CODERS_EXAMPLE_CODER_H_
 
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
@@ -219,7 +221,6 @@ class SequenceExamplesToRecordBatchDecoder {
       sequence_feature_decoders_;
 };
 
-
 // A tf.SequenceExample -> RecordBatch decoder that does not require a schema
 // and can take one tf.SequenceExample at a time.
 // It behaves the same as SequenceExamplesToRecordBatchDecoder without a schema.
@@ -260,18 +261,42 @@ class SchemalessIncrementalSequenceExamplesDecoder {
 
 // Encoders
 //
+struct RaggedTensorSpec {
+  // Names of source features starting with a value feature.
+  std::vector<std::string> source_feature_names;
+  // LargeListArray representation does not store uniform partitions as an
+  // additional nested level. That is why row lengths derived from offsets need
+  // to be adjusted in serialized Examples.
+  std::vector<int64_t> row_length_adjustments;
+};
 // Converts a RecordBatch to a list of examples.
 //
 // The fields of the RecordBatch must have types list[dtype] or
 // large_list[dtype], where dtype is one of float32, int64, binary, large_binary
-// or large_list[dtype]. The latter requires providing names of features
-// representing nested list components: flat values and row lengths, otherwise
-// `nested_features` can be empty.
-absl::Status RecordBatchToExamples(
-    const arrow::RecordBatch& record_batch,
-    const std::unordered_map<std::string, std::vector<std::string>>&
-        nested_features,
-    std::vector<std::string>* serialized_examples);
+// or large_list[dtype]. The latter requires providing a TFMD schema with
+// RaggedTensor TensorRepresentations containing the partition feature names.
+class RecordBatchToExamplesEncoder {
+ public:
+  static absl::Status Make(
+      absl::optional<absl::string_view> serialized_schema,
+      std::unique_ptr<RecordBatchToExamplesEncoder>* result);
+  ~RecordBatchToExamplesEncoder();
+
+  RecordBatchToExamplesEncoder(const RecordBatchToExamplesEncoder&) = delete;
+  RecordBatchToExamplesEncoder& operator=(const RecordBatchToExamplesEncoder&) =
+      delete;
+
+  // Encodes RecordBatch into a batch of serialized examples.
+  absl::Status Encode(const std::shared_ptr<arrow::RecordBatch>& record_batch,
+                      std::vector<std::string>* result) const;
+
+ private:
+  RecordBatchToExamplesEncoder(
+      absl::flat_hash_map<std::string, RaggedTensorSpec> ragged_specs)
+      : ragged_specs_(std::move(ragged_specs)) {}
+
+  const absl::flat_hash_map<std::string, RaggedTensorSpec> ragged_specs_;
+};
 
 }  // namespace tfx_bsl
 

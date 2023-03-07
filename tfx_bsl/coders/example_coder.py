@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Example coders."""
-from typing import Dict, List, Optional, Type, Tuple
+from typing import List, Optional, Type, Tuple
 
 import pyarrow as pa
-from tfx_bsl.tfxio import tensor_representation_util
 
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -26,8 +25,7 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 try:
   from tfx_bsl.cc.tfx_bsl_extension.coders import ExamplesToRecordBatchDecoder as ExamplesToRecordBatchDecoderCpp
   from tfx_bsl.cc.tfx_bsl_extension.coders import ExampleToNumpyDict
-  from tfx_bsl.cc.tfx_bsl_extension.coders import RecordBatchToExamples
-  from tfx_bsl.cc.tfx_bsl_extension.coders import FeatureNameToColumnsMap
+  from tfx_bsl.cc.tfx_bsl_extension.coders import RecordBatchToExamplesEncoder as RecordBatchToExamplesEncoderCpp
 except ImportError:
   import sys
   sys.stderr.write("Error importing tfx_bsl_extension.coders. "
@@ -37,22 +35,6 @@ except ImportError:
 # pylint: enable=unused-import
 
 
-def _get_ragged_column_names(
-    tensor_representation: schema_pb2.TensorRepresentation) -> List[str]:
-  """Extracts source column names from a ragged tensor representation."""
-  source_columns = (
-      tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
-          tensor_representation))
-  result = []
-  for column in source_columns:
-    if len(column.steps()) != 1:
-      raise NotImplementedError(
-          "Support of RaggedFeatures with multiple steps in feature_path is "
-          "not implemented, got {}".format(len(column.steps())))
-    result.append(column.steps()[0])
-  return result
-
-
 class RecordBatchToExamplesEncoder:
   """Encodes `pa.RecordBatch` as a list of serialized `tf.Example`s.
 
@@ -60,29 +42,29 @@ class RecordBatchToExamplesEncoder:
   depth > 2 that represent TensorFlow's RaggedFeatures.
   """
 
-  __slots__ = ["_ragged_features"]
+  __slots__ = ["_schema", "_coder"]
 
   def __init__(self, schema: Optional[schema_pb2.Schema] = None):
-    self._ragged_features = FeatureNameToColumnsMap()
-    if schema is not None:
-      # Iterate over tensor representations in all groups.
-      for group in schema.tensor_representation_group.values():
-        tensor_representation_map = group.tensor_representation
-        for name, representation in tensor_representation_map.items():
-          if representation.WhichOneof("kind") == "ragged_tensor":
-            self._ragged_features[name] = _get_ragged_column_names(
-                representation)
+    self._schema = schema
+    self._coder = RecordBatchToExamplesEncoderCpp(
+        None if schema is None else schema.SerializeToString()
+    )
 
-  def __getstate__(self) -> Dict[str, List[str]]:
-    return dict(self._ragged_features.items())
+  def __reduce__(
+      self,
+  ) -> Tuple[
+      Type["RecordBatchToExamplesEncoder"], Tuple[Optional[schema_pb2.Schema]]
+  ]:
+    return (self.__class__, (self._schema,))
 
-  def __setstate__(self, state: Dict[str, List[str]]):
-    self._ragged_features = FeatureNameToColumnsMap()
-    for name, columns in state.items():
-      self._ragged_features[name] = columns
+  def encode(self, record_batch: pa.RecordBatch) -> List[bytes]:  # pylint: disable=invalid-name
+    return self._coder.Encode(record_batch)
 
-  def encode(self, record_batch: pa.RecordBatch) -> List[bytes]:
-    return RecordBatchToExamples(record_batch, self._ragged_features)
+
+# TODO(b/271883540) Deprecate this.
+def RecordBatchToExamples(record_batch: pa.RecordBatch) -> List[bytes]:
+  """Stateless version of the encoder above."""
+  return RecordBatchToExamplesEncoder().encode(record_batch)
 
 
 class ExamplesToRecordBatchDecoder:
@@ -118,8 +100,8 @@ class ExamplesToRecordBatchDecoder:
   ) -> Tuple[Type["ExamplesToRecordBatchDecoder"], Tuple[Optional[bytes]]]:
     return (self.__class__, (self._schema,))
 
-  def DecodeBatch(self, examples: List[bytes]) -> pa.RecordBatch:  # pylint: disable=invalid-name
+  def DecodeBatch(self, examples: List[bytes]) -> pa.RecordBatch:
     return self._coder.DecodeBatch(examples)
 
-  def ArrowSchema(self) -> pa.Schema:  # pylint: disable=invalid-name
+  def ArrowSchema(self) -> pa.Schema:
     return self._coder.ArrowSchema()

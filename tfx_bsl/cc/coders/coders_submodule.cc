@@ -22,11 +22,6 @@
 #include "tfx_bsl/cc/pybind11/absl_casters.h"
 #include "tfx_bsl/cc/pybind11/arrow_casters.h"
 #include "pybind11/pytypes.h"
-#include "pybind11/stl.h"
-#include "pybind11/stl_bind.h"
-
-// Making the type cast opaque to prevent data copy on Python->C++ trip.
-PYBIND11_MAKE_OPAQUE(std::unordered_map<std::string, std::vector<std::string>>);
 
 namespace tfx_bsl {
 namespace py = pybind11;
@@ -130,34 +125,34 @@ void DefineCodersSubmodule(py::module main_module) {
           // already 1 after creation.
           return py::reinterpret_steal<py::object>(numpy_dict);
         });
-
-  // Adding binding to opaque type to enable pass-by-reference below.
-  py::bind_map<std::unordered_map<std::string, std::vector<std::string>>>(
-      m, "FeatureNameToColumnsMap");
-  m.def(
-      "RecordBatchToExamples",
-      [](std::shared_ptr<arrow::RecordBatch> record_batch,
-         const std::unordered_map<std::string, std::vector<std::string>>&
-             nested_features) -> py::list {
-        std::vector<std::string> serialized_examples;
-        {
-          // Release the GIL during the call to RecordBatchToExamples.
-          py::gil_scoped_release release_gil;
-          absl::Status s = RecordBatchToExamples(*record_batch, nested_features,
-                                                 &serialized_examples);
-          if (!s.ok()) {
-            throw std::runtime_error(s.ToString());
-          }
-        }
-        py::list bytes_examples;
-        for (auto& example : serialized_examples) {
-          bytes_examples.append(py::bytes(example));
-        }
-        return bytes_examples;
-      },
-      py::arg("record_batch"),
-      py::arg("nested_features") =
-          std::unordered_map<std::string, std::vector<std::string>>());
+  py::class_<RecordBatchToExamplesEncoder>(m, "RecordBatchToExamplesEncoder")
+      .def(py::init([](absl::optional<absl::string_view> serialized_schema) {
+             std::unique_ptr<RecordBatchToExamplesEncoder> encoder;
+             absl::Status s = RecordBatchToExamplesEncoder::Make(
+                 serialized_schema, &encoder);
+             if (!s.ok()) {
+               throw std::runtime_error(s.ToString());
+             }
+             return encoder;
+           }),
+           py::arg("serialized_schema") = absl::nullopt)
+      .def("Encode",
+           [](RecordBatchToExamplesEncoder* encoder,
+              const std::shared_ptr<arrow::RecordBatch>& record_batch) {
+             std::vector<std::string> result;
+             {
+               py::gil_scoped_release release_gil;
+               absl::Status s = encoder->Encode(record_batch, &result);
+               if (!s.ok()) {
+                 throw std::runtime_error(s.ToString());
+               }
+             }
+             py::list bytes_examples;
+             for (const auto& example : result) {
+               bytes_examples.append(py::bytes(example));
+             }
+             return bytes_examples;
+           });
 }
 
 }  // namespace tfx_bsl

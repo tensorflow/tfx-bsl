@@ -11,15 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "tfx_bsl/cc/coders/example_coder.h"
+#include <iterator>
+#include <memory>
+#include <vector>
 
 #include <google/protobuf/arena.h>
+#include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "arrow/api.h"
 #include "tfx_bsl/cc/arrow/array_util.h"
+#include "tfx_bsl/cc/coders/example_coder.h"
 #include "tfx_bsl/cc/util/status_util.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/example/feature.pb.h"
+#include "tensorflow_metadata/proto/v0/path.pb.h"
+#include "tensorflow_metadata/proto/v0/schema.pb.h"
 
 namespace tfx_bsl {
 
@@ -29,14 +36,28 @@ class FeatureEncoderInterface {
  public:
   virtual ~FeatureEncoderInterface() = default;
   virtual absl::Status EncodeFeatures(
-      const int64_t index, std::vector<tensorflow::Feature*>& features) = 0;
-  virtual absl::Status ValidateNumProducedFeatures(
-      const int expected, const std::string& field_name) = 0;
+      int64_t index, std::vector<tensorflow::Feature*>& features) = 0;
 
  protected:
   virtual void EncodeFeatureValues(int64_t start, int64_t end,
                                    tensorflow::Feature* feature) = 0;
 };
+
+absl::Status DivideArray(const std::shared_ptr<arrow::Int64Array>& array,
+                         int64_t divisor,
+                         std::shared_ptr<arrow::Int64Array>* result) {
+  if (divisor == 1) {
+    *result = std::move(array);
+    return absl::OkStatus();
+  }
+  auto builder = std::make_unique<arrow::Int64Builder>(
+      arrow::int64(), arrow::default_memory_pool());
+  TFX_BSL_RETURN_IF_ERROR_ARROW(builder->Reserve(array->length()));
+  for (int64_t i = 0; i < array->length(); ++i) {
+    TFX_BSL_RETURN_IF_ERROR_ARROW(builder->Append(array->Value(i) / divisor));
+  }
+  return FromArrowStatus(builder->Finish(result));
+}
 
 template <typename ListT>
 class FeatureEncoder : public FeatureEncoderInterface {
@@ -51,20 +72,6 @@ class FeatureEncoder : public FeatureEncoderInterface {
       const int64_t start_offset = list_array_->value_offset(index);
       const int64_t end_offset = list_array_->value_offset(index + 1);
       EncodeFeatureValues(start_offset, end_offset, features.front());
-    }
-    return absl::OkStatus();
-  }
-
-  // Checks that the number of allocated features is as expected.
-  absl::Status ValidateNumProducedFeatures(const int expected,
-                                           const std::string& field_name) {
-    if (expected != num_produced_features_) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Expected to produce ", expected, " features, got ",
-                       num_produced_features_,
-                       ". You may need to use "
-                       "RecordBatchToExamplesEncoder with a schema, or there's "
-                       "inconsistency between the schema and RecordBatch."));
     }
     return absl::OkStatus();
   }
@@ -86,16 +93,9 @@ class FeatureEncoder : public FeatureEncoderInterface {
   // Checks whether value is present at a given index.
   bool IsValueValid(const int64_t index) { return list_array_->IsValid(index); }
 
-  void set_num_produced_features(const int num_produced_features) {
-    num_produced_features_ = num_produced_features;
-  }
-
  private:
   // List that is being encoded.
   std::shared_ptr<ListT> list_array_;
-  // Expected number of features that encoding will result into. Defaults to
-  // single feature per input field.
-  int num_produced_features_ = 1;
 };
 
 template <typename ListT>
@@ -189,7 +189,8 @@ class BytesEncoder : public FeatureEncoder<ListT> {
 
 template <typename ListT>
 absl::Status MakeFeatureEncoderHelper(
-    const std::shared_ptr<ListT>&, std::unique_ptr<FeatureEncoderInterface>*);
+    const std::shared_ptr<ListT>&, const std::vector<int64_t>&,
+    std::unique_ptr<FeatureEncoderInterface>*);
 
 // Substitutes values in `split` by offsets of the given `list` that are located
 // at positions with indices of current values in `split`.
@@ -211,19 +212,16 @@ class LargeListEncoder : public FeatureEncoder<ListT> {
  public:
   static absl::Status Make(const std::shared_ptr<ListT>& list_array,
                            const std::shared_ptr<arrow::Array>& values_array,
+                           const std::vector<int64_t>& row_length_adjustments,
                            std::unique_ptr<FeatureEncoderInterface>* result) {
     auto values = values_array;
     auto batch_split =
         std::static_pointer_cast<arrow::Int64Array>(list_array->offsets());
     auto encoder = absl::WrapUnique(new LargeListEncoder<ListT>(list_array));
-    TFX_BSL_RETURN_IF_ERROR(
-        encoder->FlattenAndMakeRowLengthsEncoders(values, batch_split));
+    TFX_BSL_RETURN_IF_ERROR(encoder->FlattenAndMakeRowLengthsEncoders(
+        values, batch_split, row_length_adjustments));
     // Values are now flat and batch split is translated to the last dimension.
     TFX_BSL_RETURN_IF_ERROR(encoder->MakeValuesEncoder(values, batch_split));
-
-    // Update number of produced features: one per each partition + one for
-    // values.
-    encoder->set_num_produced_features(encoder->component_encoders_.size());
     *result = std::move(encoder);
     return absl::OkStatus();
   }
@@ -253,17 +251,31 @@ class LargeListEncoder : public FeatureEncoder<ListT> {
   // partition of flattened dimension.
   absl::Status FlattenAndMakeRowLengthsEncoders(
       std::shared_ptr<arrow::Array>& values_array,
-      std::shared_ptr<arrow::Int64Array>& batch_split) {
+      std::shared_ptr<arrow::Int64Array>& batch_split,
+      const std::vector<int64_t>& row_length_adjustments) {
+    auto row_length_adjustment = row_length_adjustments.begin();
     while (values_array->type()->id() == arrow::Type::LARGE_LIST) {
+      if (row_length_adjustment == row_length_adjustments.end()) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Nested depth of large_list is larger than the number of "
+            "provided partitions (or no partitions were provided). Expected ",
+            row_length_adjustments.size(),
+            " partitions. If the column represents RaggedTensor, then create "
+            "the encoder with TFMD schema containing RaggedTensor "
+            "TensorRepresentations with partitions."));
+      }
       std::shared_ptr<arrow::Array> row_lengths;
       TFX_BSL_RETURN_IF_ERROR(GetElementLengths(*values_array, &row_lengths));
+      auto int64_row_lengths =
+          std::static_pointer_cast<arrow::Int64Array>(row_lengths);
+      TFX_BSL_RETURN_IF_ERROR(DivideArray(
+          int64_row_lengths, *row_length_adjustment++, &int64_row_lengths));
       const auto& row_lengths_list_array =
-          arrow::LargeListArray::FromArrays(*batch_split, *row_lengths)
+          arrow::LargeListArray::FromArrays(*batch_split, *int64_row_lengths)
               .ValueOrDie();
       component_encoders_.emplace_back();
       TFX_BSL_RETURN_IF_ERROR(IntEncoder<arrow::LargeListArray>::Make(
-          row_lengths_list_array,
-          std::static_pointer_cast<arrow::Int64Array>(row_lengths),
+          row_lengths_list_array, int64_row_lengths,
           &component_encoders_.back()));
       auto values_list =
           std::static_pointer_cast<arrow::LargeListArray>(values_array);
@@ -271,6 +283,12 @@ class LargeListEncoder : public FeatureEncoder<ListT> {
       // dimension.
       TFX_BSL_RETURN_IF_ERROR(PropagateListSplit(values_list, &batch_split));
       values_array = values_list->values();
+    }
+    if (row_length_adjustment != row_length_adjustments.end()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Nested depth of large_list is smaller than the number of partitions "
+          "in the provided TensorRepresentation. Expected to have ",
+          row_length_adjustments.size(), " partitions."));
     }
     return absl::OkStatus();
   }
@@ -284,7 +302,7 @@ class LargeListEncoder : public FeatureEncoder<ListT> {
     TFX_BSL_RETURN_IF_ERROR(FromArrowStatus(values_list_array.status()));
     component_encoders_.emplace(component_encoders_.begin(), nullptr);
     TFX_BSL_RETURN_IF_ERROR(MakeFeatureEncoderHelper<arrow::LargeListArray>(
-        values_list_array.ValueUnsafe(), &component_encoders_.front()));
+        values_list_array.ValueUnsafe(), {}, &component_encoders_.front()));
     return absl::OkStatus();
   }
 
@@ -294,8 +312,16 @@ class LargeListEncoder : public FeatureEncoder<ListT> {
 template <typename ListT>
 absl::Status MakeFeatureEncoderHelper(
     const std::shared_ptr<ListT>& list_array,
+    const std::vector<int64_t>& row_length_adjustments,
     std::unique_ptr<FeatureEncoderInterface>* out) {
   const std::shared_ptr<arrow::Array>& values_array = list_array->values();
+  if (values_array->type()->id() != arrow::Type::LARGE_LIST &&
+      !row_length_adjustments.empty()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Expected ", row_length_adjustments.size(),
+        " partitions, but got flat values array. You may need to adjust "
+        "RaggedTensor partitions in the provided schema."));
+  }
   switch (values_array->type()->id()) {
     case arrow::Type::FLOAT:
       return FloatEncoder<ListT>::Make(list_array, values_array, out);
@@ -308,102 +334,190 @@ absl::Status MakeFeatureEncoderHelper(
       return BytesEncoder<ListT, arrow::LargeBinaryArray>::Make(
           list_array, values_array, out);
     case arrow::Type::LARGE_LIST:
-      return LargeListEncoder<ListT>::Make(list_array, values_array, out);
+      return LargeListEncoder<ListT>::Make(list_array, values_array,
+                                           row_length_adjustments, out);
     default:
       return absl::InvalidArgumentError("Bad field type");
   }
 }
 
-absl::Status MakeFeatureEncoder(const std::shared_ptr<arrow::Array>& array,
-                                std::unique_ptr<FeatureEncoderInterface>* out) {
+absl::Status MakeFeatureEncoder(
+    const std::shared_ptr<arrow::Array>& array,
+    const std::vector<int64_t>& row_length_adjustments,
+    std::unique_ptr<FeatureEncoderInterface>* out) {
   switch (array->type()->id()) {
     case arrow::Type::LIST: {
       std::shared_ptr<arrow::ListArray> list_array =
           std::static_pointer_cast<arrow::ListArray>(array);
-      return MakeFeatureEncoderHelper<arrow::ListArray>(list_array, out);
+      return MakeFeatureEncoderHelper<arrow::ListArray>(
+          list_array, row_length_adjustments, out);
     }
     case arrow::Type::LARGE_LIST: {
       std::shared_ptr<arrow::LargeListArray> large_list_array =
           std::static_pointer_cast<arrow::LargeListArray>(array);
-      return MakeFeatureEncoderHelper<arrow::LargeListArray>(large_list_array,
-                                                             out);
+      return MakeFeatureEncoderHelper<arrow::LargeListArray>(
+          large_list_array, row_length_adjustments, out);
     }
     default:
       return absl::InvalidArgumentError("Expected ListArray or LargeListArray");
   }
 }
 
-using FeatureNameToColumnsMap =
-    std::unordered_map<std::string, std::vector<std::string>>;
-
 // Checks for conflicts in names of produced features.
 absl::Status ValidateProducedFeatureNames(
     const std::vector<std::string>& field_names,
-    const FeatureNameToColumnsMap& nested_features) {
-  // Checking that field names are distinct.
+    const absl::flat_hash_map<std::string, RaggedTensorSpec>& ragged_specs) {
+  // Check that RecordBatch field names are distinct.
   std::unordered_set<std::string> distinct_field_names;
   for (const auto& name : field_names) {
     if (!distinct_field_names.insert(name).second) {
       return absl::InvalidArgumentError(
-          "RecordBatch contains duplicate column names.");
+          absl::StrCat("RecordBatch contains duplicate column names: ", name));
+    }
+  }
+  // Check for conflicts between ragged source column names.
+  std::unordered_set<std::string> distinct_ragged_source_column_names;
+  for (const auto& spec : ragged_specs) {
+    for (const auto& column_name : spec.second.source_feature_names) {
+      if (!distinct_ragged_source_column_names.insert(column_name).second) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Source column \"", column_name,
+                         "\" of ragged feature \"", spec.first,
+                         "\" conflicts with another source column in the "
+                         "same batch."));
+      }
     }
   }
   return absl::OkStatus();
 }
 
-}  // namespace
+using NamedFeatureEncoder =
+    std::pair<std::string, std::unique_ptr<FeatureEncoderInterface>>;
 
-absl::Status RecordBatchToExamples(
-    const arrow::RecordBatch& record_batch,
-    const FeatureNameToColumnsMap& nested_features,
-    std::vector<std::string>* serialized_examples) {
-  std::vector<std::pair<std::string, std::unique_ptr<FeatureEncoderInterface>>>
-      feature_encoders;
-  feature_encoders.reserve(record_batch.num_columns());
-  const std::vector<std::string> field_names =
-      record_batch.schema()->field_names();
+absl::Status MakeFeatureEncoders(
+    const std::shared_ptr<arrow::RecordBatch>& record_batch,
+    const absl::flat_hash_map<std::string, RaggedTensorSpec>& ragged_specs,
+    std::vector<NamedFeatureEncoder>* result) {
+  result->reserve(record_batch->num_columns());
+  const std::vector<std::string>& field_names =
+      record_batch->schema()->field_names();
   TFX_BSL_RETURN_IF_ERROR(
-      ValidateProducedFeatureNames(field_names, nested_features));
-
+      ValidateProducedFeatureNames(field_names, ragged_specs));
   for (const auto& name : field_names) {
-    const std::shared_ptr<arrow::Array> array =
-        record_batch.GetColumnByName(name);
-    feature_encoders.emplace_back(name, nullptr);
-    TFX_BSL_RETURN_IF_ERROR(
-        MakeFeatureEncoder(array, &feature_encoders.back().second));
-    if (nested_features.find(name) != nested_features.end()) {
-      // Check that actual nested depth of a field is consistent with
-      // `nested_features`.
-      TFX_BSL_RETURN_IF_ERROR(
-          feature_encoders.back().second->ValidateNumProducedFeatures(
-              nested_features.at(name).size(), name));
-    } else {
-      // Check that fields that are not nested are mapped into exactly one
-      // feature.
-      TFX_BSL_RETURN_IF_ERROR(
-          feature_encoders.back().second->ValidateNumProducedFeatures(1, name));
+    const std::shared_ptr<arrow::Array>& array =
+        record_batch->GetColumnByName(name);
+    result->emplace_back(name, nullptr);
+    const auto& ragged_partition = ragged_specs.find(name);
+    const auto& row_length_adjustments =
+        ragged_partition == ragged_specs.end()
+            ? std::vector<int64_t>{}
+            : ragged_partition->second.row_length_adjustments;
+    absl::Status status = MakeFeatureEncoder(array, row_length_adjustments,
+                                             &result->back().second);
+    if (!status.ok()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Error encoding feature \"", name, "\": ", status.message()));
     }
   }
+  return absl::OkStatus();
+}
 
-  serialized_examples->resize(record_batch.num_rows());
-  for (int64_t example_index = 0; example_index < record_batch.num_rows();
+absl::Status GetRaggedSpecFromRepresentation(
+    const tensorflow::metadata::v0::TensorRepresentation::RaggedTensor&
+        representation,
+    RaggedTensorSpec* result) {
+  if (representation.feature_path().step_size() != 1) {
+    return absl::InvalidArgumentError(
+        "RaggedTensors with nested or empty value column paths are not "
+        "supported.");
+  }
+  std::vector<std::string> feature_names{representation.feature_path().step(0)};
+  std::vector<std::string> reversed_row_lengths_columns;
+  reversed_row_lengths_columns.reserve(representation.partition_size());
+  std::vector<int64_t> reversed_row_length_adjustments;
+  reversed_row_length_adjustments.reserve(representation.partition_size());
+  // Row lengths partitions will have to be adjusted by the product
+  // of the intermediate uniform partitions since they are not
+  // representing a nested level.
+  int64_t current_adjustment = 1;
+  for (auto partition = representation.partition().rbegin();
+       partition != representation.partition().rend(); ++partition) {
+    if (partition->has_row_length()) {
+      reversed_row_lengths_columns.push_back(partition->row_length());
+      reversed_row_length_adjustments.push_back(current_adjustment);
+      current_adjustment = 1;
+    } else {
+      current_adjustment *= partition->uniform_row_length();
+    }
+  }
+  feature_names.insert(
+      feature_names.end(),
+      std::make_move_iterator(reversed_row_lengths_columns.rbegin()),
+      std::make_move_iterator(reversed_row_lengths_columns.rend()));
+  *result = {
+      std::move(feature_names),
+      std::vector<int64_t>{
+          std::make_move_iterator(reversed_row_length_adjustments.rbegin()),
+          std::make_move_iterator(reversed_row_length_adjustments.rend())}};
+  return absl::OkStatus();
+}
+
+}  // namespace
+
+RecordBatchToExamplesEncoder::~RecordBatchToExamplesEncoder() {}
+
+absl::Status RecordBatchToExamplesEncoder::Make(
+    absl::optional<absl::string_view> serialized_schema,
+    std::unique_ptr<RecordBatchToExamplesEncoder>* result) {
+  absl::flat_hash_map<std::string, RaggedTensorSpec> ragged_specs;
+  if (serialized_schema.has_value()) {
+    auto schema = std::make_unique<tensorflow::metadata::v0::Schema>();
+    if (!schema->ParseFromArray(serialized_schema->data(),
+                                serialized_schema->size())) {
+      return absl::InvalidArgumentError("Unable to parse TFMD schema.");
+    }
+    for (const auto& group : schema->tensor_representation_group()) {
+      for (const auto& representation : group.second.tensor_representation()) {
+        if (representation.second.has_ragged_tensor()) {
+          TFX_BSL_RETURN_IF_ERROR(GetRaggedSpecFromRepresentation(
+              representation.second.ragged_tensor(),
+              &ragged_specs[representation.first]));
+        }
+      }
+    }
+  }
+  *result = absl::WrapUnique(
+      new RecordBatchToExamplesEncoder(std::move(ragged_specs)));
+  return absl::OkStatus();
+}
+
+absl::Status RecordBatchToExamplesEncoder::Encode(
+    const std::shared_ptr<arrow::RecordBatch>& record_batch,
+    std::vector<std::string>* result) const {
+  std::vector<NamedFeatureEncoder> encoders;
+  TFX_BSL_RETURN_IF_ERROR(
+      MakeFeatureEncoders(record_batch, ragged_specs_, &encoders));
+  result->resize(record_batch->num_rows());
+  for (int64_t example_index = 0; example_index < record_batch->num_rows();
        ++example_index) {
     google::protobuf::Arena arena;
     auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
     auto* feature_map = example->mutable_features()->mutable_feature();
-    for (const auto& p : feature_encoders) {
+    for (const auto& encoder : encoders) {
       std::vector<tensorflow::Feature*> features;
-      if (nested_features.find(p.first) != nested_features.end()) {
-        for (const auto& component_name : nested_features.at(p.first)) {
+      auto ragged_partition = ragged_specs_.find(encoder.first);
+      if (ragged_partition != ragged_specs_.end()) {
+        for (const auto& component_name :
+             ragged_partition->second.source_feature_names) {
           features.push_back(&(*feature_map)[component_name]);
         }
       } else {
-        features.push_back(&(*feature_map)[p.first]);
+        features.push_back(&(*feature_map)[encoder.first]);
       }
       TFX_BSL_RETURN_IF_ERROR(
-          p.second->EncodeFeatures(example_index, features));
+          encoder.second->EncodeFeatures(example_index, features));
     }
-    if (!example->SerializeToString(&(*serialized_examples)[example_index])) {
+    if (!example->SerializeToString(&(*result)[example_index])) {
       return absl::DataLossError("Unable to serialize example");
     }
   }
