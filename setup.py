@@ -170,7 +170,7 @@ setup(
         'absl-py>=0.9,<2.0.0',
         'apache-beam[gcp]>=2.40,<3',
         'google-api-python-client>=1.7.11,<2',
-        'numpy>=1.16,<2',
+        'numpy~=1.22.0',
         'pandas>=1.0,<2',
         'protobuf>=3.13,<4',
         'pyarrow>=6,<7',
