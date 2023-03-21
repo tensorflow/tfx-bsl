@@ -12,20 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# A docker image that contains the PyPA manylinux2010 toolchain and
-# bazel 4.0.0.
-# docker build -f Dockerfile.manylinux2010-bazel \
-#   --tag gcr.io/tfx-oss-public/manylinux2010-bazel .
-# docker push gcr.io/tfx-oss-public/manylinux2010-bazel
+# A docker image that contains the PyPA manylinux2014 toolchain and
+# bazel 5.3.0.
+# docker build -f Dockerfile.manylinux2014-bazel \
+#   --tag gcr.io/tfx-oss-public/manylinux2014-bazel .
+# docker push gcr.io/tfx-oss-public/manylinux2014-bazel
 
-FROM quay.io/pypa/manylinux2010_x86_64 as bazel_build
+FROM quay.io/pypa/manylinux2014_x86_64
 
-RUN yum install -y java-1.8.0-openjdk-devel zip wget
+RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel devtoolset-8-gcc-c++ wget zip rh-python38 rsync
 WORKDIR /tmp/bazel_build
-ADD https://github.com/bazelbuild/bazel/releases/download/4.0.0/bazel-4.0.0-dist.zip bazel.zip
-ADD ./build_bazel.sh build_bazel.sh
-RUN /bin/bash build_bazel.sh
-
-FROM quay.io/pypa/manylinux2010_x86_64
-COPY --from=bazel_build /tmp/bazel_build/output/bazel /bin
-RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel zip rh-python36 rsync
+ENV PATH="/opt/python/cp38-cp38m/bin:${PATH}"
+ENV EXTRA_BAZEL_ARGS="--host_javabase=@local_jdk//:jdk"
+ENV BAZEL_LINKLIBS=-lstdc++:-lm
+RUN wget "https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-installer-linux-x86_64.sh" && \
+  /bin/bash ./bazel-5.3.0-installer-linux-x86_64.sh
