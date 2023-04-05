@@ -47,7 +47,7 @@ def tfx_bsl_py_proto_library(
         name = name,
         srcs = srcs,
         srcs_version = "PY3",
-        deps = ["@com_google_protobuf//:protobuf_python"] + deps,
+        deps = ["@com_google_protobuf//:well_known_types_py_pb2"] + deps,
         default_runtime = "@com_google_protobuf//:protobuf_python",
         protoc = "@com_google_protobuf//:protoc",
         visibility = visibility,

@@ -1,8 +1,18 @@
+From a0a912ab8ae48205191b6295cc08e41064026ed0 Mon Sep 17 00:00:00 2001
+From: Ihor Indyk <ihor.indyk@gmail.com>
+Date: Thu, 23 Mar 2023 13:17:53 -0700
+Subject: [PATCH] update example visibility
+
+---
+ tensorflow/core/example/BUILD | 195 ++--------------------------------
+ 1 file changed, 9 insertions(+), 186 deletions(-)
+
 diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
+index 2a1b70a5350..c23ddcdf01d 100644
 --- tensorflow/core/example/BUILD
 +++ tensorflow/core/example/BUILD
-@@ -1,172 +1,10 @@
--load("//tensorflow:tensorflow.bzl", "filegroup")
+@@ -1,187 +1,10 @@
+-load("//tensorflow:tensorflow.default.bzl", "filegroup")
 -load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
 -load(
 -    "@io_bazel_rules_closure//closure:defs.bzl",
@@ -19,9 +29,9 @@ diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
 -    "tf_proto_library",
 -    "tf_pyclif_proto_library",
 -)
-+load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
- 
+-
 -package(
+-    # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
 -    default_visibility = [
 -        "//visibility:public",
 -    ],
@@ -59,6 +69,20 @@ diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
 -        "@com_google_absl//absl/strings",
 -    ],
 -    alwayslink = 1,
+-)
+-
+-tf_cc_test(
+-    name = "feature_util_test",
+-    size = "small",
+-    srcs = ["feature_util_test.cc"],
+-    deps = [
+-        ":example_protos_cc",
+-        ":feature_util",
+-        "//tensorflow/core:test",
+-        "//tensorflow/core:test_main",
+-        "//tensorflow/core/platform:types",
+-        "@com_google_absl//absl/strings",
+-    ],
 -)
 -
 -# TODO(bmzhao): Refactor this target to use granular dependencies
@@ -174,7 +198,8 @@ diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
 -    visibility = [
 -        "//tensorflow/core:__pkg__",
 -    ],
--)
++load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
++
 +cc_proto_library(
 +  name = "example_proto",
 +  srcs = [
@@ -182,5 +207,6 @@ diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
 +      "feature.proto",
 +  ],
 +  visibility = ["//visibility:public"],
-+)
-\ No newline at end of file
+ )
+-- 
+2.40.0.348.gf938b09366-goog

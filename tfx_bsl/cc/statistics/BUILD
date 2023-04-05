@@ -63,9 +63,9 @@ cc_library(
             "@com_google_zetasql//zetasql/public:value",
         ],
     }) + [
+        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
     ],
 )
 
@@ -89,10 +89,10 @@ cc_library(
         "@bazel_tools//src/conditions:windows": [],
         "//conditions:default": [":sql_util"],
     }) + [
+        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:optional",
         "@pybind11",
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
     ],
 )
 

@@ -28,14 +28,14 @@ http_archive(
     ],
 )
 
-PROTOBUF_COMMIT = "fde7cf7358ec7cd69e8db9be4f1fa6a5c431386a" # 3.13.0
+_PROTOBUF_COMMIT = "3.21.9"  # 3.20.3
+
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "e589e39ef46fb2b3b476b3ca355bd324e5984cbdfac19f0e1625f0042e99c276",
-    strip_prefix = "protobuf-%s" % PROTOBUF_COMMIT,
+    sha256 = "f66073dee0bc159157b0bd7f502d7d1ee0bc76b3c1eac9836927511bdc4b3fc1",
+    strip_prefix = "protobuf-%s" % _PROTOBUF_COMMIT,
     urls = [
-        "https://storage.googleapis.com/grpc-bazel-mirror/github.com/google/protobuf/archive/%s.tar.gz" % PROTOBUF_COMMIT,
-        "https://github.com/google/protobuf/archive/%s.tar.gz" % PROTOBUF_COMMIT,
+        "https://github.com/protocolbuffers/protobuf/archive/v3.21.9.zip"
     ],
 )
 
@@ -88,10 +88,11 @@ http_archive(
 )
 
 # TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.
-TENSORFLOW_COMMIT = "359c3cdfc5fabac82b3c70b3b6de2b0a8c16874f"  # 2.10.0
+#here
+TENSORFLOW_COMMIT = "0db597d0d758aba578783b5bf46c889700a45085"  # 2.12.0
 http_archive(
     name = "org_tensorflow_no_deps",
-    sha256 = "bc4e9bbeb0136163f283ab8b695bec747cad738963e153ce3b7e414ebffe408f",
+    sha256 = "e97c242d13e386192e3a9f60fd674461b6595b02b3a2a48edd6fb11aeee7e038",
     strip_prefix = "tensorflow-%s" % TENSORFLOW_COMMIT,
     urls = [
         "https://mirror.bazel.build/github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,
