@@ -203,48 +203,6 @@ class ArrayUtilTest(parameterized.TestCase):
         actual.equals(pa.array([None, 2, 0, 1], type=pa.int32())),
         "actual: {}".format(actual))
 
-  def test_is_list_like(self):
-    for t in (pa.list_(pa.int64()), pa.large_list(pa.int64())):
-      self.assertTrue(array_util.is_list_like(t))
-
-    for t in (pa.binary(), pa.int64(), pa.large_string()):
-      self.assertFalse(array_util.is_list_like(t))
-
-  def test_get_innermost_nested_type_nested_input(self):
-    for inner_type in pa.int64(), pa.float32(), pa.binary():
-      for t in (pa.list_(inner_type), pa.large_list(inner_type)):
-        self.assertTrue(
-            array_util.get_innermost_nested_type(t).equals(inner_type)
-        )
-
-  def test_get_innermost_nested_type_non_nested_input(self):
-    for t in pa.int64(), pa.float32(), pa.binary():
-      self.assertTrue(array_util.get_innermost_nested_type(t).equals(t))
-
-  def test_flatten_nested(self):
-    input_array = pa.array([[[1, 2]], None, [None, [3]]])
-    flattened, parent_indices = array_util.flatten_nested(
-        input_array, return_parent_indices=False
-    )
-    expected = pa.array([1, 2, 3])
-    expected_parent_indices = [0, 0, 2]
-    self.assertIs(parent_indices, None)
-    self.assertTrue(flattened.equals(expected))
-
-    flattened, parent_indices = array_util.flatten_nested(
-        input_array, return_parent_indices=True
-    )
-    self.assertTrue(flattened.equals(expected))
-    np.testing.assert_array_equal(parent_indices, expected_parent_indices)
-
-  def test_flatten_nested_non_list(self):
-    input_array = pa.array([1, 2])
-    flattened, parent_indices = array_util.flatten_nested(
-        input_array, return_parent_indices=True
-    )
-    self.assertTrue(flattened.equals(pa.array([1, 2])))
-    np.testing.assert_array_equal(parent_indices, [0, 1])
-
 
 _MAKE_LIST_ARRAY_INVALID_INPUT_TEST_CASES = [
     dict(
