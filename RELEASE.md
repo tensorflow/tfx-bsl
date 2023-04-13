@@ -25,6 +25,8 @@
     `RaggedTensor`s in a way that is consistent with `tf.io.parse_example`. Note
     that this change is backwards compatible with `ExamplesToRecordBatchDecoder`
     and the decoding workflow as well.
+*   Added utility functions for interacting with Arrow arrays and record
+    batches.
 *   Depends on `numpy~=1.22.0`.
 
 ## Breaking Changes

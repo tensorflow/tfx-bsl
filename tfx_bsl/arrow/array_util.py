@@ -13,6 +13,8 @@
 # limitations under the License.
 """Arrow Array utilities."""
 
+from typing import Tuple, Optional, Union
+
 import numpy as np
 import pyarrow as pa
 # pytype: disable=import-error
@@ -40,7 +42,7 @@ except ImportError:
 # pylint: enable=unused-import
 
 
-def ToSingletonListArray(array: pa.Array) -> pa.Array:
+def ToSingletonListArray(array: pa.Array) -> pa.Array:  # pylint: disable=invalid-name
   """Converts an array of `type` to a `LargeListArray<type>`.
 
   Where result[i] is null if array[i] is null; [array[i]] otherwise.
@@ -74,7 +76,7 @@ def ToSingletonListArray(array: pa.Array) -> pa.Array:
       pa.array(offsets_np, mask=list_array_null_mask), values_non_null)
 
 
-def MakeListArrayFromParentIndicesAndValues(num_parents: int,
+def MakeListArrayFromParentIndicesAndValues(num_parents: int,   # pylint: disable=invalid-name
                                             parent_indices: pa.Array,
                                             values: pa.Array,
                                             empty_list_as_null: bool = True):
@@ -100,3 +102,91 @@ def MakeListArrayFromParentIndicesAndValues(num_parents: int,
   """
   return _MakeListArrayFromParentIndicesAndValues(num_parents, parent_indices,
                                                   values, empty_list_as_null)
+
+
+def is_list_like(data_type: pa.DataType) -> bool:
+  """Returns true if an Arrow type is list-like."""
+  return pa.types.is_list(data_type) or pa.types.is_large_list(data_type)
+
+
+def get_innermost_nested_type(arrow_type: pa.DataType) -> pa.DataType:
+  """Returns the innermost type of a nested list type."""
+  while is_list_like(arrow_type):
+    arrow_type = arrow_type.value_type
+  return arrow_type
+
+
+def flatten_nested(
+    array: pa.Array, return_parent_indices: bool = False
+    ) -> Tuple[pa.Array, Optional[np.ndarray]]:
+  """Flattens all the list arrays nesting an array.
+
+  If `array` is not list-like, itself will be returned.
+
+  Args:
+    array: pa.Array to flatten.
+    return_parent_indices: If True, also returns the parent indices array.
+
+  Returns:
+    A tuple. The first term is the flattened array. The second term is None
+    if `return_parent_indices` is False; otherwise it's a parent indices array
+    parallel to the flattened array: if parent_indices[i] = j, then
+    flattened_array[i] belongs to the j-th element of the input array.
+  """
+  parent_indices = None
+
+  while is_list_like(array.type):
+    if return_parent_indices:
+      cur_parent_indices = GetFlattenedArrayParentIndices(
+          array).to_numpy()
+      if parent_indices is None:
+        parent_indices = cur_parent_indices
+      else:
+        parent_indices = parent_indices[cur_parent_indices]
+    array = array.flatten()
+
+  # the array is not nested at the first place.
+  if return_parent_indices and parent_indices is None:
+    parent_indices = np.arange(len(array))
+  return array, parent_indices
+
+
+def get_field(struct_array: pa.StructArray, field: Union[str, int]) -> pa.Array:
+  """Returns struct_array.field(field) with null propagation.
+
+  This function is equivalent to struct_array.field() but correctly handles
+  null propagation (the parent struct's null values are propagated to children).
+
+  Args:
+    struct_array: A struct array which should be queried.
+    field: The request field to retrieve.
+
+  Returns:
+    A pa.Array containing the requested field.
+
+  Raises:
+    KeyError: If field is not a child field in struct_array.
+  """
+  child_array = struct_array.field(field)
+
+  # In case all values are present then there's no need for special handling.
+  # We can return child_array as is to avoid a performance penalty caused by
+  # constructing and flattening the returned array.
+  if struct_array.null_count == 0:
+    return child_array
+  # is_valid returns a BooleanArray with two buffers the buffer at offset
+  # 0 is always None and buffer 1 contains the data on which fields are
+  # valid/not valid.
+  # (https://arrow.apache.org/docs/format/Columnar.html#buffer-listing-for-each-layout)
+  validity_bitmap_buffer = struct_array.is_valid().buffers()[1]
+
+  # Construct a new struct array with a single field.  Calling flatten() on the
+  # new array guarantees validity bitmaps are merged correctly.
+  new_type = pa.struct([pa.field(field, child_array.type)])
+  filtered_struct = pa.StructArray.from_buffers(
+      new_type,
+      len(struct_array), [validity_bitmap_buffer],
+      null_count=struct_array.null_count,
+      children=[child_array])
+  return filtered_struct.flatten()[0]
+
