@@ -94,7 +94,7 @@ class RecordToTensorTFXIO(record_based_tfxio.RecordBasedTFXIO):
     decoder = tf_graph_record_decoder.load_decoder(self._saved_decoder_path)
     return decoder.decode_record
 
-  def _RawRecordToRecordBatchInternal(
+  def _RawRecordToRecordBatchInternal(  # pytype: disable=signature-mismatch  # overriding-parameter-count-checks
       self, batch_size: Optional[int]) -> beam.PTransform:
 
     @beam.typehints.with_input_types(bytes)
