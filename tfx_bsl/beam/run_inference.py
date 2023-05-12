@@ -363,6 +363,7 @@ class _BaseModelHandler(base.ModelHandler, metaclass=abc.ABCMeta):
   """A basic TFX implementation of ModelHandler."""
 
   def __init__(self, inference_spec_type: model_spec_pb2.InferenceSpecType):
+    super().__init__()
     operation_type = _get_operation_type(inference_spec_type)
     proximity_descriptor = (
         _METRICS_DESCRIPTOR_IN_PROCESS
@@ -1157,6 +1158,7 @@ class _ModelHandlerWrapper(base.ModelHandler):
   """
 
   def __init__(self, model_handler: base.ModelHandler):
+    super().__init__()
     self._model_handler = model_handler
 
   def load_model(self) -> Any:
