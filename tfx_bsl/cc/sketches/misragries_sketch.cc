@@ -314,19 +314,50 @@ class UpdateItemCountsVisitor : public arrow::ArrayVisitor  {
     absl::flat_hash_set<std::string>& extra_items_;
 };
 
+bool OrderRepeatedCountsLexicographical(
+    const std::pair<std::string, double>& x,
+    const std::pair<std::string, double>& y) {
+    if (x.second != y.second) {
+      return x.second > y.second;
+    }
+    return x.first < y.first;
+}
+
+bool OrderRepeatedCountsReverseLexicographical(
+    const std::pair<std::string, double>& x,
+    const std::pair<std::string, double>& y) {
+    if (x.second != y.second) {
+      return x.second > y.second;
+    }
+    return x.first >= y.first;
+}
+
+std::function<bool(const std::pair<std::string, double>&,
+                   const std::pair<std::string, double>&)>
+GetOrderFn(MisraGriesSketch::OrderOnTie order_on_tie) {
+    switch (order_on_tie) {
+      case MisraGriesSketch::OrderOnTie::kLexicographical:
+        return OrderRepeatedCountsLexicographical;
+      case MisraGriesSketch::OrderOnTie::kReverseLexicographical:
+        return OrderRepeatedCountsReverseLexicographical;
+    }
+}
+
 }  // namespace
 
 MisraGriesSketch::MisraGriesSketch(
     int num_buckets, absl::optional<std::string> invalid_utf8_placeholder,
     absl::optional<int> large_string_threshold,
-    absl::optional<std::string> large_string_placeholder)
+    absl::optional<std::string> large_string_placeholder,
+    OrderOnTie order_on_tie)
     : num_buckets_(num_buckets),
       delta_(0.0),
       input_type_(InputType::UNSET),
+      order_on_tie_(order_on_tie),
       invalid_utf8_placeholder_(std::move(invalid_utf8_placeholder)),
       large_string_threshold_(std::move(large_string_threshold)),
       large_string_placeholder_(std::move(large_string_placeholder)) {
-  item_counts_.reserve(num_buckets);
+    item_counts_.reserve(num_buckets);
 }
 
 absl::Status MisraGriesSketch::AddValues(const arrow::Array& items) {
@@ -461,16 +492,7 @@ absl::Status MisraGriesSketch::GetCounts(
       return absl::FailedPreconditionError(absl::StrCat(
           "unhandled input type ", InputType::Type_Name(input_type_)));
   }
-  std::sort(
-      result.begin(), result.end(),
-      [](const std::pair<std::string, double>& x,
-         const std::pair<std::string, double>& y) {
-        if (x.second != y.second) {
-          return x.second > y.second;
-        }
-        return x.first < y.first;
-      }
-  );
+  std::sort(result.begin(), result.end(), GetOrderFn(order_on_tie_));
   // Fill the `result` up to `num_buckets_` items using `extra_items_`.
   if (result.size() < num_buckets_) {
     std::vector<std::string> ordered_extra_items;

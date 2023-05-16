@@ -25,8 +25,15 @@ from absl.testing import parameterized
 _NUM_BUCKETS = 128
 
 
-def _create_basic_sketch(items, weights=None, num_buckets=_NUM_BUCKETS):
-  sketch = sketches.MisraGriesSketch(num_buckets)
+def _create_basic_sketch(
+    items, weights=None, num_buckets=_NUM_BUCKETS, reverse=False
+):
+  order = (
+      sketches.MisraGriesSketch.OrderOnTie.ReverseLexicographical
+      if reverse
+      else sketches.MisraGriesSketch.OrderOnTie.Lexicographical
+  )
+  sketch = sketches.MisraGriesSketch(num_buckets, order_on_tie=order)
   if weights:
     sketch.AddValues(items, weights)
   else:
@@ -116,6 +123,19 @@ class MisraGriesSketchTest(parameterized.TestCase):
     sketch = sketches.MisraGriesSketch(_NUM_BUCKETS)
     with self.assertRaisesRegex(RuntimeError, "UNIMPLEMENTED: bool"):
       sketch.AddValues(values)
+
+  def test_reverse_order(self):
+    items = pa.array(["a", "a", "b", "c"], type=pa.string())
+    sketch = _create_basic_sketch(items, reverse=True)
+    expected_counts = [
+        {"values": b"a", "counts": 2.0},
+        {"values": b"c", "counts": 1.0},
+        {"values": b"b", "counts": 1.0},
+    ]
+    estimate = sketch.Estimate()
+    estimate.validate(full=True)
+
+    self.assertEqual(estimate.to_pylist(), expected_counts)
 
   def test_replace_invalid_utf8(self):
     values1 = pa.array([

@@ -42,9 +42,14 @@ using arrow::Array;
 
 const int kNumBuckets = 128;
 
-MisraGriesSketch MakeSketch(int num_buckets) {
+MisraGriesSketch MakeSketch(int num_buckets,
+                            bool reverse_lexicograph_order = false) {
+  const MisraGriesSketch::OrderOnTie order_on_tie =
+      reverse_lexicograph_order
+          ? MisraGriesSketch::OrderOnTie::kReverseLexicographical
+          : MisraGriesSketch::OrderOnTie::kLexicographical;
   return MisraGriesSketch(num_buckets, absl::nullopt, absl::nullopt,
-                          absl::nullopt);
+                          absl::nullopt, order_on_tie);
 }
 
 void CreateArrowBinaryArrayFromVector(
@@ -102,15 +107,26 @@ TEST(MisraGriesSketchTest, AddSimpleBinary) {
   std::shared_ptr<arrow::Array> array;
   CreateArrowBinaryArrayFromVector(values, &array);
   ASSERT_TRUE(mg.AddValues(*array).ok());
-
-  absl::flat_hash_map<std::string, double> counts;
-  ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
-
-  EXPECT_EQ(counts["foo"], 2);
-  EXPECT_EQ(counts["bar"], 1);
+  std::vector<std::pair<std::string, double>> counts_vector;
+  ASSERT_TRUE(mg.GetCounts(counts_vector).ok());
+  EXPECT_THAT(counts_vector, testing::ElementsAre(testing::Pair("foo", 2),
+                                                  testing::Pair("bar", 1)));
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(3));
 }
 
+TEST(MisraGriesSketchTest, AddBinaryReverse) {
+  MisraGriesSketch mg =
+      MakeSketch(kNumBuckets, /*reverse_lexicograph_order=*/true);
+  std::vector<std::string> values{"foo", "bar"};
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowBinaryArrayFromVector(values, &array);
+  ASSERT_TRUE(mg.AddValues(*array).ok());
+
+  std::vector<std::pair<std::string, double>> counts_vector;
+  ASSERT_TRUE(mg.GetCounts(counts_vector).ok());
+  EXPECT_THAT(counts_vector, testing::ElementsAre(testing::Pair("foo", 1),
+                                                  testing::Pair("bar", 1)));
+}
 
 TEST(MisraGriesSketchTest, AddSimpleInt64) {
   MisraGriesSketch mg = MakeSketch(3);
@@ -118,7 +134,7 @@ TEST(MisraGriesSketchTest, AddSimpleInt64) {
   std::shared_ptr<arrow::Array> array;
   CreateArrowIntArrayFromVector(values, &array);
 
-  ASSERT_TRUE(mg.AddValues(*array).ok());;
+  ASSERT_TRUE(mg.AddValues(*array).ok());
 
   absl::flat_hash_map<std::string, double> counts;
   ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
@@ -144,6 +160,22 @@ TEST(MisraGriesSketchTest, AddSimpleDouble) {
               testing::ElementsAre(testing::Pair("1", 4), testing::Pair("1", 1),
                                    testing::Pair("2.5", 1)));
   EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(6));
+}
+
+TEST(MisraGriesSketchTest, AddDoubleReverse) {
+  MisraGriesSketch mg = MakeSketch(3, /*reverse_lexicograph_order=*/true);
+  std::vector<double> values{1.0, 1.0, 2.0, 2.0};
+  std::shared_ptr<arrow::Array> array;
+  CreateArrowDoubleArrayFromVector(values, &array);
+
+  ASSERT_TRUE(mg.AddValues(*array).ok());
+
+  std::vector<std::pair<std::string, double>> counts;
+  ASSERT_TRUE(mg.GetCounts(counts).ok());
+  // Note: 1.0 and 1.00000001 have distinct encoded representations but the
+  // same decoded representation (1).
+  EXPECT_THAT(counts, testing::ElementsAre(testing::Pair("2", 2),
+                                           testing::Pair("1", 2)));
 }
 
 TEST(MisraGriesSketchTest, GetCountsOnEmptySketch) {

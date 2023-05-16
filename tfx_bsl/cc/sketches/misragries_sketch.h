@@ -66,6 +66,8 @@ namespace sketches {
 
 class MisraGriesSketch {
  public:
+  enum class OrderOnTie { kLexicographical, kReverseLexicographical };
+
   // invalid_utf8_placeholder: if provided, when AddValues() gets a
   //   BinaryArray it will treat elements that are not valid utf-8 sequences in
   //   that array as if they had the value of the placeholder.
@@ -78,7 +80,8 @@ class MisraGriesSketch {
   MisraGriesSketch(int num_buckets,
                    absl::optional<std::string> invalid_utf8_placeholder,
                    absl::optional<int> large_string_threshold,
-                   absl::optional<std::string> large_string_placeholder);
+                   absl::optional<std::string> large_string_placeholder,
+                   OrderOnTie order = OrderOnTie::kLexicographical);
   // This class is copyable and movable.
   ~MisraGriesSketch() = default;
   // Adds an array of items, and sets the stored type if it was previously
@@ -93,8 +96,9 @@ class MisraGriesSketch {
   // sketches do not have the same number of buckets.
   absl::Status Merge(const MisraGriesSketch& other);
   // Returns the list of top-k items sorted in descending order of their counts.
-  // Ties are resolved lexicographically by item value. Returns a non-OK status
-  // if decoding fails.
+  // Ties are resolved (reverse) lexicographically by item value
+  // (depending on the value of reverse_lexicograph_order). Returns a non-OK
+  // status if decoding fails.
   absl::Status GetCounts(
       std::vector<std::pair<std::string, double>>& result) const;
   // Creates a struct array <values, counts> of the top-k items.
@@ -137,6 +141,7 @@ class MisraGriesSketch {
   // the latest Compress or DecrementCounters. These are used to fill the result
   // to num_buckets_ size in Estimate.
   absl::flat_hash_set<std::string> extra_items_;
+  OrderOnTie order_on_tie_;
 
   absl::optional<std::string> invalid_utf8_placeholder_;
   absl::optional<int> large_string_threshold_;

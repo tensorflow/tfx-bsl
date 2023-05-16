@@ -110,11 +110,20 @@ void DefineKmvSketchClass(py::module sketch_module) {
 }
 
 void DefineMisraGriesSketchClass(py::module sketch_module) {
-  py::class_<MisraGriesSketch>(sketch_module, "MisraGriesSketch")
+  py::class_<MisraGriesSketch> sketch(sketch_module, "MisraGriesSketch");
+
+  py::enum_<MisraGriesSketch::OrderOnTie>(sketch, "OrderOnTie")
+      .value("Lexicographical", MisraGriesSketch::OrderOnTie::kLexicographical)
+      .value("ReverseLexicographical",
+             MisraGriesSketch::OrderOnTie::kReverseLexicographical)
+      .export_values();
+
+  sketch
       .def(py::init([](const int& num_buckets,
                        absl::optional<std::string> invalid_utf8_placeholder,
                        absl::optional<int> large_string_thresehold,
-                       absl::optional<std::string> large_string_placeholder) {
+                       absl::optional<std::string> large_string_placeholder,
+                       MisraGriesSketch::OrderOnTie order_on_tie) {
              if (large_string_thresehold.has_value() !=
                  large_string_placeholder.has_value()) {
                throw std::runtime_error(
@@ -124,12 +133,14 @@ void DefineMisraGriesSketchClass(py::module sketch_module) {
              return std::make_unique<MisraGriesSketch>(
                  num_buckets, std::move(invalid_utf8_placeholder),
                  std::move(large_string_thresehold),
-                 std::move(large_string_placeholder));
+                 std::move(large_string_placeholder), order_on_tie);
            }),
            py::arg("num_buckets"),
            py::arg("invalid_utf8_placeholder") = absl::nullopt,
            py::arg("large_string_threshold") = absl::nullopt,
-           py::arg("large_string_placeholder") = absl::nullopt)
+           py::arg("large_string_placeholder") = absl::nullopt,
+           py::arg("order_on_tie") =
+               MisraGriesSketch::OrderOnTie::kLexicographical)
       .def(
           "AddValues",
           [](MisraGriesSketch& sketch,

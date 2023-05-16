@@ -8,6 +8,8 @@
 
 *   Bumped the Ubuntu version on which TFX-BSL is tested to 20.04 (previously
     16.04).
+*   Adds `order_on_tie` parameter to `MisraGriesSketch` to specify the order
+    of items in case their counts are tied.
 
 ## Breaking Changes
 
