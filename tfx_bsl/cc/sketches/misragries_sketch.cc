@@ -343,6 +343,26 @@ GetOrderFn(MisraGriesSketch::OrderOnTie order_on_tie) {
     }
 }
 
+tfx_bsl::sketches::MisraGries_OrderOnTie ConvertOrderOnTie(
+    MisraGriesSketch::OrderOnTie order) {
+    switch (order) {
+      case MisraGriesSketch::OrderOnTie::kLexicographical:
+        return tfx_bsl::sketches::MisraGries_OrderOnTie_LEXICOGRAPHICAL;
+      case MisraGriesSketch::OrderOnTie::kReverseLexicographical:
+        return tfx_bsl::sketches::MisraGries_OrderOnTie_REVERSE_LEXICOGRAPHICAL;
+    }
+}
+
+MisraGriesSketch::OrderOnTie ConvertOrderOnTie(
+    tfx_bsl::sketches::MisraGries_OrderOnTie order) {
+    switch (order) {
+      case MisraGries_OrderOnTie_REVERSE_LEXICOGRAPHICAL:
+        return MisraGriesSketch::OrderOnTie::kReverseLexicographical;
+      default:
+        return MisraGriesSketch::OrderOnTie::kLexicographical;
+    }
+}
+
 }  // namespace
 
 MisraGriesSketch::MisraGriesSketch(
@@ -575,6 +595,7 @@ std::string MisraGriesSketch::Serialize() const{
   } else {
     mg_proto.set_large_string_threshold(-1);
   }
+  mg_proto.set_order_on_tie(ConvertOrderOnTie(order_on_tie_));
 
   return mg_proto.SerializeAsString();
 }
@@ -608,6 +629,7 @@ absl::Status MisraGriesSketch::Deserialize(
   for (const auto& item : mg_proto.extra_items()) {
     (*result)->extra_items_.emplace(item);
   }
+  (*result)->order_on_tie_ = ConvertOrderOnTie(mg_proto.order_on_tie());
   return absl::OkStatus();
 }
 

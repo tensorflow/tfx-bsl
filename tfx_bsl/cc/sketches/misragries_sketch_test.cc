@@ -42,14 +42,24 @@ using arrow::Array;
 
 const int kNumBuckets = 128;
 
+MisraGriesSketch SerializeRoundTrip(const MisraGriesSketch& sketch) {
+  // Go through serialization round trip to ensure that properties are
+  // persisted.
+  std::string serialized_sketch = sketch.Serialize();
+  std::unique_ptr<MisraGriesSketch> deserialized;
+  CHECK(MisraGriesSketch::Deserialize(serialized_sketch, &deserialized).ok());
+  // Return a copy.
+  return *deserialized;
+}
+
 MisraGriesSketch MakeSketch(int num_buckets,
                             bool reverse_lexicograph_order = false) {
   const MisraGriesSketch::OrderOnTie order_on_tie =
       reverse_lexicograph_order
           ? MisraGriesSketch::OrderOnTie::kReverseLexicographical
           : MisraGriesSketch::OrderOnTie::kLexicographical;
-  return MisraGriesSketch(num_buckets, absl::nullopt, absl::nullopt,
-                          absl::nullopt, order_on_tie);
+  return SerializeRoundTrip(MisraGriesSketch(
+      num_buckets, absl::nullopt, absl::nullopt, absl::nullopt, order_on_tie));
 }
 
 void CreateArrowBinaryArrayFromVector(
@@ -655,16 +665,13 @@ TEST(MisraGriesSketchTest, ZipfSerializationPreservesAccuracy) {
 
     ASSERT_TRUE(mg.AddValues(*array, *weight_array).ok());
     // Perform serialization routine.
-    std::string serialized_sketch = mg.Serialize();
-    std::unique_ptr<MisraGriesSketch> mg_recovered;
-    ASSERT_TRUE(
-        MisraGriesSketch::Deserialize(serialized_sketch, &mg_recovered).ok());
+    MisraGriesSketch mg_recovered = SerializeRoundTrip(mg);
 
     absl::flat_hash_map<std::string, double> counts;
     ASSERT_TRUE(CreateCountsMap(mg, counts).ok());
 
     absl::flat_hash_map<std::string, double> counts_recovered;
-    ASSERT_TRUE(CreateCountsMap(*mg_recovered, counts_recovered).ok());
+    ASSERT_TRUE(CreateCountsMap(mg_recovered, counts_recovered).ok());
 
     double global_weight = total_weight * trial;
     EXPECT_LE(mg.GetDelta(), mg.GetDeltaUpperBound(global_weight));
@@ -688,12 +695,8 @@ TEST(MisraGriesSketchTest, SerializationPreservesInputType) {
   ASSERT_TRUE(mg1.AddValues(*array).ok());
 
   EXPECT_EQ(mg1.GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
-  const std::string s = mg1.Serialize();
-
-  std::unique_ptr<MisraGriesSketch> mg_recovered;
-  ASSERT_TRUE(MisraGriesSketch::Deserialize(s, &mg_recovered).ok());
-
-  EXPECT_EQ(mg_recovered->GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
+  MisraGriesSketch mg_recovered = SerializeRoundTrip(mg1);
+  EXPECT_EQ(mg_recovered.GetInputType(), tfx_bsl::sketches::InputType::FLOAT);
 }
 
 }  // namespace sketches

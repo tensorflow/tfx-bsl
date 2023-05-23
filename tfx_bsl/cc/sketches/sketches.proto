@@ -20,15 +20,16 @@ package tfx_bsl.sketches;
 // distinct type that are encoded and decoded identically may be assigned
 // the same InputType.
 message InputType {
-enum Type {
-  UNSET = 0;
-  // Represents a value stored as a raw string (identity decoder).
-  RAW_STRING = 1;
-  // Represents a float or double, stored internally in hex exponential format.
-  FLOAT = 2;
-  // Represents an int, stored internally as a decimal string.
-  INT = 3;
-}
+  enum Type {
+    UNSET = 0;
+    // Represents a value stored as a raw string (identity decoder).
+    RAW_STRING = 1;
+    // Represents a float or double, stored internally in hex exponential
+    // format.
+    FLOAT = 2;
+    // Represents an int, stored internally as a decimal string.
+    INT = 3;
+  }
 }
 
 // Specifies how the KMV sketch is formatted for serialization.
@@ -44,6 +45,12 @@ message Kmv {
 
 // Specifies how the MisraGries sketch is formatted for serialization.
 message MisraGries {
+  // Determines the order of values in case their weights/counts are tied.
+  enum OrderOnTie {
+    DEFAULT = 0;
+    LEXICOGRAPHICAL = 1;
+    REVERSE_LEXICOGRAPHICAL = 2;
+  }
   // Max number of values in the sketch.
   int32 num_buckets = 1;
   // Names of items.
@@ -64,6 +71,7 @@ message MisraGries {
   int32 large_string_threshold = 7;
   string large_string_placeholder = 8;
   InputType.Type input_type = 11;
+  OrderOnTie order_on_tie = 12;
 }
 
 // Specifies how the Quantiles Sketch is formatted for serialization.
