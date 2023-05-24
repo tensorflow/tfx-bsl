@@ -106,6 +106,23 @@ absl::Status ValidateSliceSqlQuery(const zetasql::PreparedQuery& query,
   return absl::OkStatus();
 }
 
+// The zetasql::StructType requires a zetasql::TypeFactory to construct and
+// manage its life cycle. We need to make sure the type does not go out of
+// scope when needed during query execution. And since the ZetaSql library
+// does not expose its global type factory to the outside, we set up one here.
+zetasql::TypeFactory& GetSqlTypeFactory() {
+  static zetasql::TypeFactory* type_factory = new zetasql::TypeFactory();
+  return *type_factory;
+}
+
+// A helper to bubble up the error message in absl::Status to arrow:Status when
+// we build ZetaSQL struct type and data from arrow struct type and data,
+// specifically to handle the case of invalid data.
+arrow::Status ToArrowStatus(absl::Status status) {
+  if (ABSL_PREDICT_TRUE(status.ok())) return arrow::Status::OK();
+  return arrow::Status::Invalid(status.message());
+}
+
 // This class converts the apache arrow array type to the corresponding
 // zetasql type.
 class ZetaSQLTypeVisitor : public arrow::TypeVisitor {
@@ -157,6 +174,17 @@ class ZetaSQLTypeVisitor : public arrow::TypeVisitor {
   arrow::Status Visit(const arrow::ListType& type) { return VisitList(type); }
   arrow::Status Visit(const arrow::LargeListType& type) {
     return VisitList(type);
+  }
+
+  arrow::Status Visit(const arrow::StructType& type) {
+    std::vector<zetasql::StructField> fields;
+    for (int i = 0; i < type.num_fields(); ++i) {
+      ZetaSQLTypeVisitor visitor;
+      ARROW_RETURN_NOT_OK(type.field(i)->type()->Accept(&visitor));
+      fields.push_back({type.field(i)->name(), visitor.ZetaSqlType()});
+    }
+    return ToArrowStatus(
+        GetSqlTypeFactory().MakeStructTypeFromVector(fields, &zetasql_type_));
   }
 
  private:
@@ -269,6 +297,32 @@ class ZetaSQLValueVisitor : public arrow::ArrayVisitor {
 
   arrow::Status Visit(const arrow::LargeListArray& array) override {
     return VisitList(array);
+  }
+
+  arrow::Status Visit(const arrow::StructArray& array) override {
+    if (array.IsNull(index_)) {
+      zetasql_value_ = zetasql::Value::Null(zetasql_type_);
+      return arrow::Status::OK();
+    }
+    if (!zetasql_type_->IsStruct()) {
+      return arrow::Status::TypeError(
+          "Expect a ZetaSql struct type to convert data to ZetaSql values, "
+          ", but got: ",
+          zetasql_type_->DebugString());
+    }
+    const zetasql::StructType* sql_struct_type = zetasql_type_->AsStruct();
+    std::vector<zetasql::Value> child_zetasql_values;
+    child_zetasql_values.reserve(array.num_fields());
+    for (int i = 0; i < array.num_fields(); ++i) {
+      ZetaSQLValueVisitor child_arrow_visitor(sql_struct_type->field(i).type);
+      child_arrow_visitor.SetIndex(index_);
+      ARROW_RETURN_NOT_OK(array.field(i)->Accept(&child_arrow_visitor));
+      child_zetasql_values.push_back(child_arrow_visitor.ZetaSqlValue());
+    }
+    absl::StatusOr<zetasql::Value> value = zetasql::Value::MakeStruct(
+        sql_struct_type, std::move(child_zetasql_values));
+    if (value.ok()) zetasql_value_ = std::move(*value);
+    return ToArrowStatus(value.status());
   }
 
  private:

@@ -208,6 +208,113 @@ _TEST_CASES_WITH_INVALID_STATEMENT = [
         error='query result should in an Array of Struct type.'),
 ]
 
+_TEST_CASES_OF_STRUCT_ARRAYS = [
+    dict(
+        testcase_name='on_struct_and_nested_struct',
+        record_batch=pa.RecordBatch.from_arrays(
+            [
+                pa.array([1, 2, None], type=pa.int64()),
+                pa.array(
+                    [(3, 4.1), None, (5, 6.3)],
+                    type=pa.struct(
+                        [pa.field('a', pa.int32()), pa.field('b', pa.float32())]
+                    ),
+                ),
+                pa.array(
+                    [
+                        (7.1, ('o_string', b'x_bytes')),
+                        (8.2, ('p_string', b'y_bytes')),
+                        (9.3, ('q_string', b'z_bytes')),
+                    ],
+                    type=pa.struct([
+                        pa.field('c', pa.float64()),
+                        pa.field(
+                            'd',
+                            pa.struct([
+                                pa.field('e', pa.string()),
+                                pa.field('f', pa.binary()),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ],
+            ['f1', 'f2', 'f3'],
+        ),
+        sql="""
+          SELECT
+            ARRAY(
+              SELECT
+                STRUCT(f1, f2.a as f2_a, f2.b as f2_b, f3.c as f3_c,
+                f3.d.e as f3_d_e, f3.d.f as f3_d_f)
+            ) as slice_key
+          FROM Examples as example;""",
+        expected_output=[
+            [[
+                ('f1', '1'),
+                ('f2_a', '3'),
+                ('f2_b', '4.1'),
+                ('f3_c', '7.1'),
+                ('f3_d_e', 'o_string'),
+                ('f3_d_f', 'x_bytes'),
+            ]],
+            [[
+                ('f1', '2'),
+                ('f2_a', 'NULL'),
+                ('f2_b', 'NULL'),
+                ('f3_c', '8.2'),
+                ('f3_d_e', 'p_string'),
+                ('f3_d_f', 'y_bytes'),
+            ]],
+            [[
+                ('f1', 'NULL'),
+                ('f2_a', '5'),
+                ('f2_b', '6.3'),
+                ('f3_c', '9.3'),
+                ('f3_d_e', 'q_string'),
+                ('f3_d_f', 'z_bytes'),
+            ]],
+        ],
+    ),
+    dict(
+        testcase_name='on_struct_of_list',
+        record_batch=pa.RecordBatch.from_arrays(
+            [
+                pa.array(
+                    [([5], ([1.1],)), None, ([8], ([3.3],))],
+                    type=pa.struct([
+                        pa.field('int64_list', pa.list_(pa.int64())),
+                        pa.field(
+                            'f2',
+                            pa.struct([
+                                pa.field(
+                                    'float64_list', pa.list_(pa.float64())
+                                ),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ],
+            ['f1'],
+        ),
+        sql="""
+          SELECT
+            ARRAY(
+              SELECT
+                STRUCT(int64_list as f1_int64_list,
+                       float64_list as f1_f2_float64_list)
+              FROM
+                example.f1.int64_list,
+                example.f1.f2.float64_list
+            ) as slice_key
+            FROM Examples as example;""",
+        expected_output=[
+            [[('f1_int64_list', '5'), ('f1_f2_float64_list', '1.1')]],
+            [],
+            [[('f1_int64_list', '8'), ('f1_f2_float64_list', '3.3')]],
+        ],
+    ),
+]
+
 
 # The RecordBatchSQLSliceQuery uses ZetaSQL which cannot be compiled on Windows.
 # b/191377114
@@ -377,6 +484,12 @@ class RecordBatchSQLSliceQueryTest(parameterized.TestCase):
                         ('string_list', 'b'), ('large_string_list', 'b+'),
                         ('binary_list', 'b_bytes'),
                         ('large_binary_list', 'b_bytes+')]]])
+
+  @parameterized.named_parameters(*_TEST_CASES_OF_STRUCT_ARRAYS)
+  def test_query_with_struct_arrays(self, record_batch, sql, expected_output):
+    query = sql_util.RecordBatchSQLSliceQuery(sql, record_batch.schema)
+    slices = query.Execute(record_batch)
+    self.assertEqual(slices, expected_output)
 
 
 if __name__ == '__main__':
