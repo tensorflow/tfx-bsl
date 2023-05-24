@@ -119,7 +119,12 @@ class TensorsToRecordBatchConverter(object):
     assert len(self._handlers) == len(tensors)
     arrays = []
     for tensor_name, handler in self._handlers:
-      arrays.extend(handler.convert(tensors[tensor_name]))
+      try:
+        arrays.extend(handler.convert(tensors[tensor_name]))
+      except Exception as e:
+        # Reraise the same exception with a extra information.
+        e.args = (f"tensor_name: '{tensor_name}'",) + e.args
+        raise e.with_traceback(e.__traceback__)
 
     return pa.record_batch(arrays, schema=self._arrow_schema)
 
