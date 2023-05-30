@@ -10,6 +10,8 @@
     16.04).
 *   Adds `order_on_tie` parameter to `MisraGriesSketch` to specify the order
     of items in case their counts are tied.
+*   Use @platforms instead of @bazel_tools//platforms to specify constraints in
+    OSS build.
 
 ## Breaking Changes
 

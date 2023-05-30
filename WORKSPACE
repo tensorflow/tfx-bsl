@@ -150,6 +150,16 @@ switched_rules_by_language(
     cc = True,
 )
 
+_PLATFORMS_VERSION = "0.0.6"
+http_archive(
+    name = "platforms",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/%s/platforms-%s.tar.gz" % (_PLATFORMS_VERSION, _PLATFORMS_VERSION),
+        "https://github.com/bazelbuild/platforms/releases/download/%s/platforms-%s.tar.gz" % (_PLATFORMS_VERSION, _PLATFORMS_VERSION),
+    ],
+    sha256 = "5308fc1d8865406a49427ba24a9ab53087f17f5266a7aabbfc28823f3916e1ca",
+)
+
 # Specify the minimum required bazel version.
 load("@bazel_skylib//lib:versions.bzl", "versions")
 versions.check("5.3.0")
