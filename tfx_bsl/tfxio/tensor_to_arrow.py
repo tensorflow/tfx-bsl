@@ -123,7 +123,9 @@ class TensorsToRecordBatchConverter(object):
         arrays.extend(handler.convert(tensors[tensor_name]))
       except Exception as e:
         # Reraise the same exception with a extra information.
-        e.args = (f"tensor_name: '{tensor_name}'",) + e.args
+        dbg_info = (f"tensor '{tensor_name}': {tensors[tensor_name]}\n"
+                    f"a type_spec of {handler._type_spec}")  # pylint: disable=protected-access.
+        e.args = (dbg_info,) + e.args
         raise e.with_traceback(e.__traceback__)
 
     return pa.record_batch(arrays, schema=self._arrow_schema)
