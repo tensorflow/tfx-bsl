@@ -217,7 +217,7 @@ class _DenseTensorHandler(_TypeHandler):
     assert isinstance(tensor, (tf.Tensor, np.ndarray)), type(tensor)
     values_np = np.asarray(tensor)
     shape = values_np.shape
-    elements_per_list = np.product(shape[1:], dtype=np.int64)
+    elements_per_list = np.prod(shape[1:], dtype=np.int64)
     if elements_per_list == 0:
       offsets = np.zeros(shape[0] + 1, dtype=np.int64)
     else:
@@ -337,7 +337,7 @@ class _RaggedTensorHandler(_TypeHandler):
 
     # Calculate the number of inner uniform dimension elements per one first
     # ragged dimension element.
-    inner_dimension_elements = np.product(tensor.shape[1:], dtype=np.int64)
+    inner_dimension_elements = np.prod(tensor.shape[1:], dtype=np.int64)
 
     result = pa.array(np.ravel(tensor), self._values_arrow_type)
     # Nest values. The innermost sequence of offsets must be adjusted by the
