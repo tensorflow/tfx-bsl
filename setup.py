@@ -167,12 +167,12 @@ setup(
     # and protobuf) with TF.
     install_requires=[
         'absl-py>=0.9,<2.0.0',
-        'apache-beam[gcp]>=2.40,<3',
+        'apache-beam[gcp]>=2.47,<3',
         'google-api-python-client>=1.7.11,<2',
         'numpy~=1.22.0',
         'pandas>=1.0,<2',
         'protobuf>=3.20.3,<5',
-        'pyarrow>=6,<7',
+        'pyarrow>=10,<11',
         'tensorflow>=2.12,<3',
         'tensorflow-metadata' + select_constraint(
             default='>=1.13.1,<1.14.0',
