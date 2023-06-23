@@ -97,6 +97,7 @@ cc_library(
         ":datetime",
         # See arrow.patch.
         "@com_google_absl//absl/numeric:int128",
+        "@com_google_absl//absl/strings",
         ":flatbuffers",
         ":config",
     ],
