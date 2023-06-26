@@ -97,7 +97,7 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     return tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
         self._schema)
 
-  def _GetSchemaForDecoding(self) -> schema_pb2.Schema:
+  def _GetSchemaForDecoding(self) -> Optional[schema_pb2.Schema]:
     return (self._schema
             if self._schema_for_decoding is None else self._schema_for_decoding)
 
@@ -124,8 +124,11 @@ class _TFExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     features = {}
     feature_name_to_tensor_name = {}
     for tensor_name, tensor_rep in self.TensorRepresentations().items():
-      paths = tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
-          tensor_rep)
+      paths = (
+          tensor_representation_util.GetSourceColumnsFromTensorRepresentation(
+              tensor_rep
+          )
+      )
       if len(paths) == 1:
         # The parser config refers to a single tf.Example feature. In this case,
         # the key to the parser config needs to be the name of the feature.
@@ -289,7 +292,8 @@ class TFExampleRecord(_TFExampleRecordBase):
         options.shuffle_seed)
 
     decoder = example_coder.ExamplesToRecordBatchDecoder(
-        self._schema.SerializeToString())
+        self._schema.SerializeToString() if self._schema is not None else None
+    )
     for examples in dataset.as_numpy_iterator():
       decoded = decoder.DecodeBatch(examples)
       if self._raw_record_column_name is None:
@@ -371,6 +375,8 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
       self._decoder = example_coder.ExamplesToRecordBatchDecoder()
 
   def process(self, examples: List[bytes]):
+    if not self._decoder:
+      raise ValueError("Decoder uninitialized. Run setup() first.")
     decoded = self._decoder.DecodeBatch(examples)
     if self._raw_record_column_name is None:
       yield decoded

@@ -179,6 +179,7 @@ class ParseCSVLine(beam.DoFn):
 
   def process(self,
               csv_line: CSVLine) -> Iterable[Tuple[List[CSVCell], CSVLine]]:
+    assert self._reader is not None, "Reader uninitialized. Call setup() first."
     line = self._reader.ReadLine(csv_line)
     yield (line, csv_line)
 
@@ -312,7 +313,7 @@ class BatchedCSVRowsToRecordBatch(beam.DoFn):
     # len(_column_names) and len(_column_arrow_types) may not equal to that,
     # because columns of type IGNORE are not there.
     self._column_handlers = None
-    self._column_names = None
+    self._column_names = []
     self._column_arrow_types = None
 
   def _get_column_handler(

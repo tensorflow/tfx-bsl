@@ -79,12 +79,13 @@ class _RawRecordTFXIO(record_based_tfxio.RecordBasedTFXIO):
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     return {
-        self.raw_record_column_name:
-            schema_pb2.TensorRepresentation(
-                dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
-                    column_name=self.raw_record_column_name,
-                    shape=schema_pb2.FixedShape(),  # scalar
-                ))
+        self.raw_record_column_name
+        or "": schema_pb2.TensorRepresentation(
+            dense_tensor=schema_pb2.TensorRepresentation.DenseTensor(
+                column_name=self.raw_record_column_name,
+                shape=schema_pb2.FixedShape(),  # scalar
+            )
+        )
     }
 
   def _ProjectImpl(self, tensor_names: List[Text]) -> tfxio.TFXIO:
