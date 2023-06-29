@@ -1,5 +1,22 @@
 licenses(["notice"])
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
+
+exports_files(
+    [
+        "build_macros.bzl",
+    ],
+)
+
+bzl_library(
+        name = "build_macros",
+        srcs = ["build_macros.bzl"],
+        deps = ["//tools/build_defs/proto/cpp:cc_proto_library.bzl",
+                "//tools/build_defs/proto/cpp:proto_names_to_cc_proto_names.bzl",
+        ],
+        visibility = ["//visibility:public"],
+)
 
 config_setting(
     name = "windows",
