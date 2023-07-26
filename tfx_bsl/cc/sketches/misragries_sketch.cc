@@ -329,7 +329,7 @@ bool OrderRepeatedCountsReverseLexicographical(
     if (x.second != y.second) {
       return x.second > y.second;
     }
-    return x.first >= y.first;
+    return x.first > y.first;
 }
 
 std::function<bool(const std::pair<std::string, double>&,
