@@ -50,6 +50,12 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
         physical_format=physical_format)
     self._schema = schema
 
+  @property
+  def schema(self) -> schema_pb2.Schema:
+    if self._schema is None:
+      raise ValueError("Schema is undefined.")
+    return self._schema
+
   def SupportAttachingRawRecords(self) -> bool:
     return True
 
@@ -80,8 +86,8 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
 
   def _ArrowSchemaNoRawRecordColumn(self) -> pa.Schema:
     return sequence_example_coder.SequenceExamplesToRecordBatchDecoder(
-        _SEQUENCE_COLUMN_NAME,
-        self._schema.SerializeToString()).ArrowSchema()
+        _SEQUENCE_COLUMN_NAME, self.schema.SerializeToString()
+    ).ArrowSchema()
 
   def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
     return tensor_representation_util.InferTensorRepresentationsFromMixedSchema(
@@ -130,7 +136,7 @@ class _TFSequenceExampleRecordBase(record_based_tfxio.RecordBasedTFXIO):
     # Note: We only copy projected features into the new schema because the
     # coder, and ArrowSchema() only care about Schema.feature. If they start
     # depending on other Schema fields then those fields must also be projected.
-    for f in self._schema.feature:
+    for f in self.schema.feature:
       p = path.ColumnPath(f.name)
       if f.name == _SEQUENCE_COLUMN_NAME:
         if f.type != schema_pb2.STRUCT:
@@ -325,6 +331,7 @@ class _DecodeBatchExamplesDoFn(beam.DoFn):
               _SEQUENCE_COLUMN_NAME))
 
   def process(self, examples: List[bytes]):
+    assert self._decoder is not None  # Workflow ran setup().
     decoded = self._decoder.DecodeBatch(examples)
     if self._raw_record_column_name is None:
       yield decoded

@@ -357,6 +357,7 @@ class _RecordsToRecordBatch(beam.DoFn):
       self._decoder_load_seconds = None
 
   def process(self, records: List[bytes]) -> Iterator[pa.RecordBatch]:
+    assert self._tensors_to_record_batch_converter is not None  # By setup().
     decoded = self._tensors_to_record_batch_converter.convert(
         self._decode_fn(tf.convert_to_tensor(records, dtype=tf.string)))
     if self._raw_record_column_name is None:
