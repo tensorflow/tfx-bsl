@@ -1,5 +1,7 @@
 # Description:
 #   C++ libraries in tfx_bsl.
+
+# Placeholder: load py_library
 load("//tfx_bsl:build_macros.bzl", "tfx_bsl_pybind_extension")
 
 package(default_visibility = ["//visibility:private"])
