@@ -206,7 +206,7 @@ class IntDecoder : public FeatureDecoder {
       const tensorflow::Feature& feature) override {
     if (feature.kind_case() != tensorflow::Feature::kInt64List) {
       return absl::InvalidArgumentError(
-          absl::StrCat("Feature had wrong type, expected in64_list, found ",
+          absl::StrCat("Feature had wrong type, expected int64_list, found ",
                        KindToStr(feature.kind_case())));
     }
     for (auto value : feature.int64_list().value()) {
