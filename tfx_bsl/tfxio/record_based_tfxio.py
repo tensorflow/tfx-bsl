@@ -46,7 +46,7 @@ class RecordBasedTFXIO(tfxio.TFXIO):
   `RawRecordBeamSource()`: returns a PTransform that produces PCollection[bytes]
     (of raw records).
 
-  RawRecordToReocrdBatch(): returns a PTransform that takes `PCollection[bytes]`
+  RawRecordToRecordBatch(): returns a PTransform that takes `PCollection[bytes]`
     (expected to be what's produced by `RawRecordBeamSource()`) and produces
     `PCollection[RecordBatch]`. It's guaranteed that `BeamSource()` is a
     composition of `RawRecordBeamSource()` and `RawRecordToRecordBatch()`.
