@@ -48,8 +48,8 @@ _USE_BYTE_SIZE_BATCHING = flags.DEFINE_bool(
 # this rule is a case when there are many empty features in the encoded
 # examples, but even then the difference is not significant and it is likely
 # that the actual size cap will be applied first.
-_TARGET_BATCH_BYTES_SIZE = 104_857_600  # 100MB
-_BATCH_SIZE_CAP_WITH_BYTE_TARGET = 10000
+_TARGET_BATCH_BYTES_SIZE = 20_971_520  # 20MiB
+_BATCH_SIZE_CAP_WITH_BYTE_TARGET = 8192
 
 
 def _UseByteSizeBatching() -> bool:

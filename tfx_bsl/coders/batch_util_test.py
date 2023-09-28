@@ -52,12 +52,12 @@ _BATCH_RECORDS_TEST_CASES = (
         batch_size=None,
         tfxio_use_byte_size_batching=True,
         expected_kwargs={
-            "min_batch_size": 104_857_600,
-            "max_batch_size": 104_857_600,
+            "min_batch_size": batch_util._TARGET_BATCH_BYTES_SIZE,
+            "max_batch_size": batch_util._TARGET_BATCH_BYTES_SIZE,
             "element_size_fn": "dummy",
         },
         expected_element_contributions={
-            b"dummy": 10486,  # Minimal contribution.
+            b"dummy": 2560,  # Minimal contribution.
             b"dummy" * 10000: 50000,
         },
     ),
@@ -66,13 +66,13 @@ _BATCH_RECORDS_TEST_CASES = (
         batch_size=None,
         tfxio_use_byte_size_batching=True,
         expected_kwargs={
-            "min_batch_size": 104_857_600,
-            "max_batch_size": 104_857_600,
+            "min_batch_size": batch_util._TARGET_BATCH_BYTES_SIZE,
+            "max_batch_size": batch_util._TARGET_BATCH_BYTES_SIZE,
             "element_size_fn": "dummy",
         },
         element_size_fn=lambda kv: len(kv[0] or b"") + len(kv[1]),
         expected_element_contributions={
-            (None, b"dummy"): 10486,  # Minimal contribution.
+            (None, b"dummy"): 2560,  # Minimal contribution.
             (b"asd", b"dummy" * 10000): 50003,
         },
     ),
