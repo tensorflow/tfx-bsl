@@ -1,6 +1,6 @@
 # TFX Basic Shared Libraries
 
-[![Python](https://img.shields.io/badge/python%20-3.8%7C3.9-blue)](https://github.com/tensorflow/tfx-bsl)
+[![Python](https://img.shields.io/badge/python%7C3.9-blue)](https://github.com/tensorflow/tfx-bsl)
 [![PyPI](https://badge.fury.io/py/tfx-bsl.svg)](https://badge.fury.io/py/tfx-bsl)
 
 TFX Basic Shared Libraries (`tfx_bsl`) contains libraries shared by many
@@ -79,7 +79,7 @@ Then, run the following at the project root:
 sudo docker-compose build manylinux2010
 sudo docker-compose run -e PYTHON_VERSION=${PYTHON_VERSION} manylinux2010
 ```
-where `PYTHON_VERSION` is one of `{38, 39}`.
+where `PYTHON_VERSION` is one of `{39}`.
 
 A wheel will be produced under `dist/`.
 
