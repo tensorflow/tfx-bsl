@@ -20,9 +20,9 @@
 
 FROM quay.io/pypa/manylinux2014_x86_64
 
-RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel devtoolset-8-gcc-c++ wget zip rh-python38 rsync
+RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel devtoolset-8-gcc-c++ wget zip rh-python39 rsync
 WORKDIR /tmp/bazel_build
-ENV PATH="/opt/python/cp38-cp38m/bin:${PATH}"
+ENV PATH="/opt/python/cp39-cp39m/bin:${PATH}"
 ENV EXTRA_BAZEL_ARGS="--host_javabase=@local_jdk//:jdk"
 ENV BAZEL_LINKLIBS=-lstdc++:-lm
 RUN wget "https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-installer-linux-x86_64.sh" && \
