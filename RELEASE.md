@@ -6,9 +6,6 @@
 
 ## Bug Fixes and Other Changes
 
-*   Bump the macOS version on which TFX-BSL is tested to Ventura (previously was
-    Monterey).
-
 ## Breaking Changes
 
 ## Deprecations
@@ -52,7 +49,7 @@
 
 ## Bug Fixes and Other Changes
 
-*   Bumped the minimum bazel version required to build `tfx_bsl` to 5.3.0.
+*   Bumped the mininum bazel version required to build `tfx_bsl` to 5.3.0.
 *   `RecordBatchToExamplesEncoder` now encodes arrays representing
     `RaggedTensor`s in a way that is consistent with `tf.io.parse_example`. Note
     that this change is backwards compatible with `ExamplesToRecordBatchDecoder`
@@ -433,7 +430,7 @@
 
 *   Depends on `absl-py>=0.9,<0.13`.
 *   Depends on `tensorflow-metadata>=0.29,<0.30`.
-*   Bumped the minimum bazel version required to build `tfx_bsl` to 3.7.2.
+*   Bumped the mininum bazel version required to build `tfx_bsl` to 3.7.2.
 
 ## Breaking Changes
 
@@ -670,7 +667,7 @@
    -  Package `tfx_bsl` will be able to work with a wider range of pyarrow
       versions. We will relax the version requirements in setup.py in the next
       release.
-   -  Custom built `tfx_bsl` does not have to maintain ABI compatibility with
+   -  Custom built `tfx_bsl` does not have to maintain ABI compatiblity with
       a specific `pyarrow` installation. Custom builds don't need to be
       manylinux-conformant.
 
