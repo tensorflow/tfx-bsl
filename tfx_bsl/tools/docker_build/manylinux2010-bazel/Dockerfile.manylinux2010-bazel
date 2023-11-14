@@ -20,7 +20,7 @@
 
 FROM quay.io/pypa/manylinux2014_x86_64
 
-RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel devtoolset-8-gcc-c++ wget zip rh-python39 rsync
+RUN yum install -y java-1.8.0-openjdk java-1.8.0-openjdk-devel devtoolset-8-gcc-c++ wget zip rh-python38 rsync
 WORKDIR /tmp/bazel_build
 ENV PATH="/opt/python/cp39-cp39m/bin:${PATH}"
 ENV EXTRA_BAZEL_ARGS="--host_javabase=@local_jdk//:jdk"

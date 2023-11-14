@@ -26,7 +26,7 @@ WORKING_DIR=$PWD
 
 function setup_environment() {
   source scl_source enable devtoolset-8
-  source scl_source enable rh-python39
+  source scl_source enable rh-python38
   if [[ -z "${PYTHON_VERSION}" ]]; then
     echo "Must set PYTHON_VERSION env to 39|310|311"; exit 1;
   fi
@@ -47,7 +47,7 @@ function setup_environment() {
   ${PIP_BIN} install --upgrade pip
   ${PIP_BIN} install wheel --upgrade
   ${PIP_BIN} install "numpy~=1.22.0" --force
-  pip3 install auditwheel
+  ${PIP_BIN} install auditwheel
 }
 
 function build_wheel() {
