@@ -30,6 +30,21 @@ SpecType = Union[
 ]
 
 
+def _CanonicalType(dtype: tf.dtypes.DType) -> tf.dtypes.DType:
+  """Returns TFXIO-canonical version of the given type."""
+  if dtype.is_floating:
+    return tf.float32
+  elif dtype.is_integer or dtype.is_bool:
+    return tf.int64
+  elif dtype in (tf.string, bytes):
+    return tf.string
+  else:
+    raise TypeError(
+        f'Got {dtype}. Only tf.uint8/16/32, tf.int8/16/32/64, tf.float16/32 and'
+        ' bytes/tf.string supported.'
+    )
+
+
 def _IsDict(element: SpecType) -> bool:
   return isinstance(element, (dict, collections.OrderedDict))
 
@@ -112,7 +127,7 @@ def _GetDictStructureForElementSpec(
     feature_names: (kwarg) Feature names for columns in Dataset.
 
   Returns:
-    OrderedDict Strucutre for Dataset Structure change
+    OrderedDict Structure.
   """
   original_spec = spec[0]
 
@@ -123,3 +138,33 @@ def _GetDictStructureForElementSpec(
     feature_names = _GetFeatureNames(original_spec)
 
   return collections.OrderedDict(zip(feature_names, flattened_spec))
+
+
+def _PrepareDataset(
+    dataset: tf.data.Dataset, feature_names: Optional[List[str]]
+) -> tf.data.Dataset:
+  """Prepare tf.data.Dataset by modifying structure and casting to supporting dtypes.
+
+  Args:
+    dataset: A tf.data.Dataset having any structure of <tuple, namedtuple, dict,
+      OrderedDict>.
+    feature_names: Optional list of feature_names for flattened features in the
+      Dataset.
+
+  Returns:
+    A modified tf.data.Dataset with flattened OrderedDict structure and TFXIO
+    supported dtypes.
+  """
+
+  dict_structure = _GetDictStructureForElementSpec(
+      dataset.element_spec, feature_names=feature_names
+  )
+
+  def _UpdateStructureAndCastDtypes(*x):
+    x = tf.nest.flatten(x)
+    x = tf.nest.pack_sequence_as(dict_structure, x)
+    for k, v in x.items():
+      x[k] = tf.cast(v, _CanonicalType(v.dtype))
+    return x
+
+  return dataset.map(_UpdateStructureAndCastDtypes)

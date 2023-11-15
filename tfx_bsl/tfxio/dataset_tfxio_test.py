@@ -269,6 +269,108 @@ class DatasetTfxioTest(tf.test.TestCase, parameterized.TestCase):
     )
     self.assertEqual(new_structure, expected_dict)
 
+  @parameterized.named_parameters(
+      *[
+          dict(
+              testcase_name='dataset_tuple',
+              dataset=tf.data.Dataset.from_tensor_slices([1, 2, 3]),
+              feature_names=None,
+              expected_data=[
+                  collections.OrderedDict([('feature0', 1)]),
+                  collections.OrderedDict([('feature0', 2)]),
+                  collections.OrderedDict([('feature0', 3)]),
+              ],
+          ),
+          dict(
+              testcase_name='dataset_tuple_str',
+              dataset=tf.data.Dataset.from_tensor_slices(['foo', 'bar', 'baz']),
+              feature_names=None,
+              expected_data=[
+                  collections.OrderedDict([('feature0', b'foo')]),
+                  collections.OrderedDict([('feature0', b'bar')]),
+                  collections.OrderedDict([('feature0', b'baz')]),
+              ],
+          ),
+          dict(
+              testcase_name='dataset_tuple_with_feature_names',
+              dataset=tf.data.Dataset.from_tensor_slices(
+                  ([1, 2, 3], [4, 5, 6])
+              ),
+              feature_names=['x', 'y'],
+              expected_data=[
+                  collections.OrderedDict([('x', 1), ('y', 4)]),
+                  collections.OrderedDict([('x', 2), ('y', 5)]),
+                  collections.OrderedDict([('x', 3), ('y', 6)]),
+              ],
+          ),
+          dict(
+              testcase_name='dataset_dict',
+              dataset=tf.data.Dataset.from_tensor_slices(
+                  {'a': [1, 2], 'b': [3, 4]}
+              ),
+              feature_names=None,
+              expected_data=[
+                  collections.OrderedDict([('a', 1), ('b', 3)]),
+                  collections.OrderedDict([('a', 2), ('b', 4)]),
+              ],
+          ),
+          dict(
+              testcase_name='dataset_dict_with_feature_names',
+              dataset=tf.data.Dataset.from_tensor_slices(
+                  {'a': [1, 2], 'b': [3, 4]}
+              ),
+              feature_names=['f1', 'f2'],
+              expected_data=[
+                  collections.OrderedDict([('f1', 1), ('f2', 3)]),
+                  collections.OrderedDict([('f1', 2), ('f2', 4)]),
+              ],
+          ),
+          dict(
+              testcase_name='dataset_namedtuple',
+              dataset=tf.data.Dataset.from_tensor_slices(
+                  collections.namedtuple('Data', ['x', 'y'])([1], [2])
+              ),
+              feature_names=None,
+              expected_data=[collections.OrderedDict([('x', 1), ('y', 2)])],
+          ),
+          dict(
+              testcase_name='dataset_namedtuple_with_feature_names',
+              dataset=tf.data.Dataset.from_tensor_slices(
+                  collections.namedtuple('Data', ['x', 'y'])([1], [2])
+              ),
+              feature_names=['f1', 'f2'],
+              expected_data=[collections.OrderedDict([('f1', 1), ('f2', 2)])],
+          ),
+      ]
+  )
+  def test_prepare_dataset(self, dataset, feature_names, expected_data):
+    updated_dataset = dataset_tfxio._PrepareDataset(
+        dataset, feature_names=feature_names
+    )
+    updated_data = list(updated_dataset.as_numpy_iterator())
+    self.assertAllEqual(updated_data, expected_data)
+
+  def test_prepare_float_dataset(self):
+    dataset = tf.data.Dataset.from_tensor_slices([1.2, 3.4, 5.6])
+    expected_data = [1.2, 3.4, 5.6]
+    updated_dataset = dataset_tfxio._PrepareDataset(dataset, feature_names=None)
+    updated_data = [
+        list(i.values())[0] for i in list(updated_dataset.as_numpy_iterator())
+    ]
+    self.assertLen(updated_data, len(expected_data))
+    for x, y in zip(updated_data, expected_data):
+      self.assertAlmostEqual(x, y, places=5)
+
+  def test_update_dataset_raises_error(self):
+    value = tf.constant(1 + 2j)
+    dataset = tf.data.Dataset.from_tensor_slices([value])
+    with self.assertRaisesRegex(
+        TypeError,
+        "Got <dtype: 'complex128'>. Only tf.uint8/16/32, tf.int8/16/32/64,"
+        ' tf.float16/32 and bytes/tf.string supported.',
+    ):
+      dataset_tfxio._PrepareDataset(dataset, feature_names=None)
+
 
 if __name__ == '__main__':
   tf.test.main()
