@@ -6,6 +6,10 @@
 
 ## Bug Fixes and Other Changes
 
+*   Bump the macOS version on which TFX-BSL is tested to Ventura (previously was
+    Monterey).
+* Bumps the pybind11 version to 2.11.1
+
 ## Breaking Changes
 
 ## Deprecations
