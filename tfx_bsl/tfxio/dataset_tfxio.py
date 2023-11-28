@@ -15,8 +15,17 @@
 """TFXIO Adapter for tf.data.Dataset."""
 
 import collections
-from typing import Dict, List, NamedTuple, Optional, OrderedDict, Tuple, Union
+import os
+import tempfile
+from typing import Dict, Iterator, List, NamedTuple, Optional, OrderedDict, Tuple, Union
+
+import apache_beam as beam
+import pyarrow as pa
 import tensorflow as tf
+from tfx_bsl.tfxio import dataset_options
+from tfx_bsl.tfxio import tensor_adapter
+from tfx_bsl.tfxio import tensor_to_arrow
+from tfx_bsl.tfxio import tfxio
 
 
 SpecType = Union[
@@ -168,3 +177,156 @@ def _PrepareDataset(
     return x
 
   return dataset.map(_UpdateStructureAndCastDtypes)
+
+
+def _LoadDatasetAsRecordBatch(
+    shard: Tuple[int, str],
+    converter: tensor_to_arrow.TensorsToRecordBatchConverter,
+    feature_names: Optional[List[str]],
+    use_custom_reader: bool,
+) -> Iterator[pa.RecordBatch]:
+  """Yields RecordBatches from a single shard.
+
+  Args:
+    shard: Tuple of shard index and saved dataset path.
+    converter: TensorsToRecordBatchConverter Object.
+    feature_names: Optional list of feature names.
+    use_custom_reader: Flag to specify the shard reading method.
+
+  Yields:
+    Yields RecordBatches.
+  """
+  shard_num, path = shard
+
+  def _ReaderFunc(datasets):
+    return datasets.skip(shard_num).take(1).get_single_element()
+
+  if use_custom_reader:
+    dataset = tf.data.Dataset.load(path, reader_func=_ReaderFunc)
+  else:
+    dataset = tf.data.Dataset.load(path)
+
+  dataset = _PrepareDataset(dataset, feature_names=feature_names).prefetch(
+      tf.data.AUTOTUNE
+  )
+
+  # Handles reading empty shards.
+  try:
+    for data in dataset:
+      yield converter.convert(data)
+  except (tf.errors.InvalidArgumentError, tf.errors.OutOfRangeError):
+    pass
+
+
+class DatasetTFXIOOptions(NamedTuple):
+  """Options for DatasetTFXIO.
+
+  working_dir: A directory to write the intermediate materialized dataset. It is
+    expected to be remote accessible, since the execution is transferred to Beam
+    runners during BeamSource API call.
+  feature_names: List of feature names for columns/attributes. Expected to have
+    features name for all the features in the flattened feature_spec.
+    If None: Creates default feature names for non-named features and utilizes
+      existing feature names from named features (Dict, NamedTuples).
+    If Partial, creates default feature names for all the features.
+  num_shards: Number of shards to write the materialized dataset. Uses default
+    tf.data sharding if None. Check tf.data.Dataset.save documentation for more
+    details. [https://www.tensorflow.org/api_docs/python/tf/data/Dataset#save]
+  """
+
+  working_dir: str = tempfile.mkdtemp()
+  feature_names: Optional[List[str]] = None
+  num_shards: Optional[int] = None
+
+
+class DatasetTFXIO(tfxio.TFXIO):
+  """TFXIO implementation for tf.data.Dataset sources."""
+
+  def __init__(
+      self,
+      dataset: tf.data.Dataset,
+      options: DatasetTFXIOOptions = DatasetTFXIOOptions(),
+  ):
+    """Initializes DatasetTFXIO.
+
+    Args:
+      dataset: A batched, finite tf.data.Dataset
+      options: DatasetTFXIOOptions Object, providing working directory, feature
+        names and number of shards for intermediate materialization options.
+    """
+    self._dataset = dataset
+    self._options = options
+    self._use_custom_sharding = bool(self._options.num_shards)
+
+    # Below we retrieve type_specs for the prepared dataset, which are used to
+    # create TensorsToRecordBatchConverter object. Since, it requires
+    # preparing the dataset, we initially modify only a single element (faster).
+    # The entire dataset is prepared in distributed manner on the beam runners
+    # during distributed read.
+    self._type_specs = _PrepareDataset(
+        self._dataset.take(1), feature_names=self._options.feature_names
+    ).element_spec
+    self._converter = tensor_to_arrow.TensorsToRecordBatchConverter(
+        self._type_specs
+    )
+    self._file_pattern = os.path.join(
+        self._options.working_dir, 'saved_dataset'
+    )
+
+  def _SaveDataset(self, batch_size: Optional[int] = None):
+    def _CustomShardFunc(*unused_args) -> tf.Tensor:
+      if self._options.num_shards == 1:
+        return tf.constant(0, dtype=tf.int64)
+      return tf.random.uniform(
+          shape=(), maxval=self._options.num_shards, dtype=tf.int64
+      )
+
+    if batch_size:
+      self._dataset = self._dataset.rebatch(batch_size)
+
+    if self._use_custom_sharding:
+      self._dataset.save(self._file_pattern, shard_func=_CustomShardFunc)
+    else:
+      self._dataset.save(self._file_pattern)
+
+  def ArrowSchema(self) -> pa.Schema:
+    return self._converter.arrow_schema()
+
+  def TensorRepresentations(self) -> tensor_adapter.TensorRepresentations:
+    return self._converter.tensor_representations()
+
+  def TensorAdapterConfig(self):
+    return tensor_adapter.TensorAdapterConfig(
+        self.ArrowSchema(), self.TensorRepresentations(), self._type_specs
+    )
+
+  def BeamSource(self, batch_size: Optional[int] = None) -> beam.PTransform:
+    self._SaveDataset(batch_size)
+
+    def _PTransformFn(pipeline):
+      num_shards = self._options.num_shards or 1
+      return (
+          pipeline
+          | beam.Create(enumerate([self._file_pattern] * num_shards))
+          | beam.FlatMap(
+              _LoadDatasetAsRecordBatch,
+              self._converter,
+              self._options.feature_names,
+              self._use_custom_sharding,
+          )
+      )
+
+    return beam.ptransform_fn(_PTransformFn)()
+
+  def RecordBatches(self, options):
+    return _PrepareDataset(
+        self._dataset, feature_names=options.feature_names
+    ).prefetch(tf.data.AUTOTUNE)
+
+  def TensorFlowDataset(
+      self, options: dataset_options.TensorFlowDatasetOptions
+  ) -> tf.data.Dataset:
+    raise NotImplementedError
+
+  def _ProjectImpl(self, tensor_names):
+    raise NotImplementedError
