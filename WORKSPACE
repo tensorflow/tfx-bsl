@@ -89,10 +89,10 @@ http_archive(
 
 # TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.
 #here
-TENSORFLOW_COMMIT = "1cb1a030a62b169d90d34c747ab9b09f332bf905"  # 2.13.0
+TENSORFLOW_COMMIT = "6887368d6d46223f460358323c4b76d61d1558a8"  # 2.15.0
 http_archive(
     name = "org_tensorflow_no_deps",
-    sha256 = "a62eba23ebfcf1d6d2d3241f1629b99df576a9f726c439a97c3acd590e71fe62",
+    sha256 = "bb25fa4574e42ea4d452979e1d2ba3b86b39569d6b8106a846a238b880d73652",
     strip_prefix = "tensorflow-%s" % TENSORFLOW_COMMIT,
     urls = [
         "https://mirror.bazel.build/github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,
