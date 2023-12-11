@@ -33,51 +33,61 @@ fbs_headers = [
     "cpp/src/generated/Tensor_generated.h",
 ]
 
+arrow_src_includes = [
+    "cpp/src/arrow/*.cc",
+    "cpp/src/arrow/c/*.cc",
+    "cpp/src/arrow/compute/**/*.cc",
+    "cpp/src/arrow/array/**/*.cc",
+    "cpp/src/arrow/util/**/*.cc",
+    "cpp/src/arrow/util/**/*.h",
+    "cpp/src/arrow/vendored/**/*.cpp",
+    "cpp/src/arrow/vendored/**/*.hpp",
+    "cpp/src/arrow/vendored/**/*.cc",
+    "cpp/src/arrow/vendored/**/*.c",
+    "cpp/src/arrow/vendored/**/*.h",
+    "cpp/src/arrow/io/*.h",
+    "cpp/src/arrow/io/*.cc",
+    "cpp/src/arrow/tensor/*.cc",
+    "cpp/src/arrow/ipc/*.h",
+    "cpp/src/arrow/ipc/*.cc",
+]
+
+arrow_src_excludes = [
+    # Excluding files which we don't depend on, but needs
+    # additional dependencies like boost, snappy etc.
+    "cpp/src/arrow/util/bpacking_avx2.*",
+    "cpp/src/arrow/util/bpacking_avx512.*",
+    "cpp/src/arrow/util/bpacking_neon*",
+    "cpp/src/arrow/util/bpacking_simd*",
+    "cpp/src/arrow/util/compression_brotli*",
+    "cpp/src/arrow/util/compression_bz2*",
+    "cpp/src/arrow/util/compression_lz4*",
+    "cpp/src/arrow/util/compression_z*",
+    "cpp/src/arrow/util/compression_snappy*",
+    "cpp/src/arrow/**/*test*",
+    "cpp/src/arrow/**/*benchmark*.cc",
+    "cpp/src/arrow/**/*hdfs*.cc",
+    "cpp/src/arrow/**/*hdfs*.h",
+    "cpp/src/arrow/ipc/json*.cc",
+    "cpp/src/arrow/ipc/generate*.cc",
+    "cpp/src/arrow/ipc/stream-to-file.cc",
+    "cpp/src/arrow/ipc/file-to-stream.cc",
+    "cpp/src/arrow/vendored/xxhash/**",
+    "cpp/src/arrow/vendored/datetime/**",
+]
+
 cc_library(
     name = "arrow",
-    srcs = glob(
-        [
-            "cpp/src/arrow/*.cc",
-            "cpp/src/arrow/c/*.cc",
-            "cpp/src/arrow/compute/**/*.cc",
-            "cpp/src/arrow/array/**/*.cc",
-            "cpp/src/arrow/util/**/*.cc",
-            "cpp/src/arrow/util/**/*.h",
-            "cpp/src/arrow/vendored/**/*.cpp",
-            "cpp/src/arrow/vendored/**/*.hpp",
-            "cpp/src/arrow/vendored/**/*.cc",
-            "cpp/src/arrow/vendored/**/*.c",
-            "cpp/src/arrow/vendored/**/*.h",
-            "cpp/src/arrow/io/*.h",
-            "cpp/src/arrow/io/*.cc",
-            "cpp/src/arrow/tensor/*.cc",
-            "cpp/src/arrow/ipc/*.h",
-            "cpp/src/arrow/ipc/*.cc",
-        ],
-        exclude = [
-            # Excluding files which we don't depend on, but needs
-            # additional dependencies like boost, snappy etc.
-            "cpp/src/arrow/util/bpacking_avx2.*",
-            "cpp/src/arrow/util/bpacking_avx512.*",
-            "cpp/src/arrow/util/bpacking_neon*",
-            "cpp/src/arrow/util/bpacking_simd*",
-            "cpp/src/arrow/util/compression_brotli*",
-            "cpp/src/arrow/util/compression_bz2*",
-            "cpp/src/arrow/util/compression_lz4*",
-            "cpp/src/arrow/util/compression_z*",
-            "cpp/src/arrow/util/compression_snappy*",
-            "cpp/src/arrow/**/*test*",
-            "cpp/src/arrow/**/*benchmark*.cc",
-            "cpp/src/arrow/**/*hdfs*.cc",
-            "cpp/src/arrow/**/*hdfs*.h",
-            "cpp/src/arrow/ipc/json*.cc",
-            "cpp/src/arrow/ipc/generate*.cc",
-            "cpp/src/arrow/ipc/stream-to-file.cc",
-            "cpp/src/arrow/ipc/file-to-stream.cc",
-            "cpp/src/arrow/vendored/xxhash/**",
-            "cpp/src/arrow/vendored/datetime/**",
-        ],
-    ),
+    srcs = select({
+        "@//tfx_bsl:macos_arm64": glob(
+            arrow_src_includes,
+            exclude = arrow_src_excludes + ["cpp/src/arrow/compute/exec/*avx2.*"],
+        ),
+        "//conditions:default": glob(
+            arrow_src_includes,
+            exclude = arrow_src_excludes,
+        ),
+    }),
     hdrs = glob([
         "cpp/src/arrow/*.h",
         "cpp/src/arrow/array/*.h",
