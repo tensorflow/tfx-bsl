@@ -6,6 +6,7 @@
 
 ## Bug Fixes and Other Changes
 
+*   Partial support for building from source on macOS arm64 machines.
 *   Bump the macOS version on which TFX-BSL is tested to Ventura (previously was
     Monterey).
 *   Bumps the pybind11 version to 2.11.1
