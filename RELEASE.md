@@ -6,6 +6,7 @@
 
 ## Bug Fixes and Other Changes
 
+*   Bumped the mininum bazel version required to build `tfx_bsl` to 6.1.0.
 *   Bump the macOS version on which TFX-BSL is tested to Ventura (previously was
     Monterey).
 *   Bumps the pybind11 version to 2.11.1

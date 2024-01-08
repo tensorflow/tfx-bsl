@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # A docker image that contains the PyPA manylinux2014 toolchain and
-# bazel 5.3.0.
+# bazel 6.1.0.
 # docker build -f Dockerfile.manylinux2014-bazel \
 #   --tag gcr.io/tfx-oss-public/manylinux2014-bazel .
 # docker push gcr.io/tfx-oss-public/manylinux2014-bazel
@@ -25,5 +25,5 @@ WORKDIR /tmp/bazel_build
 ENV PATH="/opt/python/cp39-cp39m/bin:${PATH}"
 ENV EXTRA_BAZEL_ARGS="--host_javabase=@local_jdk//:jdk"
 ENV BAZEL_LINKLIBS=-lstdc++:-lm
-RUN wget "https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-installer-linux-x86_64.sh" && \
-  /bin/bash ./bazel-5.3.0-installer-linux-x86_64.sh
+RUN wget "https://github.com/bazelbuild/bazel/releases/download/6.1.0/bazel-6.1.0-installer-linux-x86_64.sh" && \
+  /bin/bash ./bazel-6.1.0-installer-linux-x86_64.sh
