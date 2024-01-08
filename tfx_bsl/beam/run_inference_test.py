@@ -527,7 +527,7 @@ class RunOfflineInferenceTest(RunInferenceFixture, parameterized.TestCase):
 
     model = TestKerasModel(inference_model)
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(lr=.001),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=.001),
         loss=tf.keras.losses.binary_crossentropy,
         metrics=['accuracy'])
 
