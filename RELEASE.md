@@ -11,7 +11,6 @@
     Monterey).
 *   Bumps the pybind11 version to 2.11.1
 *   Depends on `tensorflow>=2.15,<3`
-*   Depends on `apache-beam>=2.48,<3`
 
 ## Breaking Changes
 
