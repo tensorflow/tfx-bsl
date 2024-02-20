@@ -501,7 +501,7 @@ absl::Status RecordBatchToExamplesEncoder::Encode(
   for (int64_t example_index = 0; example_index < record_batch->num_rows();
        ++example_index) {
     google::protobuf::Arena arena;
-    auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
+    auto* example = google::protobuf::Arena::Create<tensorflow::Example>(&arena);
     auto* feature_map = example->mutable_features()->mutable_feature();
     for (const auto& encoder : encoders) {
       std::vector<tensorflow::Feature*> features;

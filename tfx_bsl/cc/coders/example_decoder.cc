@@ -691,7 +691,7 @@ absl::Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersAvailable(
     std::shared_ptr<arrow::RecordBatch>* record_batch) const {
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_examples.size(); ++i) {
-    auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
+    auto* example = google::protobuf::Arena::Create<tensorflow::Example>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_examples[i], example));
     for (const auto& p : example->features().feature()) {
       const std::string& feature_name = p.first;
@@ -730,7 +730,7 @@ absl::Status ExamplesToRecordBatchDecoder::DecodeFeatureDecodersUnavailable(
 
   google::protobuf::Arena arena;
   for (auto serialized_example : serialized_examples) {
-    auto* example = google::protobuf::Arena::CreateMessage<tensorflow::Example>(&arena);
+    auto* example = google::protobuf::Arena::Create<tensorflow::Example>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseExample(serialized_example, example));
     TFX_BSL_RETURN_IF_ERROR(incremental_decoder.Add(*example));
   }
@@ -921,7 +921,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersAvailable(
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
     auto* sequence_example =
-        google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
+        google::protobuf::Arena::Create<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
         serialized_sequence_examples[i], sequence_example));
     for (const auto& p : sequence_example->context().feature()) {
@@ -1002,7 +1002,7 @@ SequenceExamplesToRecordBatchDecoder::DecodeFeatureListDecodersUnavailable(
   google::protobuf::Arena arena;
   for (int i = 0; i < serialized_sequence_examples.size(); ++i) {
     auto* sequence_example =
-        google::protobuf::Arena::CreateMessage<tensorflow::SequenceExample>(&arena);
+        google::protobuf::Arena::Create<tensorflow::SequenceExample>(&arena);
     TFX_BSL_RETURN_IF_ERROR(ParseSequenceExample(
         serialized_sequence_examples[i], sequence_example));
     TFX_BSL_RETURN_IF_ERROR(incremental_decoder.Add(*sequence_example));
