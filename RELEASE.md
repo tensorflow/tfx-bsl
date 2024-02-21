@@ -13,6 +13,7 @@
 *   Depends on `tensorflow>=2.15,<3`
 *   Depends on `apache-beam[gcp]>=2.53.0,<3`.
 *   Depends on `protobuf>=4.25.2,<5`.
+*   Deprecated Windows support.
 
 ## Breaking Changes
 

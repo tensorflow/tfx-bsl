@@ -137,8 +137,6 @@ pip install dist/*.whl
 
   * macOS 10.12.6 (Sierra) or later.
   * Ubuntu 20.04 or later.
-  * Windows 7 or later.
-
 
 ## Compatible versions
 
