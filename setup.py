@@ -32,9 +32,6 @@ from setuptools.command.install import install
 from setuptools.dist import Distribution
 
 
-_IS_PY311 = sys.version_info >= (3, 11)
-
-
 class _BuildCommand(build.build):
   """Build everything that is needed to install.
 
@@ -170,11 +167,13 @@ setup(
     # and protobuf) with TF.
     install_requires=[
         'absl-py>=0.9,<2.0.0',
-        f'apache-beam[gcp]>={"2.53" if _IS_PY311 else "2.47"},<3',
+        'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
+        'apache-beam[gcp]>=2.47,<3;python_version<"3.11"',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.22.0',
         'pandas>=1.0,<2',
-        f'protobuf>={"4.25.2" if _IS_PY311 else "3.20.3"},<5',
+        'protobuf>=4.25.2,<5;python_version>="3.11"',
+        'protobuf>=3.20.3,<5;python_version<"3.11"',
         'pyarrow>=10,<11',
         'tensorflow>=2.15,<3',
         'tensorflow-metadata' + select_constraint(
