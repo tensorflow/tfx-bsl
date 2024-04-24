@@ -1,4 +1,4 @@
-# Version 1.15.0
+# Version 1.15.1
 
 ## Major Features and Improvements
 
@@ -10,7 +10,7 @@
 *   Bump the macOS version on which TFX-BSL is tested to Ventura (previously was
     Monterey).
 *   Bumps the pybind11 version to 2.11.1
-*   Depends on `tensorflow~=2.15`
+*   Depends on `tensorflow 2.15`
 *   Depends on `apache-beam[gcp]>=2.53.0,<3` for Python 3.11 and on 
     `apache-beam[gcp]>=2.47.0,<3` for 3.9 and 3.10.
 *   Depends on `protobuf>=4.25.2,<5` for Python 3.11 and on `protobuf>3.20.3,<5`
