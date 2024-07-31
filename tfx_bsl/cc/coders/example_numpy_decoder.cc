@@ -20,6 +20,7 @@ limitations under the License.
 #include <string>
 
 #include "numpy/arrayobject.h"
+#include "numpy/npy_common.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "tensorflow/core/example/example.pb.h"
@@ -56,10 +57,9 @@ absl::Status ExampleToNumpyDict(absl::string_view serialized_proto,
         const auto& values = feature.bytes_list().value();
         // Creating ndarray.
         npy_intp values_dims[] = {static_cast<npy_intp>(values.size())};
-        feature_values_ndarray =
-            PyArray_SimpleNew(1, values_dims, PyArray_OBJECT);
-        PyObject** buffer =
-            reinterpret_cast<PyObject**>(PyArray_DATA(feature_values_ndarray));
+        feature_values_ndarray = PyArray_SimpleNew(1, values_dims, NPY_OBJECT);
+        PyObject** buffer = reinterpret_cast<PyObject**>(PyArray_DATA(
+            reinterpret_cast<PyArrayObject*>(feature_values_ndarray)));
         for (int i = 0; i < values.size(); ++i) {
           const std::string& v = values[i];
           buffer[i] = PyBytes_FromStringAndSize(v.data(), v.size());
@@ -70,9 +70,9 @@ absl::Status ExampleToNumpyDict(absl::string_view serialized_proto,
         const auto& values = feature.float_list().value();
         // Creating ndarray.
         npy_intp values_dims[] = {static_cast<npy_intp>(values.size())};
-        feature_values_ndarray =
-            PyArray_SimpleNew(1, values_dims, PyArray_FLOAT32);
-        memcpy(reinterpret_cast<void*>(PyArray_DATA(feature_values_ndarray)),
+        feature_values_ndarray = PyArray_SimpleNew(1, values_dims, NPY_FLOAT32);
+        memcpy(reinterpret_cast<void*>(PyArray_DATA(
+                   reinterpret_cast<PyArrayObject*>(feature_values_ndarray))),
                values.data(), values.size() * sizeof(float));
         break;
       }
@@ -80,9 +80,9 @@ absl::Status ExampleToNumpyDict(absl::string_view serialized_proto,
         const auto& values = feature.int64_list().value();
         // Creating ndarray.
         npy_intp values_dims[] = {static_cast<npy_intp>(values.size())};
-        feature_values_ndarray =
-            PyArray_SimpleNew(1, values_dims, PyArray_INT64);
-        memcpy(reinterpret_cast<void*>(PyArray_DATA(feature_values_ndarray)),
+        feature_values_ndarray = PyArray_SimpleNew(1, values_dims, NPY_INT64);
+        memcpy(reinterpret_cast<void*>(PyArray_DATA(
+                   reinterpret_cast<PyArrayObject*>(feature_values_ndarray))),
                values.data(), values.size() * sizeof(int64_t));
         break;
       }
@@ -97,8 +97,8 @@ absl::Status ExampleToNumpyDict(absl::string_view serialized_proto,
         return absl::DataLossError("Invalid value list in input proto.");
       }
     }
-    const int err = PyDict_SetItemString(
-        *result, feature_name.data(), feature_values_ndarray);
+    const int err = PyDict_SetItemString(*result, feature_name.data(),
+                                         feature_values_ndarray);
     Py_XDECREF(feature_values_ndarray);
     if (err == -1) {
       return absl::InternalError("Failed to insert item into Dict.");
