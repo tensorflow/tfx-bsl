@@ -25,7 +25,6 @@ cc_library(
 tfx_bsl_proto_library(
     name = "sketches_proto",
     srcs = ["sketches.proto"],
-    cc_api_version = 2,
 )
 
 cc_test(
