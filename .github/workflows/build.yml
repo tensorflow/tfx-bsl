@@ -1,0 +1,33 @@
+name: Build tfx-bsl
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [39, 310, 311]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build the manylinux2010 image
+      run: docker compose build manylinux2010
+
+    - name: Build the package for Python ${{ matrix.python-version }}
+      run: |
+        docker compose run -e PYTHON_VERSION=${{ matrix.python-version }} manylinux2010
+
+    - name: Upload wheel artifact for Python ${{ matrix.python-version }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: tfx-bsl-wheel-py${{ matrix.python-version }}
+        path: dist/*.whl
