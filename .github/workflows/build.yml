@@ -31,3 +31,6 @@ jobs:
       with:
         name: tfx-bsl-wheel-py${{ matrix.python-version }}
         path: dist/*.whl
+
+    - name: Install built wheel
+      run: pip install dist/*.whl
