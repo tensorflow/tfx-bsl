@@ -539,6 +539,10 @@ class _RemotePredictModelHandler(_BaseModelHandler):
                      model) -> List[Mapping[Text, Any]]:
     self._check_examples(examples)
     body = {'instances': self._make_instances(examples, serialized_examples)}
+    if self._api_client is None:
+      raise ValueError(
+          'API client is not initialized. Call load_model() first.'
+      )
     request = self._api_client.projects().predict(
         name=self._full_model_name, body=body)
     response = self._execute_request(request)

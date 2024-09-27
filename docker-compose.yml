@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+version: '3.1'
+
 # We mount the TFX BSL project root at /build (which is the WORKDIR of the
 # image) in the container.
 services:
