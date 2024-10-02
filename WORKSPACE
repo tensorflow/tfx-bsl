@@ -78,20 +78,20 @@ http_archive(
   strip_prefix = "abseil-cpp-%s" % COM_GOOGLE_ABSL_COMMIT
 )
 
-TFMD_COMMIT = "47aaaa7aa820fd8a865babcfddbdafe11ec92a25" # 1.15.0
+TFMD_COMMIT = "71c756354375e9f72f32b7eb3d7f13221c83fea6" # 1.16.0
 http_archive(
     name = "com_github_tensorflow_metadata",
     urls = ["https://github.com/tensorflow/metadata/archive/%s.zip" % TFMD_COMMIT],
     strip_prefix = "metadata-%s" % TFMD_COMMIT,
-    sha256 = "5f24de8ae6bbe42af442c2b94bdc8d2a4d6b35f28c4978a257e8a0c18f33c165",
+    sha256 = "9826543733abbe1fdd0b1bf9a5155bc8279a44e738dfd6149e647592c4657594",
 )
 
 # TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.
 #here
-TENSORFLOW_COMMIT = "6887368d6d46223f460358323c4b76d61d1558a8"  # 2.15.0
+TENSORFLOW_COMMIT = "810f233968cec850915324948bbbc338c97cf57f"  # 2.16.2
 http_archive(
     name = "org_tensorflow_no_deps",
-    sha256 = "bb25fa4574e42ea4d452979e1d2ba3b86b39569d6b8106a846a238b880d73652",
+    sha256 = "3b875c5121e752adc86578dc24747a220acfa2a7afa4026ff4172500b100854f",
     strip_prefix = "tensorflow-%s" % TENSORFLOW_COMMIT,
     urls = [
         "https://mirror.bazel.build/github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,

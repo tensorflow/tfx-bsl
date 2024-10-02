@@ -176,12 +176,12 @@ setup(
         'protobuf>=3.20.3,<5;python_version<"3.11"',
         'pyarrow>=10,<11',
         'tensorflow' + select_constraint(
-            default='>=2.15,<2.16',
-            nightly='>=2.16.0.dev',
+            default='>=2.16,<2.17',
+            nightly='>=2.17.0.dev',
             git_master='@git+https://github.com/tensorflow/tensorflow@master'),
         'tensorflow-metadata' + select_constraint(
-            default='>=1.15.0,<1.16.0',
-            nightly='>=1.16.0.dev',
+            default='>=1.16.0,<1.17.0',
+            nightly='>=1.17.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master'),
         'tensorflow-serving-api' + select_constraint(
             default='>=2.13.0,<3',
