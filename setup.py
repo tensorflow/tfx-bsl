@@ -172,7 +172,7 @@ setup(
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.22.0',
         'pandas>=1.0,<2',
-        'protobuf>=4.25.2,<5;python_version>="3.11"',
+        'protobuf>=4.25.2,<6;python_version>="3.11"',
         'protobuf>=3.20.3,<5;python_version<"3.11"',
         'pyarrow>=10,<11',
         'tensorflow' + select_constraint(
