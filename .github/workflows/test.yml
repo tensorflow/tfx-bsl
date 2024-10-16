@@ -62,4 +62,5 @@ jobs:
     - name: Test
       run: |
         pip install pytest
+        rm bazel-*
         pytest -vvv
