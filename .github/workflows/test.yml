@@ -15,12 +15,7 @@
 name: Test tfx-bsl
 
 on:
-  push:
-    branches:
-      - "*"
   pull_request:
-    branches:
-      - master
 
 jobs:
   build:

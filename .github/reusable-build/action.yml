@@ -29,6 +29,7 @@ runs:
     with:
       name: tfx-bsl-wheel-py${{ inputs.python-version }}
       path: dist/*.whl
+      if-no-files-found: error
 
   - name: Install built wheel
     shell: bash
