@@ -43,20 +43,24 @@ jobs:
   upload_to_pypi:
     name: Upload to PyPI
     runs-on: ubuntu-latest
-    if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags')) || (github.event_name == 'workflow_dispatch')
+    if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags'))
     needs: [build]
     environment:
       name: pypi
       url: https://pypi.org/p/struct2tensor/
     permissions:
       id-token: write
+      attestations: write
     steps:
       - name: Retrieve wheels
         uses: actions/download-artifact@v4.1.8
         with:
           merge-multiple: true
           path: wheels
-
+     - name: Generate artifact attestations for wheels
+       uses: actions/attest-build-provenance@v1
+       with:
+         subject-path: "wheels/*"
       - name: List the build artifacts
         run: |
           ls -lAs wheels/
