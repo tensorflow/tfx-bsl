@@ -21,6 +21,8 @@ on:
   pull_request:
     branches:
       - master
+  release:
+    types: [published]      
 
 jobs:
   build:
@@ -57,10 +59,10 @@ jobs:
         with:
           merge-multiple: true
           path: wheels
-     - name: Generate artifact attestations for wheels
-       uses: actions/attest-build-provenance@v1
-       with:
-         subject-path: "wheels/*"
+      - name: Generate artifact attestations for wheels
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "wheels/*"
       - name: List the build artifacts
         run: |
           ls -lAs wheels/
