@@ -49,7 +49,7 @@ jobs:
     needs: [build]
     environment:
       name: pypi
-      url: https://pypi.org/p/struct2tensor/
+      url: https://pypi.org/p/tfx-bsl/
     permissions:
       id-token: write
       attestations: write
