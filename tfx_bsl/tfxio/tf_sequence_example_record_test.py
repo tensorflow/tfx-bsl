@@ -14,7 +14,6 @@
 """Tests for tfx_bsl.tfxio.tf_example_record."""
 
 import os
-import pytest
 
 from absl import flags
 import apache_beam as beam
@@ -240,7 +239,6 @@ def _WriteInputs(filename):
       w.write(s)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
 class TfSequenceExampleRecordTest(test_case.TfxBslTestCase):
 
   @classmethod
@@ -425,7 +423,6 @@ class TfSequenceExampleRecordTest(test_case.TfxBslTestCase):
             msg=f"For tensor {name} at index {i}")
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
 class TFSequenceExampleBeamRecordTest(test_case.TfxBslTestCase):
 
   def testE2E(self):

@@ -184,7 +184,7 @@ class _TypeHandler(abc.ABC):
   @abc.abstractmethod
   def can_handle(tensor_name: str, type_spec: tf.TypeSpec,
                  options: TensorsToRecordBatchConverter.Options) -> bool:
-    """Returns `True` if the handler can handle the given `tf.TypeSpec`."""
+    """Returns `True` if the handler can handle the given `tf.TypeSpec`."""  # pytype: disable=bad-return-type
 
 
 class _DenseTensorHandler(_TypeHandler):

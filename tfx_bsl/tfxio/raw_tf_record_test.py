@@ -14,7 +14,6 @@
 """Tests for tfx_bsl.tfxio.raw_tf_record."""
 
 import os
-import pytest
 import unittest
 
 from absl import flags
@@ -39,7 +38,6 @@ def _WriteRawRecords(filename):
       w.write(r)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
 class RawTfRecordTest(absltest.TestCase):
 
   @classmethod
@@ -139,7 +137,6 @@ class RawTfRecordTest(absltest.TestCase):
     self.assertEqual(actual_records, _RAW_RECORDS)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
 class RawBeamRecordTest(absltest.TestCase):
 
   def testE2E(self):

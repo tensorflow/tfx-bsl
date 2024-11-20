@@ -14,7 +14,6 @@
 """Tests for tfx_bsl.types.tfx_namedtuple."""
 import collections
 import pickle
-import pytest
 import sys
 import typing
 
@@ -77,7 +76,6 @@ def _hack_namedtuple(cls):
   return cls
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
 class TFXNamedtupleTest(absltest.TestCase):
 
   def testPickling(self):

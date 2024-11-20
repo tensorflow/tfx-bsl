@@ -13,7 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.coders.tf_graph_record_decoder."""
 
-import pytest
 import os
 import tempfile
 
@@ -78,7 +77,6 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
         continue
       self.assertEqual(spec, rhs[k])
 
-  @pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
   def test_save_load_decode(self):
     decoder = _DecoderForTestWithRecordIndexTensorName()
     actual_type_specs = decoder.output_type_specs()
@@ -139,7 +137,6 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
     loaded = tf_graph_record_decoder.load_decoder(new_decoder_path)
     self.assertEqual(loaded.record_index_tensor_name, "record_index")
 
-  @pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
   def test_no_record_index_tensor_name(self):
     decoder = _DecoderForTesting()
     self.assertIsNone(decoder.record_index_tensor_name)
@@ -155,7 +152,6 @@ class TfGraphRecordDecoderTest(tf.test.TestCase):
       loaded = tf_graph_record_decoder.load_decoder(self._tmp_dir)
       self.assertIsNone(loaded.record_index_tensor_name)
 
-  @pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
   def test_do_not_save_if_record_index_tensor_name_invalid(self):
     decoder = _DecoderForTestWithInvalidRecordIndexTensorName()
     with self.assertRaisesRegex(AssertionError, "record_index_tensor_name"):

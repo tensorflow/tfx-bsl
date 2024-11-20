@@ -221,7 +221,7 @@ class _TypeHandler(abc.ABC):
   @abc.abstractmethod
   def CanHandle(arrow_schema: pa.Schema,
                 tensor_representation: schema_pb2.TensorRepresentation) -> bool:
-    """Returns true if an instance of the handler can handle the combination."""
+    """Returns true if an instance of the handler can handle the combination."""  # pytype: disable=bad-return-type
 
 
 class _BaseDenseTensorHandler(_TypeHandler):

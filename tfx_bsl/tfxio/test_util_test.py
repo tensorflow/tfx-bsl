@@ -13,7 +13,6 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.test_util."""
 
-import pytest
 import apache_beam as beam
 from apache_beam.testing import util as beam_testing_util
 import pyarrow as pa
@@ -24,7 +23,6 @@ from google.protobuf import text_format
 from absl.testing import absltest
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
 class TestUtilTest(absltest.TestCase):
 
   def testGetRecordBatches(self):
