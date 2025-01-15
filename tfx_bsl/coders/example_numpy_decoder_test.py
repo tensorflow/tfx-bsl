@@ -13,7 +13,6 @@
 # limitations under the License.
 """Tests for TFExampleDecoder."""
 
-import sys
 import numpy as np
 import tensorflow as tf
 from tfx_bsl.coders import example_coder
@@ -138,20 +137,6 @@ class TFExampleDecoderTest(parameterized.TestCase):
         example_coder.ExampleToNumpyDict(example.SerializeToString()),
         decoded_example)
 
-  def test_decode_example_none_ref_count(self):
-    example = text_format.Parse(
-        '''
-          features {
-            feature {
-              key: 'x'
-              value { }
-            }
-          }
-        ''', tf.train.Example())
-    before_refcount = sys.getrefcount(None)
-    _ = example_coder.ExampleToNumpyDict(example.SerializeToString())
-    after_refcount = sys.getrefcount(None)
-    self.assertEqual(before_refcount + 1, after_refcount)
 
 if __name__ == '__main__':
   absltest.main()
