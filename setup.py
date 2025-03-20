@@ -168,12 +168,12 @@ setup(
     install_requires=[
         'absl-py>=0.9,<2.0.0',
         'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
-        'apache-beam[gcp]>=2.49,<2.51;python_version<"3.11"',
+        'apache-beam[gcp]>=2.47,<3;python_version<"3.11"',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.22.0',
         'pandas>=1.0,<2',
-        'protobuf>=4.25.2,<6.0.0dev;python_version>="3.11"',
-        'protobuf>=4.21.6,<4.22;python_version<"3.11"',
+        'protobuf>=4.25.2,<6;python_version>="3.11"',
+        'protobuf>=3.20.3,<5;python_version<"3.11"',
         'pyarrow>=10,<11',
         'tensorflow>=2.17,<2.18',
         'tensorflow-metadata'
