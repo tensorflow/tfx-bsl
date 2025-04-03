@@ -6,6 +6,9 @@
 
 ## Bug Fixes and Other Changes
 
+*   Depends on `protobuf>=4.25.2,<5` for Python 3.11 and on
+    `protobuf>=4.21.6,<6.0.0` for 3.9 and 3.10.
+
 ## Breaking Changes
 
 ## Deprecations
