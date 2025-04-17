@@ -7,16 +7,18 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 # the --incompatible_restrict_string_escapes=false flag (flag was removed in
 # Bazel 5.0).
 RULES_FOREIGN_CC_VERSION = "0.9.0"
+
 http_archive(
     name = "rules_foreign_cc",
+    patch_tool = "patch",
+    patches = ["//third_party:rules_foreign_cc.patch"],
     sha256 = "2a4d07cd64b0719b39a7c12218a3e507672b82a97b98c6a89d38565894cf7c51",
     strip_prefix = "rules_foreign_cc-%s" % RULES_FOREIGN_CC_VERSION,
     url = "https://github.com/bazelbuild/rules_foreign_cc/archive/refs/tags/%s.tar.gz" % RULES_FOREIGN_CC_VERSION,
-    patch_tool = "patch",
-    patches = ["//third_party:rules_foreign_cc.patch",],
 )
 
 load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
+
 rules_foreign_cc_dependencies()
 
 http_archive(
@@ -28,30 +30,31 @@ http_archive(
     ],
 )
 
-_PROTOBUF_COMMIT = "3.21.9"  # 3.20.3
+_PROTOBUF_COMMIT = "4.25.6"  # 4.25.6
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "f66073dee0bc159157b0bd7f502d7d1ee0bc76b3c1eac9836927511bdc4b3fc1",
+    sha256 = "ff6e9c3db65f985461d200c96c771328b6186ee0b10bc7cb2bbc87cf02ebd864",
     strip_prefix = "protobuf-%s" % _PROTOBUF_COMMIT,
     urls = [
-        "https://github.com/protocolbuffers/protobuf/archive/v3.21.9.zip"
+        "https://github.com/protocolbuffers/protobuf/archive/v4.25.6.zip",
     ],
 )
 
 # Needed by abseil-py by zetasql.
 http_archive(
     name = "six_archive",
+    build_file = "//third_party:six.BUILD",
+    sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
+    strip_prefix = "six-1.10.0",
     urls = [
         "http://mirror.bazel.build/pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz",
         "https://pypi.python.org/packages/source/s/six/six-1.10.0.tar.gz",
     ],
-    sha256 = "105f8d68616f8248e24bf0e9372ef04d3cc10104f1980f54d57b2ce73a5ad56a",
-    strip_prefix = "six-1.10.0",
-    build_file = "//third_party:six.BUILD"
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
 protobuf_deps()
 
 # Use the last commit on the relevant release branch to update.
@@ -64,54 +67,58 @@ ARROW_COMMIT = "347a88ff9d20e2a4061eec0b455b8ea1aa8335dc"  # 6.0.1
 http_archive(
     name = "arrow",
     build_file = "//third_party:arrow.BUILD",
-    strip_prefix = "arrow-%s" % ARROW_COMMIT,
-    sha256 = "55fc466d0043c4cce0756bc18e1e62b3233be74c9afe8dc0d18420b9a5fd9714",
-    urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
     patches = ["//third_party:arrow.patch"],
+    sha256 = "55fc466d0043c4cce0756bc18e1e62b3233be74c9afe8dc0d18420b9a5fd9714",
+    strip_prefix = "arrow-%s" % ARROW_COMMIT,
+    urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
 )
 
-COM_GOOGLE_ABSL_COMMIT = "92fdbfb301f8b301b28ab5c99e7361e775c2fb8a" # 2022-08-25 Abseil Logging library first release
+COM_GOOGLE_ABSL_COMMIT = "fb3621f4f897824c0dbe0615fa94543df6192f30"  # lts_2023_08_0
+
 http_archive(
-  name = "com_google_absl",
-  url = "https://github.com/abseil/abseil-cpp/archive/%s.tar.gz" % COM_GOOGLE_ABSL_COMMIT,
-  sha256 = "71d38c5f44997a5ccbc338f904c8682b40c25cad60b9cbaf27087a917228d5fa",
-  strip_prefix = "abseil-cpp-%s" % COM_GOOGLE_ABSL_COMMIT
+    name = "com_google_absl",
+    sha256 = "0320586856674d16b0b7a4d4afb22151bdc798490bb7f295eddd8f6a62b46fea",
+    strip_prefix = "abseil-cpp-%s" % COM_GOOGLE_ABSL_COMMIT,
+    url = "https://github.com/abseil/abseil-cpp/archive/%s.tar.gz" % COM_GOOGLE_ABSL_COMMIT,
 )
 
-TFMD_COMMIT = "71c756354375e9f72f32b7eb3d7f13221c83fea6" # 1.16.0
+TFMD_COMMIT = "404805761e614561cceedc429e67c357c62be26d"  # 1.17.1
+
 http_archive(
     name = "com_github_tensorflow_metadata",
-    urls = ["https://github.com/tensorflow/metadata/archive/%s.zip" % TFMD_COMMIT],
+    sha256 = "1b72e0e5085812cd9b19e004a381b544542f9545a081f0f738c5ed6b8bb886a2",
     strip_prefix = "metadata-%s" % TFMD_COMMIT,
-    sha256 = "9826543733abbe1fdd0b1bf9a5155bc8279a44e738dfd6149e647592c4657594",
+    urls = ["https://github.com/tensorflow/metadata/archive/%s.zip" % TFMD_COMMIT],
 )
 
 # TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.
 #here
-TENSORFLOW_COMMIT = "810f233968cec850915324948bbbc338c97cf57f"  # 2.16.2
+TENSORFLOW_COMMIT = "3c92ac03cab816044f7b18a86eb86aa01a294d95"  # 2.17.1
+
 http_archive(
     name = "org_tensorflow_no_deps",
-    sha256 = "3b875c5121e752adc86578dc24747a220acfa2a7afa4026ff4172500b100854f",
-    strip_prefix = "tensorflow-%s" % TENSORFLOW_COMMIT,
-    urls = [
-        "https://mirror.bazel.build/github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,
-        "https://github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,
-    ],
     patches = [
         "//third_party:tensorflow_expose_example_proto.patch",
+    ],
+    sha256 = "317dd95c4830a408b14f3e802698eb68d70d81c7c7cfcd3d28b0ba023fe84a68",
+    strip_prefix = "tensorflow-%s" % TENSORFLOW_COMMIT,
+    urls = [
+        "https://github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,
     ],
 )
 
 PYBIND11_COMMIT = "8a099e44b3d5f85b20f05828d919d2332a8de841"  # 2.11.1
+
 http_archive(
-  name = "pybind11",
-  build_file = "//third_party:pybind11.BUILD",
-  strip_prefix = "pybind11-%s" % PYBIND11_COMMIT,
-  urls = ["https://github.com/pybind/pybind11/archive/%s.zip" % PYBIND11_COMMIT],
-  sha256 = "8f4b7f28d214e36301435c055076c36186388dc9617117802cba8a059347cb00",
+    name = "pybind11",
+    build_file = "//third_party:pybind11.BUILD",
+    sha256 = "8f4b7f28d214e36301435c055076c36186388dc9617117802cba8a059347cb00",
+    strip_prefix = "pybind11-%s" % PYBIND11_COMMIT,
+    urls = ["https://github.com/pybind/pybind11/archive/%s.zip" % PYBIND11_COMMIT],
 )
 
 load("//third_party:python_configure.bzl", "local_python_configure")
+
 local_python_configure(name = "local_config_python")
 
 http_archive(
@@ -124,41 +131,48 @@ http_archive(
     ],
 )
 
-ZETASQL_COMMIT = "ac37cf5c0d80b5605176fc0f29e87b12f00be693"  # 08/10/2022
+ZETASQL_COMMIT = "589026c410c42de9aa8ee92ad16f745977140041"  # 11/01/2023
+
 http_archive(
     name = "com_google_zetasql",
-    urls = ["https://github.com/google/zetasql/archive/%s.zip" % ZETASQL_COMMIT],
     strip_prefix = "zetasql-%s" % ZETASQL_COMMIT,
-    sha256 = "651a768cd51627f58aa6de7039aba9ddab22f4b0450521169800555269447840",
+    urls = ["https://github.com/google/zetasql/archive/%s.zip" % ZETASQL_COMMIT],
 )
 
 load("@com_google_zetasql//bazel:zetasql_deps_step_1.bzl", "zetasql_deps_step_1")
+
 zetasql_deps_step_1()
+
 load("@com_google_zetasql//bazel:zetasql_deps_step_2.bzl", "zetasql_deps_step_2")
+
 zetasql_deps_step_2(
     analyzer_deps = True,
     evaluator_deps = True,
-    tools_deps = False,
     java_deps = False,
-    testing_deps = False)
+    testing_deps = False,
+    tools_deps = False,
+)
 
 # This is part of what zetasql_deps_step_3() does.
 load("@com_google_googleapis//:repository_rules.bzl", "switched_rules_by_language")
+
 switched_rules_by_language(
     name = "com_google_googleapis_imports",
     cc = True,
 )
 
 _PLATFORMS_VERSION = "0.0.6"
+
 http_archive(
     name = "platforms",
+    sha256 = "5308fc1d8865406a49427ba24a9ab53087f17f5266a7aabbfc28823f3916e1ca",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/%s/platforms-%s.tar.gz" % (_PLATFORMS_VERSION, _PLATFORMS_VERSION),
         "https://github.com/bazelbuild/platforms/releases/download/%s/platforms-%s.tar.gz" % (_PLATFORMS_VERSION, _PLATFORMS_VERSION),
     ],
-    sha256 = "5308fc1d8865406a49427ba24a9ab53087f17f5266a7aabbfc28823f3916e1ca",
 )
 
 # Specify the minimum required bazel version.
 load("@bazel_skylib//lib:versions.bzl", "versions")
-versions.check("6.1.0")
+
+versions.check("6.5.0")

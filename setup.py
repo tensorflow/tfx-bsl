@@ -178,8 +178,8 @@ setup(
         'tensorflow>=2.17,<2.18',
         'tensorflow-metadata'
         + select_constraint(
-            default='>=1.16.1,<1.17.0',
-            nightly='>=1.17.0.dev',
+            default='>=1.17.1,<1.18.0',
+            nightly='>=1.18.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master',
         ),
         'tensorflow-serving-api'

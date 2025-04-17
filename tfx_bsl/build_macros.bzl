@@ -1,37 +1,25 @@
 """BUILD macros used in OSS builds."""
 
-load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
+load("@com_google_protobuf//:protobuf.bzl", "py_proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
 
-def tfx_bsl_proto_library(
-        name,
-        srcs = [],
-        has_services = False,
-        deps = [],
-        visibility = None,
-        testonly = 0,
-        cc_grpc_version = None):
-    """Opensource cc_proto_library."""
-    _ignore = [has_services]
-    native.filegroup(
-        name = name + "_proto_srcs",
-        srcs = srcs,
-        testonly = testonly,
-    )
+def tfx_bsl_proto_library(name, **kwargs):
+    """Google proto_library and cc_proto_library.
 
-    use_grpc_plugin = None
-    if cc_grpc_version:
-        use_grpc_plugin = True
-    cc_proto_library(
-        name = name,
-        srcs = srcs,
-        deps = deps,
-        cc_libs = ["@com_google_protobuf//:protobuf"],
-        protoc = "@com_google_protobuf//:protoc",
-        default_runtime = "@com_google_protobuf//:protobuf",
-        use_grpc_plugin = use_grpc_plugin,
-        testonly = testonly,
-        visibility = visibility,
-    )
+    Args:
+        name: Name of the cc proto library.
+        **kwargs: Keyword arguments to pass to the proto libraries."""
+    native.proto_library(name = name + "_proto", **kwargs)  # buildifier: disable=native-proto
+    cc_proto_kwargs = {
+        "deps": [":" + name + "_proto"],
+    }
+    if "visibility" in kwargs:
+        cc_proto_kwargs["visibility"] = kwargs["visibility"]
+    if "testonly" in kwargs:
+        cc_proto_kwargs["testonly"] = kwargs["testonly"]
+    if "compatible_with" in kwargs:
+        cc_proto_kwargs["compatible_with"] = kwargs["compatible_with"]
+    cc_proto_library(name = name, **cc_proto_kwargs)
 
 def tfx_bsl_py_proto_library(
         name,

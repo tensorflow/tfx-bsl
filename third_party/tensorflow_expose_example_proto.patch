@@ -1,19 +1,8 @@
-From a0a912ab8ae48205191b6295cc08e41064026ed0 Mon Sep 17 00:00:00 2001
-From: Ihor Indyk <ihor.indyk@gmail.com>
-Date: Thu, 23 Mar 2023 13:17:53 -0700
-Subject: [PATCH] update example visibility
-
----
- tensorflow/core/example/BUILD | 195 ++--------------------------------
- 1 file changed, 9 insertions(+), 186 deletions(-)
-
 diff --git tensorflow/core/example/BUILD tensorflow/core/example/BUILD
-index 2a1b70a5350..c23ddcdf01d 100644
+index 4527044f383..2d61de25200 100644
 --- tensorflow/core/example/BUILD
 +++ tensorflow/core/example/BUILD
-@@ -1,187 +1,10 @@
--load("//tensorflow:tensorflow.default.bzl", "filegroup")
--load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
+@@ -1,187 +1,14 @@
 -load(
 -    "@io_bazel_rules_closure//closure:defs.bzl",
 -    "closure_proto_library",
@@ -23,12 +12,14 @@ index 2a1b70a5350..c23ddcdf01d 100644
 -    "tf_cc_test",
 -    "tf_copts",
 -)
+-load("//tensorflow:tensorflow.default.bzl", "filegroup")
 -load(
 -    "//tensorflow/core/platform:build_config.bzl",
 -    "tf_jspb_proto_library",
 -    "tf_proto_library",
 -    "tf_pyclif_proto_library",
 -)
+-load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
 -
 -package(
 -    # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -119,15 +110,18 @@ index 2a1b70a5350..c23ddcdf01d 100644
 -
 -tf_proto_library(
 -    name = "example_protos",
--    srcs = [
--        "example.proto",
--        "feature.proto",
--    ],
++proto_library(
++    name = "example_proto_genproto",
+     srcs = [
+         "example.proto",
+         "feature.proto",
+     ],
 -    cc_api_version = 2,
 -    make_default_target_header_only = True,
 -    tags = ["alt_dep=//third_party/tensorflow/core:protos_all"],
--)
--
++    visibility = ["//visibility:public"],
+ )
+ 
 -tf_proto_library(
 -    name = "example_parser_configuration_proto",
 -    srcs = ["example_parser_configuration.proto"],
@@ -198,15 +192,8 @@ index 2a1b70a5350..c23ddcdf01d 100644
 -    visibility = [
 -        "//tensorflow/core:__pkg__",
 -    ],
-+load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
-+
 +cc_proto_library(
-+  name = "example_proto",
-+  srcs = [
-+      "example.proto",
-+      "feature.proto",
-+  ],
-+  visibility = ["//visibility:public"],
++    name = "example_proto",
++    visibility = ["//visibility:public"],
++    deps = [":example_proto_genproto"],
  )
--- 
-2.40.0.348.gf938b09366-goog
