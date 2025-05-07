@@ -9,6 +9,15 @@ def tfx_bsl_proto_library(name, **kwargs):
     Args:
         name: Name of the cc proto library.
         **kwargs: Keyword arguments to pass to the proto libraries."""
+    well_known_protos = [
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:struct_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:wrappers_proto",
+    ]
+    kwargs["deps"] = kwargs.get("deps", []) + well_known_protos
     native.proto_library(name = name + "_proto", **kwargs)  # buildifier: disable=native-proto
     cc_proto_kwargs = {
         "deps": [":" + name + "_proto"],
@@ -29,12 +38,12 @@ def tfx_bsl_py_proto_library(
         visibility = None,
         testonly = 0):
     """Opensource py_proto_library."""
-    _ignore = [proto_library]
+    _ignore = [proto_library]  # buildifier: disable=unused-variable
     py_proto_library(
         name = name,
         srcs = srcs,
         srcs_version = "PY3",
-        deps = ["@com_google_protobuf//:well_known_types_py_pb2"] + deps,
+        deps = deps,  # ["@com_google_protobuf//:well_known_types_py_pb2"] +
         default_runtime = "@com_google_protobuf//:protobuf_python",
         protoc = "@com_google_protobuf//:protoc",
         visibility = visibility,
@@ -56,7 +65,7 @@ def tfx_bsl_pybind_extension(
       deps: Dependencies.
       visibility: Visibility.
     """
-    _ignore = [module_name]
+    _ignore = [module_name]  # buildifier: disable=unused-variable
     p = name.rfind("/")
     if p == -1:
         sname = name

@@ -1,3 +1,5 @@
+# Placeholder: load py_library  # copybara:strip
+
 # Developers: use these two macros to define c++ or python proto targets.
 load("//tfx_bsl:build_macros.bzl", "tfx_bsl_proto_library", "tfx_bsl_py_proto_library")
 
@@ -7,11 +9,11 @@ package(default_visibility = [
 
 licenses(["notice"])
 
-filegroup(
+py_library(
     name = "public_protos",
-    srcs = [
-        "model_spec_pb2.py",
-        "slicing_spec_pb2.py",
+    deps = [
+        ":model_spec_proto_py_pb2",
+        ":slicing_spec_py_pb2",
     ],
 )
 

@@ -2,6 +2,36 @@ workspace(name = "tfx_bsl")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_archive(
+    name = "google_bazel_common",
+    sha256 = "82a49fb27c01ad184db948747733159022f9464fc2e62da996fa700594d9ea42",
+    strip_prefix = "bazel-common-2a6b6406e12208e02b2060df0631fb30919080f3",
+    urls = ["https://github.com/google/bazel-common/archive/2a6b6406e12208e02b2060df0631fb30919080f3.zip"],
+)
+
+################################################################################
+# Generic Bazel Support                                                        #
+################################################################################
+
+http_archive(
+    name = "rules_proto",
+    sha256 = "6fb6767d1bef535310547e03247f7518b03487740c11b6c6adb7952033fe1295",
+    strip_prefix = "rules_proto-6.0.2",
+    url = "https://github.com/bazelbuild/rules_proto/releases/download/6.0.2/rules_proto-6.0.2.tar.gz",
+)
+
+load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
+
+rules_proto_dependencies()
+
+load("@rules_proto//proto:setup.bzl", "rules_proto_setup")
+
+rules_proto_setup()
+
+load("@rules_proto//proto:toolchains.bzl", "rules_proto_toolchains")
+
+rules_proto_toolchains()
+
 # Install version 0.9.0 of rules_foreign_cc, as default version causes an
 # invalid escape sequence error to be raised, which can't be avoided with
 # the --incompatible_restrict_string_escapes=false flag (flag was removed in
@@ -73,11 +103,11 @@ http_archive(
     urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
 )
 
-COM_GOOGLE_ABSL_COMMIT = "fb3621f4f897824c0dbe0615fa94543df6192f30"  # lts_2023_08_0
+COM_GOOGLE_ABSL_COMMIT = "4447c7562e3bc702ade25105912dce503f0c4010"  # lts_2023_08_0
 
 http_archive(
     name = "com_google_absl",
-    sha256 = "0320586856674d16b0b7a4d4afb22151bdc798490bb7f295eddd8f6a62b46fea",
+    sha256 = "df8b3e0da03567badd9440377810c39a38ab3346fa89df077bb52e68e4d61e74",
     strip_prefix = "abseil-cpp-%s" % COM_GOOGLE_ABSL_COMMIT,
     url = "https://github.com/abseil/abseil-cpp/archive/%s.tar.gz" % COM_GOOGLE_ABSL_COMMIT,
 )
@@ -131,12 +161,75 @@ http_archive(
     ],
 )
 
-ZETASQL_COMMIT = "589026c410c42de9aa8ee92ad16f745977140041"  # 11/01/2023
+################################################################################
+# Google APIs protos                                                           #
+################################################################################
+http_archive(
+    name = "com_google_googleapis",
+    patch_args = ["-p1"],
+    patches = ["//third_party:googleapis.patch"],
+    sha256 = "28e7fe3a640dd1f47622a4c263c40d5509c008cc20f97bd366076d5546cccb64",
+    strip_prefix = "googleapis-4ce00b00904a7ce1df8c157e54fcbf96fda0dc49",
+    url = "https://github.com/googleapis/googleapis/archive/4ce00b00904a7ce1df8c157e54fcbf96fda0dc49.tar.gz",
+)
+
+load("@com_google_googleapis//:repository_rules.bzl", "switched_rules_by_language")
+
+switched_rules_by_language(
+    name = "com_google_googleapis_imports",
+    cc = True,
+    go = True,
+)
+
+###############################################################################
+# Gazelle Support                                                             #
+###############################################################################
+
+_rules_go_version = "v0.48.1"
+
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "b2038e2de2cace18f032249cb4bb0048abf583a36369fa98f687af1b3f880b26",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/{0}/rules_go-{0}.zip".format(_rules_go_version),
+        "https://github.com/bazelbuild/rules_go/releases/download/{0}/rules_go-{0}.zip.format(_rules_go_version)",
+    ],
+)
+
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
+
+go_register_toolchains(version = "1.21.11")
+
+_bazel_gazelle_version = "0.36.0"
+
+http_archive(
+    name = "bazel_gazelle",
+    sha256 = "75df288c4b31c81eb50f51e2e14f4763cb7548daae126817247064637fd9ea62",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v{0}/bazel-gazelle-v{0}.tar.gz".format(_bazel_gazelle_version),
+    ],
+)
+
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")  #, "go_repository")
+
+gazelle_dependencies()
+
+################################################################################
+# ZetaSQL                                                                      #
+################################################################################
+
+ZETASQL_COMMIT = "a516c6b26d183efc4f56293256bba92e243b7a61"  # 11/01/2024
 
 http_archive(
     name = "com_google_zetasql",
+    patch_args = ["-p1"],
+    patches = ["//third_party:zetasql.patch"],
+    sha256 = "1afc2210d4aad371eff0a6bfdd8417ba99e02183a35dff167af2fa6097643f26",
     strip_prefix = "zetasql-%s" % ZETASQL_COMMIT,
-    urls = ["https://github.com/google/zetasql/archive/%s.zip" % ZETASQL_COMMIT],
+    urls = ["https://github.com/google/zetasql/archive/%s.tar.gz" % ZETASQL_COMMIT],
 )
 
 load("@com_google_zetasql//bazel:zetasql_deps_step_1.bzl", "zetasql_deps_step_1")
@@ -153,13 +246,16 @@ zetasql_deps_step_2(
     tools_deps = False,
 )
 
-# This is part of what zetasql_deps_step_3() does.
-load("@com_google_googleapis//:repository_rules.bzl", "switched_rules_by_language")
+# No need to run zetasql_deps_step_3 and zetasql_deps_step_4 since all necessary dependencies are
+# already installed.
 
-switched_rules_by_language(
-    name = "com_google_googleapis_imports",
-    cc = True,
-)
+# load("@com_google_zetasql//bazel:zetasql_deps_step_3.bzl", "zetasql_deps_step_3")
+
+# zetasql_deps_step_3()
+
+# load("@com_google_zetasql//bazel:zetasql_deps_step_4.bzl", "zetasql_deps_step_4")
+
+# zetasql_deps_step_4()
 
 _PLATFORMS_VERSION = "0.0.6"
 

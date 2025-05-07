@@ -63,5 +63,5 @@ _py_extension = select({
 sh_binary(
     name = "move_generated_files",
     srcs = ["move_generated_files.sh"],
-    data = _py_extension + _public_protos,
+    data = _public_protos + _py_extension,
 )
