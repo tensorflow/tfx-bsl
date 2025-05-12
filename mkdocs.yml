@@ -58,7 +58,7 @@ plugins:
             signature_crossrefs: true
             group_by_category: true
             show_category_heading: true
-            show_submodules: false
+            show_submodules: true
             show_root_full_path: true
             docstring_section_style: "spacy"
             inherited_members: true
@@ -68,6 +68,8 @@ plugins:
               - "^__init__$"
               - "^__call__$"
               - "!^logger"
+              - "!^test_"
+              - "!_test$"
             extensions:
               - griffe_inherited_docstrings
           import:
