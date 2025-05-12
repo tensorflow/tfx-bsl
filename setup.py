@@ -14,6 +14,7 @@
 """Package Setup script for TFX BSL."""
 
 import os
+from pathlib import Path
 import platform
 import shutil
 import subprocess
@@ -201,6 +202,16 @@ setup(
             git_master='@git+https://github.com/tensorflow/serving@master',
         ),
     ],
+    extras_require = {
+        "docs" : [
+          req for req in Path("./requirements-docs.txt")
+          .expanduser()
+          .resolve()
+          .read_text()
+          .splitlines()
+          if req
+        ]
+    },
     python_requires='>=3.9,<4',
     packages=find_packages(),
     include_package_data=True,
