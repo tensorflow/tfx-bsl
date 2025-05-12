@@ -1,3 +1,3 @@
 # TFX-BSL Public Beam
 
-::: tfx_bsl.beam
+::: tfx_bsl.public.beam
