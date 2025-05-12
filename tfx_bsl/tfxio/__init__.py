@@ -14,5 +14,5 @@
 """Package tfxio contains the implementation of Standardized TFX inputs.
 
 Design doc:
-https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md
+[https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
 """
