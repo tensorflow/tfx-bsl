@@ -111,3 +111,6 @@ watch:
 
 nav:
   - Home: index.md
+  - API Docs:
+      - tfx_bsl.public.beam: api_docs/python/beam.md
+      - tfx_bsl.public.tfxio: api_docs/python/tfxio.md
