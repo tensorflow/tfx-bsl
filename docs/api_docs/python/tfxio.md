@@ -1,3 +1,3 @@
 # TFX-BSL Public TFXIO
 
-::: tfx_bsl.tfxio
+::: tfx_bsl.public.tfxio
