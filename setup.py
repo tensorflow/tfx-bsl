@@ -191,6 +191,9 @@ setup(
             git_master='@git+https://github.com/tensorflow/serving@master',
         ),
     ],
+    extras_require={
+      "dev": ["pre-commit"],
+    },
     python_requires='>=3.9,<4',
     packages=find_packages(),
     include_package_data=True,
