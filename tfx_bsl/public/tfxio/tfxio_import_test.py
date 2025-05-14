@@ -17,23 +17,24 @@ from absl.testing import absltest
 
 
 class TfxioImportTest(absltest.TestCase):
-
-  def test_import(self):
-    # pylint: disable=g-import-not-at-top,unused-import
-    from tfx_bsl.public.tfxio import RecordBatchToExamplesEncoder
-    from tfx_bsl.public.tfxio import BeamRecordCsvTFXIO
-    from tfx_bsl.public.tfxio import CsvTFXIO
-    from tfx_bsl.public.tfxio import TensorFlowDatasetOptions
-    from tfx_bsl.public.tfxio import TensorAdapter
-    from tfx_bsl.public.tfxio import TensorAdapterConfig
-    from tfx_bsl.public.tfxio import TensorRepresentations
-    from tfx_bsl.public.tfxio import TFExampleBeamRecord
-    from tfx_bsl.public.tfxio import TFExampleRecord
-    from tfx_bsl.public.tfxio import TFGraphRecordDecoder
-    from tfx_bsl.public.tfxio import TFSequenceExampleBeamRecord
-    from tfx_bsl.public.tfxio import TFSequenceExampleRecord
-    from tfx_bsl.public.tfxio import TFXIO
+    def test_import(self):
+        # pylint: disable=g-import-not-at-top,unused-import
+        from tfx_bsl.public.tfxio import (
+            TFXIO,
+            BeamRecordCsvTFXIO,
+            CsvTFXIO,
+            RecordBatchToExamplesEncoder,
+            TensorAdapter,
+            TensorAdapterConfig,
+            TensorFlowDatasetOptions,
+            TensorRepresentations,
+            TFExampleBeamRecord,
+            TFExampleRecord,
+            TFGraphRecordDecoder,
+            TFSequenceExampleBeamRecord,
+            TFSequenceExampleRecord,
+        )
 
 
 if __name__ == "__main__":
-  absltest.main()
+    absltest.main()

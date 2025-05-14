@@ -13,19 +13,24 @@
 # limitations under the License.
 
 """Module level imports for tfx_bsl.sketches."""
+
 # pylint: disable=unused-import
 # pytype: disable=import-error
 # pylint: disable=g-import-not-at-top
 # See b/148667210 for why the ImportError is ignored.
 try:
-  from tfx_bsl.cc.tfx_bsl_extension.sketches import KmvSketch
-  from tfx_bsl.cc.tfx_bsl_extension.sketches import MisraGriesSketch
-  from tfx_bsl.cc.tfx_bsl_extension.sketches import QuantilesSketch
+    from tfx_bsl.cc.tfx_bsl_extension.sketches import (
+        KmvSketch,
+        MisraGriesSketch,
+        QuantilesSketch,
+    )
 except ImportError as err:
-  import sys
-  sys.stderr.write("Error importing tfx_bsl_extension.sketches. "
-                   "Some tfx_bsl functionalities are not available: {}"
-                   .format(err))
+    import sys
+
+    sys.stderr.write(
+        "Error importing tfx_bsl_extension.sketches. "
+        f"Some tfx_bsl functionalities are not available: {err}"
+    )
 
 # pylint: enable=g-import-not-at-top
 # pytype: enable=import-error

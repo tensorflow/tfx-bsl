@@ -18,11 +18,14 @@
 # pylint: disable=g-import-not-at-top
 # See b/148667210 for why the ImportError is ignored.
 try:
-  from tfx_bsl.cc.tfx_bsl_extension.coders import SequenceExamplesToRecordBatchDecoder
+    from tfx_bsl.cc.tfx_bsl_extension.coders import SequenceExamplesToRecordBatchDecoder
 except ImportError:
-  import sys
-  sys.stderr.write("Error importing tfx_bsl_extension.coders. "
-                   "Some tfx_bsl functionalities are not available.")
+    import sys
+
+    sys.stderr.write(
+        "Error importing tfx_bsl_extension.coders. "
+        "Some tfx_bsl functionalities are not available."
+    )
 # pylint: enable=g-import-not-at-top
 # pytype: enable=import-error
 # pylint: enable=unused-import
