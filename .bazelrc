@@ -5,9 +5,6 @@ build --copt=-DTFX_BSL_USE_ARROW_C_ABI
 build --cxxopt=-std=c++17
 build --host_cxxopt=-std=c++17
 
-# Needed to avoid zetasql proto error.
-build --protocopt=--experimental_allow_proto3_optional
-
 # icu@: In create_linking_context: in call to create_linking_context(),
 # parameter 'user_link_flags' is deprecated and will be removed soon.
 # It may be temporarily re-enabled by setting --incompatible_require_linker_input_cc_api=false
@@ -18,7 +15,7 @@ build:macos_arm64 --cpu=darwin_arm64
 # Most of these warnings are triggered from ZetaSQL, disable for now. Ideally,
 # we would disable these only for projects we don't control, but there does not
 # seem to be an easy way to do that yet.
-build --copt   -Wno-sign-compare
-build --copt   -Wno-deprecated-declarations
-build --copt   -Wno-return-type
-build --copt   -Wno-unused-but-set-parameter
+# build --copt   -Wno-sign-compare
+# build --copt   -Wno-deprecated-declarations
+# build --copt   -Wno-return-type
+# build --copt   -Wno-unused-but-set-parameter
