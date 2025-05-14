@@ -84,6 +84,48 @@ ignore = [
     "W191",   # Indentation contains tabs; unnecessary when running ruff-format
 
     # FIX AND REMOVE BELOW CODES:
+    "ANN001", # Missing type annotation for function argument
+    "ANN102", # Missing type annotation for `cls` in classmethod
+    "ANN202", # Missing return type annotation for private function
+    "ANN205", # Missing return type annotation for staticmethod
+    "ANN206", # Missing return type annotation for classmethod `setUpClass`
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "ARG001", # Unused function argument
+    "ARG002", # Unused method argument
+    "ARG005", # Unused lambda argument
+    "B007",   # Loop control variable `...` not used within loop body
+    "B008",   # Do not perform function call in argument defaults
+    "B904",   # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
+    "D101",   # Missing docstring in public class
+    "D102",   # Missing docstring in public method
+    "D103",   # Missing docstring in public function
+    "D107",   # Missing docstring in `__init__`
+    "D401",   # First line of docstring should be in imperative mood
+    "D404",   # First word of the docstring should not be "This"
+    "D417",   # Missing argument description in the docstring
+    "E731",   # Do not assign a `lambda` expression, use a `def`
+    "E741",   # Ambiguous variable name
+    "ERA001", # Found commented-out code
+    "F401",   # `...` imported but unused
+    "F403",   # `from ... import *` used; unable to detect undefined names
+    "FIX002", # Line contains TODO, consider resolving the issue
+    "FIX004", # Line contains HACK, consider resolving the issue
+    "N802",   # Function name should be lowercase
+    "NPY002", # Replace legacy `np.random.rand` call with `np.random.Generator`
+    "PD011",  # Use `.to_numpy()` instead of `.values`
+    "PT009",  # Use a regular `assert` instead of unittest-style asserts
+    "PT018",  # Assertion should be broken down into multiple parts
+    "PT027",  # Use `pytest.raises` instead of unittest-style `assertRaisesRegex`
+    "RET504", # Unnecessary assignment to `...` before `return` statement
+    "RET505", # Unnecessary `elif` or `else` after `return` statement
+    "SIM103", # Return the negated condition directly
+    "SIM105", # Use `contextlib.suppress(...)` instead of `try`-`except`-`pass`
+    "SIM117", # Use a single `with` statement with multiple contexts instead of nested `with` statements
+    "SIM118", # Use `key in dict` instead of `key in dict.keys()`
+    "SIM212", # Use `... if ... else ...` instead of `... if not ... else ...`
+    "UP008",  # Use `super()` instead of `super(__class__, self)`
+    "UP028",  # Replace `yield` over `for` loop with `yield from`
+    "UP031",  # Use format specifiers instead of percent format
 ]
 
 [tool.ruff.lint.per-file-ignores]
