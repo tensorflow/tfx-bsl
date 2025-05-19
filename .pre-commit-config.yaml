@@ -25,7 +25,7 @@ repos:
       - id: end-of-file-fixer
         exclude: '\.svg$'
       - id: trailing-whitespace
-        exclude: '\.svg$'
+        exclude: '(\.svg$|^third_party/arrow\.patch$)'
       - id: check-json
       - id: check-yaml
         args: [--allow-multiple-documents, --unsafe]
