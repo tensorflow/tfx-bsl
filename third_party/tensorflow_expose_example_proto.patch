@@ -121,7 +121,7 @@ index 4527044f383..2d61de25200 100644
 -    tags = ["alt_dep=//third_party/tensorflow/core:protos_all"],
 +    visibility = ["//visibility:public"],
  )
- 
+
 -tf_proto_library(
 -    name = "example_parser_configuration_proto",
 -    srcs = ["example_parser_configuration.proto"],
