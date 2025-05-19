@@ -18,12 +18,14 @@ from typing import Union
 import numpy as np
 import tensorflow as tf
 
-FeatureSpecType = Union[tf.io.FixedLenFeature, tf.io.VarLenFeature,
-                        tf.io.SparseFeature, tf.io.RaggedFeature]
+FeatureSpecType = Union[
+    tf.io.FixedLenFeature, tf.io.VarLenFeature, tf.io.SparseFeature, tf.io.RaggedFeature
+]
 
 TensorType = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor]
 
-TensorValueType = Union[np.ndarray, tf.compat.v1.SparseTensorValue,
-                        tf.compat.v1.ragged.RaggedTensorValue]
+TensorValueType = Union[
+    np.ndarray, tf.compat.v1.SparseTensorValue, tf.compat.v1.ragged.RaggedTensorValue
+]
 
 TensorAlike = Union[TensorType, TensorValueType]
