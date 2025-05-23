@@ -97,6 +97,7 @@ def _execute(
                 error_msg.strip() if error_msg else "Repository command failed",
                 result.stderr.strip(),
                 error_details if error_details else "",
+                "Command: " + " ".join(cmdline),
             ]),
         )
     return result
