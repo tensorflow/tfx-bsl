@@ -146,9 +146,10 @@ combinations may also work.
 
 tfx-bsl                                                                         | apache-beam[gcp] | pyarrow  | tensorflow        | tensorflow-metadata | tensorflow-serving-api |
 ------------------------------------------------------------------------------- | -----------------| ---------|-------------------|---------------------|------------------------|
-[GitHub master](https://github.com/tensorflow/tfx-bsl/blob/master/RELEASE.md)   | 2.59.0           | 10.0.1   | nightly (2.x)     | 1.16.1              | 2.16.1
-[1.16.1](https://github.com/tensorflow/tfx-bsl/blob/v1.16.1/RELEASE.md)         | 2.59.0           | 10.0.1   | 2.16              | 1.16.1              | 2.16.1                |
-[1.16.0](https://github.com/tensorflow/tfx-bsl/blob/v1.16.0/RELEASE.md)         | 2.59.0           | 10.0.1   | 2.16              | 1.16.0              | 2.16.1
+[GitHub master](https://github.com/tensorflow/tfx-bsl/blob/master/RELEASE.md)   | 2.64.0           | 10.0.1   | nightly (2.x)     | 1.17.1              | 2.17.1                 |
+[1.17.0](https://github.com/tensorflow/tfx-bsl/blob/v1.17.0/RELEASE.md)         | 2.64.0           | 10.0.1   | 2.17              | 1.17.1              | 2.17.1                 |
+[1.16.1](https://github.com/tensorflow/tfx-bsl/blob/v1.16.1/RELEASE.md)         | 2.59.0           | 10.0.1   | 2.16              | 1.16.1              | 2.16.1                 |
+[1.16.0](https://github.com/tensorflow/tfx-bsl/blob/v1.16.0/RELEASE.md)         | 2.59.0           | 10.0.1   | 2.16              | 1.16.0              | 2.16.1                 |
 [1.15.1](https://github.com/tensorflow/tfx-bsl/blob/v1.15.1/RELEASE.md)         | 2.47.0           | 10.0.0   | 2.15              | 1.15.0              | 2.15.1                 |
 [1.15.0](https://github.com/tensorflow/tfx-bsl/blob/v1.15.0/RELEASE.md)         | 2.47.0           | 10.0.0   | 2.15              | 1.15.0              | 2.15.1                 |
 [1.14.0](https://github.com/tensorflow/tfx-bsl/blob/v1.14.0/RELEASE.md)         | 2.47.0           | 10.0.0   | 2.13              | 1.14.0              | 2.13.0                 |

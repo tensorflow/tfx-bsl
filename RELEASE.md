@@ -12,6 +12,7 @@
 *   Updating ZetaSQL to v2024.11.1 and related dependencies.
 *   Update GCC version to gcc-10 and the build configuration (.bazelrc,
     .bazelversion)
+*   macOS wheel publishing is temporarily paused due to missing ARM64 support.
 
 ## Breaking Changes
 
