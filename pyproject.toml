@@ -20,7 +20,9 @@ requires = [
   # We deliberately use old numpy version for compatibility with TF 1.15.
   # (b/206845101)
   "numpy~=1.22.0",
+  "tomli"
 ]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 88
@@ -130,3 +132,17 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+
+[tool.cibuildwheel]
+build-frontend="build"
+before-all = '''
+    yum install -y npm
+    npm install -g @bazel/bazelisk
+'''
+# before-build = "bazel run "
+# bazel 8 doesn't support bazel WORKSPACE file
+environment = {USE_BAZEL_VERSION = "6.5.0"}
+test-command="pytest"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
