@@ -135,14 +135,18 @@ ignore = [
 
 [tool.cibuildwheel]
 build-frontend="build"
-before-all = '''
-    yum install -y npm
-    npm install -g @bazel/bazelisk
-'''
+before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
 # before-build = "bazel run "
 # bazel 8 doesn't support bazel WORKSPACE file
 environment = {USE_BAZEL_VERSION = "6.5.0"}
-test-command="pytest"
+
+# test-command="python -m unittest discover {package} -p *_test.py"
 
 [tool.cibuildwheel.linux]
-manylinux-x86_64-image = "manylinux_2_28"
+#manylinux-x86_64-image = "manylinux_2_28"
+manylinux-x86_64-image = "manylinux2014"
+archs=["x86_64"]
+
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]

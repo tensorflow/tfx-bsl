@@ -29,44 +29,23 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        os: [ubuntu-latest, macos-14]
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Build tfx-bsl
-      id: build-tfx-bsl
-      uses: ./.github/reusable-build
+    - name: Build wheels
+      uses: pypa/cibuildwheel@v2.23.3
+      # env:
+      #   CIBW_SOME_OPTION: value
+      #    ...
+      # with:
+      #   package-dir: .
+      #   output-dir: wheelhouse
+      #   config-file: "{package}/pyproject.toml"
+
+    - uses: actions/upload-artifact@v4
       with:
-        python-version: ${{ matrix.python-version }}
-
-
-  upload_to_pypi:
-    name: Upload to PyPI
-    runs-on: ubuntu-latest
-    if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags'))
-    needs: [build]
-    environment:
-      name: pypi
-      url: https://pypi.org/p/tfx-bsl/
-    permissions:
-      id-token: write
-      attestations: write
-    steps:
-      - name: Retrieve wheels
-        uses: actions/download-artifact@v4.1.8
-        with:
-          merge-multiple: true
-          path: wheels
-      - name: Generate artifact attestations for wheels
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: "wheels/*"
-      - name: List the build artifacts
-        run: |
-          ls -lAs wheels/
-      - name: Upload to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1.9
-        with:
-          packages_dir: wheels/
+        name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+        path: ./wheelhouse/*.whl
