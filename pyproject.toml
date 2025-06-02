@@ -139,6 +139,7 @@ before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
 # before-build = "bazel run "
 # bazel 8 doesn't support bazel WORKSPACE file
 environment = {USE_BAZEL_VERSION = "6.5.0"}
+skip = ["cp311-*", "cp312-*", "cp313-*"]
 
 # test-command="python -m unittest discover {package} -p *_test.py"
 
