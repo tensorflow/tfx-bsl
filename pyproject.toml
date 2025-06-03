@@ -135,7 +135,7 @@ ignore = [
 
 [tool.cibuildwheel]
 build-frontend="build"
-before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
+
 # before-build = "bazel run "
 # bazel 8 doesn't support bazel WORKSPACE file
 environment = {USE_BAZEL_VERSION = "6.5.0"}
@@ -148,7 +148,9 @@ skip = ["cp311-*", "cp312-*", "cp313-*", "*musllinux*"]
 #manylinux-x86_64-image = "manylinux_2_28"
 manylinux-x86_64-image = "manylinux2014"
 archs=["x86_64"]
+before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
 
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
+before-build = "brew install bazelisk"
