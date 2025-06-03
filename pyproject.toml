@@ -150,10 +150,5 @@ manylinux-x86_64-image = "manylinux2014"
 archs=["x86_64"]
 
 
-[[tool.cibuildwheel.overrides]]
-select = "*-musllinux*"
-before-build = "apk add --update nodejs-current npm && npm install -g @bazel/bazelisk && bazel"
-
-
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
