@@ -25,7 +25,8 @@ on:
     types: [published]
 
 jobs:
-  build:
+  build_wheels:
+    name: Build Wheels
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -54,7 +55,7 @@ jobs:
     name: Upload to PyPI
     runs-on: ubuntu-latest
     if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags')) || (github.event_name == 'workflow_dispatch')
-    needs: [build_wheels, build_sdist]
+    needs: [build_wheels]
     environment:
       name: testpypi
       url: https://test.pypi.org/p/ajf-test-tfx-bsl/
