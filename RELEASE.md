@@ -6,11 +6,29 @@
 
 ## Bug Fixes and Other Changes
 
+## Breaking Changes
+
+## Deprecations
+
+# Version 1.17.1
+
+*   N/A
+
+## Major Features and Improvements
+
+*   N/A
+
+## Bug Fixes and Other Changes
+
 *   Depends on `apache-beam[gcp]>=2.50,<2.51` for Python 3.9 and 3.10.
 
 ## Breaking Changes
 
+*   N/A
+
 ## Deprecations
+
+*   N/A
 
 # Version 1.17.0
 
