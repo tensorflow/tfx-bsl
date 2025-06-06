@@ -90,7 +90,7 @@ class _BazelBuildCommand(setuptools.Command):
                 self._additional_build_options = [
                     "--macos_minimum_os=11.0",
                     "--config=macos_arm64",
-                    "--verbose-failures"
+                    "--verbose_failures"
 
                 ]
             else:
