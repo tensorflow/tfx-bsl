@@ -91,7 +91,7 @@ class _BazelBuildCommand(setuptools.Command):
                     "--macos_minimum_os=11.0",
                     "--config=macos_arm64",
                     "--verbose_failures",
-                    "-ferror-limit=0"
+                    "--sandbox-debug"
 
                 ]
             else:
