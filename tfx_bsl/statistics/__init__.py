@@ -13,19 +13,24 @@
 # limitations under the License.
 
 """Module level imports for tfx_bsl.statistics."""
+
 # pylint: disable=unused-import
 # pytype: disable=import-error
 # pylint: disable=g-import-not-at-top
 # See b/148667210 for why the ImportError is ignored.
 try:
-  from tfx_bsl.cc.tfx_bsl_extension.statistics import DatasetListAccumulator
-  from tfx_bsl.cc.tfx_bsl_extension.statistics_sql import EvaluateUnaryStatsPredicate
-  from tfx_bsl.cc.tfx_bsl_extension.statistics_sql import EvaluateBinaryStatsPredicate
+    from tfx_bsl.cc.tfx_bsl_extension.statistics import DatasetListAccumulator
+    from tfx_bsl.cc.tfx_bsl_extension.statistics_sql import (
+        EvaluateBinaryStatsPredicate,
+        EvaluateUnaryStatsPredicate,
+    )
 except ImportError as err:
-  import sys
-  sys.stderr.write("Error importing tfx_bsl_extension.statistics. "
-                   "Some tfx_bsl functionalities are not available: {}"
-                   .format(err))
+    import sys
+
+    sys.stderr.write(
+        "Error importing tfx_bsl_extension.statistics. "
+        f"Some tfx_bsl functionalities are not available: {err}"
+    )
 
 # pylint: enable=g-import-not-at-top
 # pytype: enable=import-error

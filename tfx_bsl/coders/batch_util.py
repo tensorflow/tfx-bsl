@@ -16,9 +16,10 @@
 import inspect
 import math
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar
-from absl import flags
 
 import apache_beam as beam
+from absl import flags
+
 from tfx_bsl.telemetry import util as telemetry_util
 
 # Beam might grow the batch size too large for Arrow BinaryArray / ListArray
@@ -53,49 +54,49 @@ _BATCH_SIZE_CAP_WITH_BYTE_TARGET = 8192
 
 
 def _UseByteSizeBatching() -> bool:
-  """Cautious access to `tfxio_use_byte_size_batching` flag value."""
-  return (
-      _USE_BYTE_SIZE_BATCHING.value
-      if flags.FLAGS.is_parsed()
-      else _USE_BYTE_SIZE_BATCHING.default
-  )
+    """Cautious access to `tfxio_use_byte_size_batching` flag value."""
+    return (
+        _USE_BYTE_SIZE_BATCHING.value
+        if flags.FLAGS.is_parsed()
+        else _USE_BYTE_SIZE_BATCHING.default
+    )
 
 
 def GetBatchElementsKwargs(
     batch_size: Optional[int], element_size_fn: Callable[[Any], int] = len
 ) -> Dict[str, Any]:
-  """Returns the kwargs to pass to beam.BatchElements()."""
-  if batch_size is not None:
-    return {
-        "min_batch_size": batch_size,
-        "max_batch_size": batch_size,
+    """Returns the kwargs to pass to beam.BatchElements()."""
+    if batch_size is not None:
+        return {
+            "min_batch_size": batch_size,
+            "max_batch_size": batch_size,
+        }
+    if _UseByteSizeBatching():
+        min_element_size = int(
+            math.ceil(_TARGET_BATCH_BYTES_SIZE / _BATCH_SIZE_CAP_WITH_BYTE_TARGET)
+        )
+        return {
+            "min_batch_size": _TARGET_BATCH_BYTES_SIZE,
+            "max_batch_size": _TARGET_BATCH_BYTES_SIZE,
+            "element_size_fn": lambda e: max(element_size_fn(e), min_element_size),
+        }
+    # Allow `BatchElements` to tune the values with the given parameters.
+    # We fix the tuning parameters here to prevent Beam changes from immediately
+    # affecting all dependencies.
+    result = {
+        "min_batch_size": 1,
+        "max_batch_size": _BATCH_SIZE_CAP,
+        "target_batch_overhead": 0.05,
+        "target_batch_duration_secs": 1,
+        "variance": 0.25,
     }
-  if _UseByteSizeBatching():
-    min_element_size = int(
-        math.ceil(_TARGET_BATCH_BYTES_SIZE / _BATCH_SIZE_CAP_WITH_BYTE_TARGET)
-    )
-    return {
-        "min_batch_size": _TARGET_BATCH_BYTES_SIZE,
-        "max_batch_size": _TARGET_BATCH_BYTES_SIZE,
-        "element_size_fn": lambda e: max(element_size_fn(e), min_element_size),
-    }
-  # Allow `BatchElements` to tune the values with the given parameters.
-  # We fix the tuning parameters here to prevent Beam changes from immediately
-  # affecting all dependencies.
-  result = {
-      "min_batch_size": 1,
-      "max_batch_size": _BATCH_SIZE_CAP,
-      "target_batch_overhead": 0.05,
-      "target_batch_duration_secs": 1,
-      "variance": 0.25,
-  }
-  batch_elements_signature = inspect.signature(beam.BatchElements)
-  if (
-      "target_batch_duration_secs_including_fixed_cost"
-      in batch_elements_signature.parameters
-  ):
-    result["target_batch_duration_secs_including_fixed_cost"] = 1
-  return result
+    batch_elements_signature = inspect.signature(beam.BatchElements)
+    if (
+        "target_batch_duration_secs_including_fixed_cost"
+        in batch_elements_signature.parameters
+    ):
+        result["target_batch_duration_secs_including_fixed_cost"] = 1
+    return result
 
 
 def _MakeAndIncrementBatchingMetrics(
@@ -103,16 +104,12 @@ def _MakeAndIncrementBatchingMetrics(
     batch_size: Optional[int],
     telemetry_descriptors: Optional[Sequence[str]],
 ) -> None:
-  """Increments metrics relevant to batching."""
-  namespace = telemetry_util.MakeTfxNamespace(
-      telemetry_descriptors or ["Unknown"]
-  )
-  beam.metrics.Metrics.counter(namespace, "tfxio_use_byte_size_batching").inc(
-      int(_UseByteSizeBatching())
-  )
-  beam.metrics.Metrics.counter(namespace, "desired_batch_size").inc(
-      batch_size or 0
-  )
+    """Increments metrics relevant to batching."""
+    namespace = telemetry_util.MakeTfxNamespace(telemetry_descriptors or ["Unknown"])
+    beam.metrics.Metrics.counter(namespace, "tfxio_use_byte_size_batching").inc(
+        int(_UseByteSizeBatching())
+    )
+    beam.metrics.Metrics.counter(namespace, "desired_batch_size").inc(batch_size or 0)
 
 
 T = TypeVar("T")
@@ -127,30 +124,32 @@ def BatchRecords(
     telemetry_descriptors: Optional[Sequence[str]],
     record_size_fn: Callable[[T], int] = len,
 ) -> beam.PCollection:
-  """Batches collection of records tuning the batch size if not provided.
+    """Batches collection of records tuning the batch size if not provided.
 
-  Args:
-    records: A PCollection of records to batch.
-    batch_size: Desired batch size. If None, will be tuned for optimal
-      performance.
-    telemetry_descriptors: Descriptors to use for batching metrics.
-    record_size_fn: Function used to determine size of each record in bytes.
-      Only used if byte size-based batching is enabled. Defaults to `len`
-      function suitable for bytes records.
+    Args:
+    ----
+      records: A PCollection of records to batch.
+      batch_size: Desired batch size. If None, will be tuned for optimal
+        performance.
+      telemetry_descriptors: Descriptors to use for batching metrics.
+      record_size_fn: Function used to determine size of each record in bytes.
+        Only used if byte size-based batching is enabled. Defaults to `len`
+        function suitable for bytes records.
 
-  Returns:
-    A PCollection of batched records.
-  """
-  _ = (
-      records.pipeline
-      | "CreateSole" >> beam.Create([None])
-      | "IncrementMetrics"
-      >> beam.Map(
-          _MakeAndIncrementBatchingMetrics,
-          batch_size=batch_size,
-          telemetry_descriptors=telemetry_descriptors,
-      )
-  )
-  return records | "BatchElements" >> beam.BatchElements(
-      **GetBatchElementsKwargs(batch_size, record_size_fn)
-  )
+    Returns:
+    -------
+      A PCollection of batched records.
+    """
+    _ = (
+        records.pipeline
+        | "CreateSole" >> beam.Create([None])
+        | "IncrementMetrics"
+        >> beam.Map(
+            _MakeAndIncrementBatchingMetrics,
+            batch_size=batch_size,
+            telemetry_descriptors=telemetry_descriptors,
+        )
+    )
+    return records | "BatchElements" >> beam.BatchElements(
+        **GetBatchElementsKwargs(batch_size, record_size_fn)
+    )
