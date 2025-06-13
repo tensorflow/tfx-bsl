@@ -43,7 +43,7 @@ give some examples of advanced usage.
 
 ### Primitive types
 
-<!-- BEGIN GOOGLE-INTERNAL 
+<!-- BEGIN GOOGLE-INTERNAL
 
 Schema interpretation logic has two versions controlled by
 [`generate_legacy_feature_spec`](https://github.com/tensorflow/metadata/blob/master/tensorflow_metadata/proto/v0/schema.proto#L115):
@@ -64,7 +64,7 @@ Schema interpretation logic has two versions controlled by
 1.  Otherwise, a `tf.io.VarLenFeature` of the corresponding type will be
     produced.
 
-<!-- BEGIN GOOGLE-INTERNAL 
+<!-- BEGIN GOOGLE-INTERNAL
 
 </section>
 
