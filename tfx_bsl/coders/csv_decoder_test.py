@@ -560,7 +560,7 @@ class CSVDecoderTest(parameterized.TestCase):
         "test_parse_csv_lines_with_schema",
         "test_parse_csv_lines_with_schema_attach_raw_record",
     ]:
-      pytest.xfail(reason="PR 81 test fails and needs to be fixed. ")
+      pytest.xfail(reason="Test fails and needs to be fixed. ")
 
     def _check_csv_cells(actual):
       for i in range(len(actual)):
@@ -639,7 +639,7 @@ class CSVDecoderTest(parameterized.TestCase):
       beam_test_util.assert_that(
           record_batches, _check_record_batches, label='check_record_batches')
 
-  @pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+  @pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
   def test_csv_to_recordbatch_schema_features_subset_of_column_names(self):
     input_lines = ['1,2.0,hello', '5,12.34,world']
     column_names = ['int_feature', 'float_feature', 'str_feature']

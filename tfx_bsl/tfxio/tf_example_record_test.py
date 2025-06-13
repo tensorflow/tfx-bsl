@@ -206,7 +206,7 @@ def _WriteInputs(filename):
       w.write(s)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
 
   @classmethod
@@ -789,7 +789,7 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
     self.assertAllEqual(expected_parsing_config, parser_config)
     self.assertAllEqual(expected_rename_dict, rename_dict)
 
-  @pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+  @pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
   def testValidGetTfExampleParserConfigWithRaggedFeature(self):
     schema_pbtxt = """
       feature {
@@ -944,7 +944,7 @@ class TfExampleRecordTest(tf.test.TestCase, parameterized.TestCase):
 
 class TFExampleBeamRecordTest(absltest.TestCase):
 
-  @pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+  @pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
   def testE2E(self):
     raw_record_column_name = "raw_record"
     tfxio = tf_example_record.TFExampleBeamRecord(

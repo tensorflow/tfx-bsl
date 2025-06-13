@@ -156,7 +156,7 @@ _CSV_TFXIO_IMPL_TEST_CASES = [
 ]
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class CsvRecordTest(parameterized.TestCase):
 
   @classmethod

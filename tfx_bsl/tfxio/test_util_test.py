@@ -24,7 +24,7 @@ from google.protobuf import text_format
 from absl.testing import absltest
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class TestUtilTest(absltest.TestCase):
 
   def testGetRecordBatches(self):

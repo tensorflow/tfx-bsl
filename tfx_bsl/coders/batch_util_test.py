@@ -97,7 +97,7 @@ class BatchUtilTest(parameterized.TestCase):
       "testGetBatchElementsKwargsbyte_size_batching",
       "testGetBatchElementsKwargsbyte_size_batching_with_element_size_fn",
     ]:
-      pytest.xfail(reason="PR 81 test fails and needs to be fixed. ")
+      pytest.xfail(reason="Test fails and needs to be fixed. ")
 
     with flagsaver.flagsaver(
         tfxio_use_byte_size_batching=tfxio_use_byte_size_batching

@@ -77,7 +77,7 @@ def _hack_namedtuple(cls):
   return cls
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class TFXNamedtupleTest(absltest.TestCase):
 
   def testPickling(self):

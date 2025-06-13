@@ -39,7 +39,7 @@ def _WriteRawRecords(filename):
       w.write(r)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class RawTfRecordTest(absltest.TestCase):
 
   @classmethod
@@ -139,7 +139,7 @@ class RawTfRecordTest(absltest.TestCase):
     self.assertEqual(actual_records, _RAW_RECORDS)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class RawBeamRecordTest(absltest.TestCase):
 
   def testE2E(self):

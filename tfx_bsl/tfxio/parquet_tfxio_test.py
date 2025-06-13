@@ -138,7 +138,7 @@ def _WriteInputs(filename):
   pq.write_table(table, filename)
 
 
-@pytest.mark.xfail(run=False, reason="PR 81 This test fails and needs to be fixed.")
+@pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class ParquetRecordTest(absltest.TestCase):
 
   @classmethod
