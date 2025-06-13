@@ -13,24 +13,25 @@
 # limitations under the License.
 """Tests for tfx_bsl.telemetry.util."""
 
-from tfx_bsl.telemetry import util
 from absl.testing import absltest
+
+from tfx_bsl.telemetry import util
 
 
 class UtilTest(absltest.TestCase):
+    def testMakeTfxNamespace(self):
+        self.assertEqual("tfx", util.MakeTfxNamespace([]))
+        self.assertEqual(
+            "tfx.some.component", util.MakeTfxNamespace(("some", "component"))
+        )
 
-  def testMakeTfxNamespace(self):
-    self.assertEqual("tfx", util.MakeTfxNamespace([]))
-    self.assertEqual("tfx.some.component",
-                     util.MakeTfxNamespace(("some", "component")))
-
-  def testAppendToNamespace(self):
-    self.assertEqual("some_namespace",
-                     util.AppendToNamespace("some_namespace", []))
-    self.assertEqual(
-        "some_namespace.some.component",
-        util.AppendToNamespace("some_namespace", ["some", "component"]))
+    def testAppendToNamespace(self):
+        self.assertEqual("some_namespace", util.AppendToNamespace("some_namespace", []))
+        self.assertEqual(
+            "some_namespace.some.component",
+            util.AppendToNamespace("some_namespace", ["some", "component"]),
+        )
 
 
 if __name__ == "__main__":
-  absltest.main()
+    absltest.main()

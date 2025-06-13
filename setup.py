@@ -18,202 +18,203 @@ import platform
 import shutil
 import subprocess
 import sys
-
+from distutils.command import build
 
 # pylint:disable=g-bad-import-order
 # setuptools must be imported prior to distutils.
 import setuptools
-from distutils.command import build
-# pylint:enable=g-bad-import-order
 
-from setuptools import find_packages
-from setuptools import setup
+# pylint:enable=g-bad-import-order
+from setuptools import find_packages, setup
 from setuptools.command.install import install
 from setuptools.dist import Distribution
 
 
 class _BuildCommand(build.build):
-  """Build everything that is needed to install.
+    """Build everything that is needed to install.
 
-  This overrides the original distutils "build" command to to run gen_proto
-  command before any sub_commands.
+    This overrides the original distutils "build" command to to run gen_proto
+    command before any sub_commands.
 
-  build command is also invoked from bdist_wheel and install command, therefore
-  this implementation covers the following commands:
-    - pip install . (which invokes bdist_wheel)
-    - python setup.py install (which invokes install command)
-    - python setup.py bdist_wheel (which invokes bdist_wheel command)
-  """
+    build command is also invoked from bdist_wheel and install command, therefore
+    this implementation covers the following commands:
+      - pip install . (which invokes bdist_wheel)
+      - python setup.py install (which invokes install command)
+      - python setup.py bdist_wheel (which invokes bdist_wheel command)
+    """
 
-  def _build_cc_extensions(self):
-    return True
-  # Add "bazel_build" command as the first sub_command of "build". Each
-  # sub_command of "build" (e.g. "build_py", "build_ext", etc.) is executed
-  # sequentially when running a "build" command, if the second item in the tuple
-  # (predicate method) is evaluated to true.
-  sub_commands = [
-      ('bazel_build', _build_cc_extensions),
-  ] + build.build.sub_commands
+    def _build_cc_extensions(self):
+        return True
+
+    # Add "bazel_build" command as the first sub_command of "build". Each
+    # sub_command of "build" (e.g. "build_py", "build_ext", etc.) is executed
+    # sequentially when running a "build" command, if the second item in the tuple
+    # (predicate method) is evaluated to true.
+    sub_commands = [
+        ("bazel_build", _build_cc_extensions),
+    ] + build.build.sub_commands
 
 
 # TFX BSL is not a purelib. However because of the extension module is not
 # built by setuptools, it will be incorrectly treated as a purelib. The
 # following works around that bug.
 class _InstallPlatlibCommand(install):
-
-  def finalize_options(self):
-    install.finalize_options(self)
-    self.install_lib = self.install_platlib
+    def finalize_options(self):
+        install.finalize_options(self)
+        self.install_lib = self.install_platlib
 
 
 class _BazelBuildCommand(setuptools.Command):
-  """Generate proto stub files in python.
+    """Generate proto stub files in python.
 
-  Running this command will populate foo_pb2.py file next to your foo.proto
-  file.
-  """
+    Running this command will populate foo_pb2.py file next to your foo.proto
+    file.
+    """
 
-  def initialize_options(self):
-    pass
+    def initialize_options(self):
+        pass
 
-  def finalize_options(self):
-    self._bazel_cmd = shutil.which('bazel')
-    if not self._bazel_cmd:
-      raise RuntimeError(
-          'Could not find "bazel" binary. Please visit '
-          'https://docs.bazel.build/versions/master/install.html for '
-          'installation instruction.')
-    self._additional_build_options = ['--verbose_failures', '--sandbox_debug']
-    if platform.system() == 'Darwin':
-      # This flag determines the platform qualifier of the macos wheel.
-      if platform.machine() == 'arm64':
-        self._additional_build_options = ['--macos_minimum_os=11.0',
-                                          '--config=macos_arm64']
-      else:
-        self._additional_build_options = ['--macos_minimum_os=10.14']
+    def finalize_options(self):
+        self._bazel_cmd = shutil.which("bazel")
+        if not self._bazel_cmd:
+            raise RuntimeError(
+                'Could not find "bazel" binary. Please visit '
+                "https://docs.bazel.build/versions/master/install.html for "
+                "installation instruction."
+            )
+        self._additional_build_options = ["--verbose_failures", "--sandbox_debug"]
+        if platform.system() == "Darwin":
+            # This flag determines the platform qualifier of the macos wheel.
+            if platform.machine() == "arm64":
+                self._additional_build_options = [
+                    "--macos_minimum_os=11.0",
+                    "--config=macos_arm64",
+                ]
+            else:
+                self._additional_build_options = ["--macos_minimum_os=10.14"]
 
-  def run(self):
-    subprocess.check_call(
-        [self._bazel_cmd, 'run', '-c', 'opt']
-        + self._additional_build_options
-        + ['//tfx_bsl:move_generated_files'],
-        # Bazel should be invoked in a directory containing bazel WORKSPACE
-        # file, which is the root directory.
-        cwd=os.path.dirname(os.path.realpath(__file__)),
-        env=dict(os.environ, PYTHON_BIN_PATH=sys.executable),
-    )
+    def run(self):
+        subprocess.check_call(
+            [self._bazel_cmd, "run", "-c", "opt"]
+            + self._additional_build_options
+            + ["//tfx_bsl:move_generated_files"],
+            # Bazel should be invoked in a directory containing bazel WORKSPACE
+            # file, which is the root directory.
+            cwd=os.path.dirname(os.path.realpath(__file__)),
+            env=dict(os.environ, PYTHON_BIN_PATH=sys.executable),
+        )
 
 
 class _BinaryDistribution(Distribution):
-  """This class is needed in order to create OS specific wheels."""
+    """This class is needed in order to create OS specific wheels."""
 
-  def is_pure(self):
-    return False
+    def is_pure(self):
+        return False
 
-  def has_ext_modules(self):
-    return True
+    def has_ext_modules(self):
+        return True
 
 
 def select_constraint(default, nightly=None, git_master=None):
-  """Select dependency constraint based on TFX_DEPENDENCY_SELECTOR env var."""
-  selector = os.environ.get('TFX_DEPENDENCY_SELECTOR')
-  if selector == 'UNCONSTRAINED':
-    return ''
-  elif selector == 'NIGHTLY' and nightly is not None:
-    return nightly
-  elif selector == 'GIT_MASTER' and git_master is not None:
-    return git_master
-  else:
-    return default
+    """Select dependency constraint based on TFX_DEPENDENCY_SELECTOR env var."""
+    selector = os.environ.get("TFX_DEPENDENCY_SELECTOR")
+    if selector == "UNCONSTRAINED":
+        return ""
+    elif selector == "NIGHTLY" and nightly is not None:
+        return nightly
+    elif selector == "GIT_MASTER" and git_master is not None:
+        return git_master
+    else:
+        return default
 
 
 # Get version from version module.
-with open('tfx_bsl/version.py') as fp:
-  globals_dict = {}
-  exec(fp.read(), globals_dict)  # pylint: disable=exec-used
-__version__ = globals_dict['__version__']
+with open("tfx_bsl/version.py") as fp:
+    globals_dict = {}
+    exec(fp.read(), globals_dict)  # pylint: disable=exec-used
+__version__ = globals_dict["__version__"]
 
 # Get the long description from the README file.
-with open('README.md') as fp:
-  _LONG_DESCRIPTION = fp.read()
+with open("README.md") as fp:
+    _LONG_DESCRIPTION = fp.read()
 
 setup(
-    name='tfx-bsl',
+    name="tfx-bsl",
     version=__version__,
-    author='Google LLC',
-    author_email='tensorflow-extended-dev@googlegroups.com',
-    license='Apache 2.0',
+    author="Google LLC",
+    author_email="tensorflow-extended-dev@googlegroups.com",
+    license="Apache 2.0",
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'Intended Audience :: Developers',
-        'Intended Audience :: Education',
-        'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: Apache Software License',
-        'Operating System :: MacOS :: MacOS X',
-        'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: Python :: 3 :: Only',
-        'Topic :: Scientific/Engineering',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence',
-        'Topic :: Scientific/Engineering :: Mathematics',
-        'Topic :: Software Development',
-        'Topic :: Software Development :: Libraries',
-        'Topic :: Software Development :: Libraries :: Python Modules',
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Education",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: MacOS :: MacOS X",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3 :: Only",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Topic :: Scientific/Engineering :: Mathematics",
+        "Topic :: Software Development",
+        "Topic :: Software Development :: Libraries",
+        "Topic :: Software Development :: Libraries :: Python Modules",
     ],
     namespace_packages=[],
     # Make sure to sync the versions of common dependencies (absl-py, numpy,
     # and protobuf) with TF.
     install_requires=[
-        'absl-py>=0.9,<2.0.0',
+        "absl-py>=0.9,<2.0.0",
         'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
         'apache-beam[gcp]>=2.50,<2.51;python_version<"3.11"',
-        'google-api-python-client>=1.7.11,<2',
-        'numpy>=1.22.0',
-        'pandas>=1.0,<2',
+        "google-api-python-client>=1.7.11,<2",
+        "numpy>=1.22.0",
+        "pandas>=1.0,<2",
         'protobuf>=4.25.2,<6.0.0;python_version>="3.11"',
         'protobuf>=4.21.6,<6.0.0;python_version<"3.11"',
-        'pyarrow>=10,<11',
-        'tensorflow>=2.17,<2.18',
-        'tensorflow-metadata'
+        "pyarrow>=10,<11",
+        "tensorflow>=2.17,<2.18",
+        "tensorflow-metadata"
         + select_constraint(
-            default='>=1.17.1,<1.18.0',
-            nightly='>=1.18.0.dev',
-            git_master='@git+https://github.com/tensorflow/metadata@master',
+            default=">=1.17.1,<1.18.0",
+            nightly=">=1.18.0.dev",
+            git_master="@git+https://github.com/tensorflow/metadata@master",
         ),
-        'tensorflow-serving-api'
+        "tensorflow-serving-api"
         + select_constraint(
-            default='>=2.13.0,<3',
-            nightly='>=2.13.0.dev',
-            git_master='@git+https://github.com/tensorflow/serving@master',
+            default=">=2.13.0,<3",
+            nightly=">=2.13.0.dev",
+            git_master="@git+https://github.com/tensorflow/serving@master",
         ),
     ],
     extras_require={
-      "dev": ["pre-commit"],
+        "dev": ["pre-commit"],
     },
-    python_requires='>=3.9,<4',
+    python_requires=">=3.9,<4",
     packages=find_packages(),
     include_package_data=True,
-    package_data={'': ['*.lib', '*.pyd', '*.so']},
+    package_data={"": ["*.lib", "*.pyd", "*.so"]},
     zip_safe=False,
     distclass=_BinaryDistribution,
     description=(
-        'tfx_bsl (TFX Basic Shared Libraries) contains libraries '
-        'shared by many TFX (TensorFlow eXtended) libraries and '
-        'components.'
+        "tfx_bsl (TFX Basic Shared Libraries) contains libraries "
+        "shared by many TFX (TensorFlow eXtended) libraries and "
+        "components."
     ),
     long_description=_LONG_DESCRIPTION,
-    long_description_content_type='text/markdown',
-    keywords='tfx bsl',
-    url='https://www.tensorflow.org/tfx',
-    download_url='https://github.com/tensorflow/tfx-bsl/tags',
+    long_description_content_type="text/markdown",
+    keywords="tfx bsl",
+    url="https://www.tensorflow.org/tfx",
+    download_url="https://github.com/tensorflow/tfx-bsl/tags",
     requires=[],
     cmdclass={
-        'install': _InstallPlatlibCommand,
-        'build': _BuildCommand,
-        'bazel_build': _BazelBuildCommand,
+        "install": _InstallPlatlibCommand,
+        "build": _BuildCommand,
+        "bazel_build": _BazelBuildCommand,
     },
 )

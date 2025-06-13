@@ -13,21 +13,24 @@
 # limitations under the License.
 """Contains TFXIO helpers for testing purposes."""
 
-from typing import  Optional, Text
-
-from tfx_bsl.tfxio import tf_example_record
+from typing import Optional, Text
 
 from tensorflow_metadata.proto.v0 import schema_pb2
+
+from tfx_bsl.tfxio import tf_example_record
 
 
 # DEPRECATED. Prefer tf_example_record.TFExampleBeamRecord.
 # TODO(b/158580478): clean this up.
 class InMemoryTFExampleRecord(tf_example_record.TFExampleBeamRecord):
-
-  def __init__(self, schema: Optional[schema_pb2.Schema] = None,
-               raw_record_column_name: Optional[Text] = None):
-    super().__init__(
-        physical_format="inmem",
-        telemetry_descriptors=["test", "component"],
-        schema=schema,
-        raw_record_column_name=raw_record_column_name)
+    def __init__(
+        self,
+        schema: Optional[schema_pb2.Schema] = None,
+        raw_record_column_name: Optional[str] = None,
+    ):
+        super().__init__(
+            physical_format="inmem",
+            telemetry_descriptors=["test", "component"],
+            schema=schema,
+            raw_record_column_name=raw_record_column_name,
+        )
