@@ -43,59 +43,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "sql_util",
-    srcs = select({
-        "@bazel_tools//src/conditions:windows": [
-            "sql_util_windows.cc",
-        ],
-        "//conditions:default": ["sql_util.cc"],
-    }),
-    hdrs = ["sql_util.h"],
-    visibility = [
-        "//visibility:public",
-    ],
-    deps = select({
-        "@bazel_tools//src/conditions:windows": [],
-        "//conditions:default": [
-            "@com_google_zetasql//zetasql/public:analyzer_options",
-            "@com_google_zetasql//zetasql/public:evaluator",
-            "@com_google_zetasql//zetasql/public:value",
-        ],
-    }) + [
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-    ],
-)
-
-cc_library(
-    name = "statistics_sql_submodule",
-    srcs = select({
-        "@bazel_tools//src/conditions:windows": [
-            "statistics_sql_submodule_windows.cc",
-        ],
-        "//conditions:default": ["statistics_sql_submodule.cc"],
-    }),
-    hdrs = ["statistics_sql_submodule.h"],
-    copts = [
-        "-fexceptions",
-    ],
-    features = ["-use_header_modules"],
-    visibility = [
-        "//tfx_bsl/cc:__pkg__",
-    ],
-    deps = select({
-        "@bazel_tools//src/conditions:windows": [],
-        "//conditions:default": [":sql_util"],
-    }) + [
-        "@com_github_tensorflow_metadata//tensorflow_metadata/proto/v0:cc_metadata_v0_proto_cc",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/types:optional",
-        "@pybind11",
-    ],
-)
-
 cc_test(
     name = "merge_util_test",
     srcs = ["merge_util_test.cc"],
