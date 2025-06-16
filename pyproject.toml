@@ -140,7 +140,7 @@ environment = {USE_BAZEL_VERSION = "6.5.0"}
 skip = ["cp312-*", "cp313-*", "*musllinux*", "pp*"]
 test-extras = ["test"]
 before-test="rm bazel-*"
-test-command="pytest"
+test-command="pytest {project}/*_test.py"
 
 [tool.cibuildwheel.linux]
 #manylinux-x86_64-image = "manylinux_2_28"
