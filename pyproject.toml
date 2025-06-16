@@ -140,7 +140,7 @@ environment = {USE_BAZEL_VERSION = "6.5.0"}
 skip = ["cp312-*", "cp313-*", "*musllinux*", "pp*"]
 
 test-extras = ["test"]
-before-test="rm bazel-*"
+before-test="rm {project}/bazel-*"
 test-command="pytest {project}/*_test.py"
 
 [tool.cibuildwheel.linux]
@@ -152,5 +152,4 @@ before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
-test-sources-macos = ["tfx-bsl/*_test.py"]
 before-build = "brew install bazelisk"
