@@ -35,7 +35,6 @@ from tfx_bsl.tfxio.tf_sequence_example_record import (
 )
 from tfx_bsl.tfxio.tfxio import TFXIO
 
-
 __all__ = [
     "BeamRecordCsvTFXIO",
     "CsvTFXIO",

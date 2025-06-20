@@ -14,12 +14,12 @@
 """Package Setup script for TFX BSL."""
 
 import os
-from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
 from distutils.command import build
+from pathlib import Path
 
 # pylint:disable=g-bad-import-order
 # setuptools must be imported prior to distutils.
@@ -193,14 +193,15 @@ setup(
             git_master="@git+https://github.com/tensorflow/serving@master",
         ),
     ],
-    extras_require = {
-        "docs" : [
-          req for req in Path("./requirements-docs.txt")
-          .expanduser()
-          .resolve()
-          .read_text()
-          .splitlines()
-          if req
+    extras_require={
+        "docs": [
+            req
+            for req in Path("./requirements-docs.txt")
+            .expanduser()
+            .resolve()
+            .read_text()
+            .splitlines()
+            if req
         ],
         "dev": ["pre-commit"],
     },

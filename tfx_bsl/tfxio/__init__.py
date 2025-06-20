@@ -17,20 +17,19 @@ Design doc:
 [https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md](https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardized-inputs.md)
 """
 
-
 __all__ = [
-  "BeamRecordCsvTFXIO",
-  "CsvTFXIO",
-  "RecordBatchToExamplesEncoder",
-  "RecordBatchesOptions",
-  "TFExampleBeamRecord",
-  "TFExampleRecord",
-  "TFGraphRecordDecoder",
-  "TFSequenceExampleBeamRecord",
-  "TFSequenceExampleRecord",
-  "TFXIO",
-  "TensorAdapter",
-  "TensorAdapterConfig",
-  "TensorFlowDatasetOptions",
-  "TensorRepresentations",
+    "BeamRecordCsvTFXIO",
+    "CsvTFXIO",
+    "RecordBatchToExamplesEncoder",
+    "RecordBatchesOptions",
+    "TFExampleBeamRecord",
+    "TFExampleRecord",
+    "TFGraphRecordDecoder",
+    "TFSequenceExampleBeamRecord",
+    "TFSequenceExampleRecord",
+    "TFXIO",
+    "TensorAdapter",
+    "TensorAdapterConfig",
+    "TensorFlowDatasetOptions",
+    "TensorRepresentations",
 ]
