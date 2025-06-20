@@ -22,7 +22,6 @@ tfx_bsl_pybind_extension(
         "//tfx_bsl/cc/arrow:arrow_submodule",
         "//tfx_bsl/cc/coders:coders_submodule",
         "//tfx_bsl/cc/sketches:sketches_submodule",
-        "//tfx_bsl/cc/statistics:statistics_sql_submodule",
         "//tfx_bsl/cc/statistics:statistics_submodule",
         "@arrow",
         "@pybind11",

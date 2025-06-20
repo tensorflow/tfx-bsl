@@ -1,4 +1,4 @@
-# Copyright 2020 Google LLC
+# Copyright 2024 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,17 +11,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Arrow Array utilities."""
 
-import sys
+name: Test tfx-bsl
 
-# pytype: disable=import-error
-# pylint: disable=unused-import
-# pylint: disable=g-import-not-at-top
-# See b/148667210 for why the ImportError is ignored.
-try:
-  from tfx_bsl.cc.tfx_bsl_extension.arrow.sql_util import RecordBatchSQLSliceQuery
-except ImportError as err:
-  sys.stderr.write(
-      "Error importing tfx_bsl_google_extension.arrow.sql_util. "
-      "Some tfx_bsl functionalities are not available: {}".format(err))
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build tfx-bsl
+      id: build-tfx-bsl
+      uses: ./.github/reusable-build
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Test
+      run: |
+        pip install pytest
+        rm bazel-*
+        pytest -vvv

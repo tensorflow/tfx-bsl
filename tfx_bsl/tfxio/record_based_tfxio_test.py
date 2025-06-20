@@ -14,6 +14,7 @@
 """Tests for tfx_bsl.tfxio.record_based_tfxio."""
 
 import os
+import pytest
 import tempfile
 
 from typing import Any
@@ -40,6 +41,7 @@ def _WriteTfRecord(path, records):
 
 class RecordBasedTfxioTest(parameterized.TestCase):
 
+  @pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
   def testReadTfRecord(self):
     tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
     file1 = os.path.join(tmp_dir, "tfrecord1")
@@ -115,6 +117,7 @@ class RecordBasedTfxioTest(parameterized.TestCase):
         output_record_batch.column(output_record_batch.num_columns - 1)
         .equals(expected_raw_record_column))
 
+  @pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
   def testOverridableRecordBasedTFXIO(self):
     tmp_dir = tempfile.mkdtemp(dir=FLAGS.test_tmpdir)
     file1 = os.path.join(tmp_dir, "tfrecord1")

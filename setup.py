@@ -84,7 +84,7 @@ class _BazelBuildCommand(setuptools.Command):
           'Could not find "bazel" binary. Please visit '
           'https://docs.bazel.build/versions/master/install.html for '
           'installation instruction.')
-    self._additional_build_options = []
+    self._additional_build_options = ['--verbose_failures', '--sandbox_debug']
     if platform.system() == 'Darwin':
       # This flag determines the platform qualifier of the macos wheel.
       if platform.machine() == 'arm64':
@@ -94,16 +94,6 @@ class _BazelBuildCommand(setuptools.Command):
         self._additional_build_options = ['--macos_minimum_os=10.14']
 
   def run(self):
-    # Build the public protos to make sure they are buildable.
-    subprocess.check_call(
-        [self._bazel_cmd, 'build', '-c', 'opt']
-        + self._additional_build_options
-        + ['//tfx_bsl/public/proto:public_protos'],
-        # Bazel should be invoked in a directory containing bazel WORKSPACE
-        # file, which is the root directory.
-        cwd=os.path.dirname(os.path.realpath(__file__)),
-        env=dict(os.environ, PYTHON_BIN_PATH=sys.executable),
-    )
     subprocess.check_call(
         [self._bazel_cmd, 'run', '-c', 'opt']
         + self._additional_build_options
@@ -181,7 +171,7 @@ setup(
     install_requires=[
         'absl-py>=0.9,<2.0.0',
         'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
-        'apache-beam[gcp]>=2.47,<3;python_version<"3.11"',
+        'apache-beam[gcp]>=2.50,<2.51;python_version<"3.11"',
         'google-api-python-client>=1.7.11,<2',
         'numpy>=1.22.0',
         'pandas>=1.0,<2',

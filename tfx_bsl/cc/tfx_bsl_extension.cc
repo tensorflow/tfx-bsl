@@ -25,7 +25,6 @@
 #include "tfx_bsl/cc/coders/coders_submodule.h"
 #include "tfx_bsl/cc/sketches/sketches_submodule.h"
 #include "tfx_bsl/cc/statistics/statistics_submodule.h"
-#include "tfx_bsl/cc/statistics/statistics_sql_submodule.h"
 #include "pybind11/pybind11.h"
 
 #ifndef TFX_BSL_USE_ARROW_C_ABI
@@ -51,7 +50,6 @@ PYBIND11_MODULE(
   DefineCodersSubmodule(m);
   DefineSketchesSubmodule(m);
   DefineStatisticsSubmodule(m);
-  DefineStatisticsSqlSubmodule(m);
 }
 
 }  // namespace tfx_bsl
