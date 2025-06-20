@@ -34,3 +34,20 @@ from tfx_bsl.tfxio.tf_sequence_example_record import (
     TFSequenceExampleRecord,
 )
 from tfx_bsl.tfxio.tfxio import TFXIO
+
+__all__ = [
+    "BeamRecordCsvTFXIO",
+    "CsvTFXIO",
+    "RecordBatchToExamplesEncoder",
+    "RecordBatchesOptions",
+    "TFExampleBeamRecord",
+    "TFExampleRecord",
+    "TFGraphRecordDecoder",
+    "TFSequenceExampleBeamRecord",
+    "TFSequenceExampleRecord",
+    "TFXIO",
+    "TensorAdapter",
+    "TensorAdapterConfig",
+    "TensorFlowDatasetOptions",
+    "TensorRepresentations",
+]

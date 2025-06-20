@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 from distutils.command import build
+from pathlib import Path
 
 # pylint:disable=g-bad-import-order
 # setuptools must be imported prior to distutils.
@@ -193,6 +194,15 @@ setup(
         ),
     ],
     extras_require={
+        "docs": [
+            req
+            for req in Path("./requirements-docs.txt")
+            .expanduser()
+            .resolve()
+            .read_text()
+            .splitlines()
+            if req
+        ],
         "dev": ["pre-commit"],
     },
     python_requires=">=3.9,<4",
