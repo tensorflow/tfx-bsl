@@ -21,15 +21,16 @@ https://github.com/tensorflow/community/blob/master/rfcs/20191017-tfx-standardiz
 
 from tfx_bsl.coders.example_coder import RecordBatchToExamplesEncoder
 from tfx_bsl.coders.tf_graph_record_decoder import TFGraphRecordDecoder
-from tfx_bsl.tfxio.csv_tfxio import BeamRecordCsvTFXIO
-from tfx_bsl.tfxio.csv_tfxio import CsvTFXIO
-from tfx_bsl.tfxio.dataset_options import RecordBatchesOptions
-from tfx_bsl.tfxio.dataset_options import TensorFlowDatasetOptions
-from tfx_bsl.tfxio.tensor_adapter import TensorAdapter
-from tfx_bsl.tfxio.tensor_adapter import TensorAdapterConfig
-from tfx_bsl.tfxio.tensor_adapter import TensorRepresentations
-from tfx_bsl.tfxio.tf_example_record import TFExampleBeamRecord
-from tfx_bsl.tfxio.tf_example_record import TFExampleRecord
-from tfx_bsl.tfxio.tf_sequence_example_record import TFSequenceExampleBeamRecord
-from tfx_bsl.tfxio.tf_sequence_example_record import TFSequenceExampleRecord
+from tfx_bsl.tfxio.csv_tfxio import BeamRecordCsvTFXIO, CsvTFXIO
+from tfx_bsl.tfxio.dataset_options import RecordBatchesOptions, TensorFlowDatasetOptions
+from tfx_bsl.tfxio.tensor_adapter import (
+    TensorAdapter,
+    TensorAdapterConfig,
+    TensorRepresentations,
+)
+from tfx_bsl.tfxio.tf_example_record import TFExampleBeamRecord, TFExampleRecord
+from tfx_bsl.tfxio.tf_sequence_example_record import (
+    TFSequenceExampleBeamRecord,
+    TFSequenceExampleRecord,
+)
 from tfx_bsl.tfxio.tfxio import TFXIO

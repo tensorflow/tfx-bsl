@@ -13,23 +13,24 @@
 # limitations under the License.
 """Tests for tfx_bsl.tfxio.test_util."""
 
-import pytest
 import apache_beam as beam
-from apache_beam.testing import util as beam_testing_util
 import pyarrow as pa
+import pytest
 import tensorflow as tf
-from tfx_bsl.tfxio import test_util
-
-from google.protobuf import text_format
 from absl.testing import absltest
+from apache_beam.testing import util as beam_testing_util
+from google.protobuf import text_format
+
+from tfx_bsl.tfxio import test_util
 
 
 @pytest.mark.xfail(run=False, reason="This test fails and needs to be fixed.")
 class TestUtilTest(absltest.TestCase):
-
-  def testGetRecordBatches(self):
-    tfxio = test_util.InMemoryTFExampleRecord()
-    examples = [text_format.Parse("""
+    def testGetRecordBatches(self):
+        tfxio = test_util.InMemoryTFExampleRecord()
+        examples = [
+            text_format.Parse(
+                """
     features {
       feature {
         key: "f1"
@@ -39,19 +40,26 @@ class TestUtilTest(absltest.TestCase):
           }
         }
       }
-    }""", tf.train.Example()).SerializeToString()]
-    def _AssertFn(record_batches):
-      self.assertLen(record_batches, 1)
-      record_batch = record_batches[0]
-      self.assertEqual(record_batch.num_rows, 1)
-      self.assertEqual(record_batch.num_columns, 1)
-      self.assertTrue(record_batch[0].equals(
-          pa.array([[123]], type=pa.large_list(pa.int64()))))
+    }""",
+                tf.train.Example(),
+            ).SerializeToString()
+        ]
 
-    with beam.Pipeline() as p:
-      record_batches = p | beam.Create(examples) | tfxio.BeamSource()
-      beam_testing_util.assert_that(record_batches, _AssertFn)
+        def _AssertFn(record_batches):
+            self.assertLen(record_batches, 1)
+            record_batch = record_batches[0]
+            self.assertEqual(record_batch.num_rows, 1)
+            self.assertEqual(record_batch.num_columns, 1)
+            self.assertTrue(
+                record_batch[0].equals(
+                    pa.array([[123]], type=pa.large_list(pa.int64()))
+                )
+            )
+
+        with beam.Pipeline() as p:
+            record_batches = p | beam.Create(examples) | tfxio.BeamSource()
+            beam_testing_util.assert_that(record_batches, _AssertFn)
 
 
 if __name__ == "__main__":
-  absltest.main()
+    absltest.main()

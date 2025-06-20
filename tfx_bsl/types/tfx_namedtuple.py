@@ -22,41 +22,42 @@ PySpark issue.
 TODO(https://issues.apache.org/jira/browse/SPARK-22674): remove this workaround
 once the hack is removed from PySpark.
 """
+
 import collections
 import sys
 import typing
 
 
 def _patch_namedtuple(cls):
-  """Helper function that patches namedtuple class to prevent PySpark hack."""
+    """Helper function that patches namedtuple class to prevent PySpark hack."""
 
-  def reduce(self):
-    return (self.__class__, tuple(self))
+    def reduce(self):
+        return (self.__class__, tuple(self))
 
-  # Classes for which `__reduce__` is defined don't get hacked by PySpark.
-  cls.__reduce__ = reduce
+    # Classes for which `__reduce__` is defined don't get hacked by PySpark.
+    cls.__reduce__ = reduce
 
-  # For pickling to work, the __module__ variable needs to be set to the frame
-  # where the named tuple is created.
-  try:
-    cls.__module__ = sys._getframe(2).f_globals.get('__name__', '__main__')  # pylint: disable=protected-access
-  except (AttributeError, ValueError):
-    pass
+    # For pickling to work, the __module__ variable needs to be set to the frame
+    # where the named tuple is created.
+    try:
+        cls.__module__ = sys._getframe(2).f_globals.get("__name__", "__main__")  # pylint: disable=protected-access
+    except (AttributeError, ValueError):
+        pass
 
 
 def namedtuple(typename, field_names, *, rename=False):
-  """Wrapper around `collections.namedtuple` to provide PySpark compatibility."""
-
-  result = collections.namedtuple(typename, field_names, rename=rename)
-  _patch_namedtuple(result)
-  return result
+    """Wrapper around `collections.namedtuple` to provide PySpark compatibility."""
+    result = collections.namedtuple(typename, field_names, rename=rename)
+    _patch_namedtuple(result)
+    return result
 
 
 class TypedNamedTuple:
-  """Wrapper around `typing.NamedTuple` to provide PySpark compatibility."""
-  __slots__ = ()
+    """Wrapper around `typing.NamedTuple` to provide PySpark compatibility."""
 
-  def __new__(cls, typename, fields=None):
-    result = typing.NamedTuple(typename, fields)
-    _patch_namedtuple(result)
-    return result
+    __slots__ = ()
+
+    def __new__(cls, typename, fields=None):
+        result = typing.NamedTuple(typename, fields)
+        _patch_namedtuple(result)
+        return result
