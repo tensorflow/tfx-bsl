@@ -19,7 +19,7 @@ requires = [
   # Required for using org_tensorflow bazel repository.
   # We deliberately use old numpy version for compatibility with TF 1.15.
   # (b/206845101)
-  "numpy>=1.22.0",
+  "numpy~=1.22.0",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -135,8 +135,8 @@ ignore = [
 [tool.cibuildwheel]
 build-frontend="build"
 environment = {USE_BAZEL_VERSION = "6.5.0"}
-build = ["cp311-*"]
-skip = ["cp312-*", "cp313-*", "*musllinux*", "pp*"]
+# build = []
+skip = ["cp311-*", "cp312-*", "cp313-*", "*musllinux*", "pp*"]
 
 test-extras = ["test"]
 before-test="rm {project}/bazel-*"
