@@ -204,7 +204,7 @@ setup(
             if req
         ],
         "dev": ["pre-commit"],
-        "test": ["pytest"]
+        "test": ["pytest"],
     },
     python_requires=">=3.9,<3.12",
     packages=find_packages(),
