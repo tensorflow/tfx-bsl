@@ -152,4 +152,3 @@ before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
-before-build = "brew install bazelisk"
