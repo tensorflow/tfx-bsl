@@ -174,7 +174,7 @@ setup(
         'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
         'apache-beam[gcp]>=2.50,<2.51;python_version<"3.11"',
         "google-api-python-client>=1.7.11,<2",
-        "numpy~=1.22.0",
+        "numpy>=1.22.0",
         "pandas>=1.0,<2",
         'protobuf>=4.25.2,<6.0.0;python_version>="3.11"',
         'protobuf>=4.21.6,<6.0.0;python_version<"3.11"',
