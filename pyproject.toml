@@ -135,7 +135,7 @@ ignore = [
 [tool.cibuildwheel]
 build-frontend="build"
 environment = {USE_BAZEL_VERSION = "6.5.0"}
-# build = ["cp310-*"]
+build = ["cp311-*"]
 skip = ["cp312-*", "cp313-*", "*musllinux*", "pp*"]
 
 test-extras = ["test"]
