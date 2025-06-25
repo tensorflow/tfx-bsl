@@ -139,7 +139,7 @@ build = ["cp311-*", ]
 skip = ["cp312-*", "cp313-*", "*musllinux*", "pp*"]
 
 test-extras = ["test"]
-before-test="rm {project}/bazel-*"
+before-test="rm {project}/bazel-* && pip install numpy~=1.22.0"
 test-command="pytest {project}"
 
 [tool.cibuildwheel.linux]
