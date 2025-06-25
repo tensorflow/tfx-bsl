@@ -19,7 +19,7 @@ requires = [
   # Required for using org_tensorflow bazel repository.
   # We deliberately use old numpy version for compatibility with TF 1.15.
   # (b/206845101)
-  "numpy~=1.22.0",
+  "numpy>=1.22.0",
 ]
 build-backend = "setuptools.build_meta"
 
