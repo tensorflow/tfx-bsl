@@ -29,6 +29,7 @@ jobs:
     name: Build Wheels
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         build: ["cp39", "cp310", "cp311", "cp312", "cp313"]
         os: [ubuntu-latest, macos-latest]
