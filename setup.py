@@ -206,7 +206,7 @@ setup(
         "dev": ["pre-commit"],
         "test": ["pytest"],
     },
-    python_requires=">=3.9,<3.12",
+    python_requires=">=3.9,<4",
     packages=find_packages(),
     include_package_data=True,
     package_data={"": ["*.lib", "*.pyd", "*.so"]},
