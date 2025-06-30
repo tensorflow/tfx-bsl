@@ -140,7 +140,7 @@ with open("README.md") as fp:
     _LONG_DESCRIPTION = fp.read()
 
 setup(
-    name="ajf-test-tfx-bsl",
+    name="tfx-bsl",
     version=__version__,
     author="Google LLC",
     author_email="tensorflow-extended-dev@googlegroups.com",
