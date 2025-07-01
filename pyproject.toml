@@ -136,7 +136,6 @@ ignore = [
 build-frontend="build"
 environment = {USE_BAZEL_VERSION = "6.5.0"}
 skip = ["*musllinux*", "pp*"]
-# skip = ["cp312-*", "cp313-*", "*musllinux*", "pp*"]
 
 test-extras = ["test"]
 before-test="rm {project}/bazel-*"
