@@ -20,10 +20,6 @@
 # See b/148667210 for why the ImportError is ignored.
 try:
     from tfx_bsl.cc.tfx_bsl_extension.statistics import DatasetListAccumulator
-    from tfx_bsl.cc.tfx_bsl_extension.statistics_sql import (
-        EvaluateBinaryStatsPredicate,
-        EvaluateUnaryStatsPredicate,
-    )
 except ImportError as err:
     import sys
 

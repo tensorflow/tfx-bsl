@@ -25,48 +25,54 @@ on:
     types: [published]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build_wheels:
+    name: Build Wheels
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        build: ["cp39", "cp310", "cp311"]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Build tfx-bsl
-      id: build-tfx-bsl
-      uses: ./.github/reusable-build
-      with:
-        python-version: ${{ matrix.python-version }}
+    - name: Build wheels
+      uses: pypa/cibuildwheel@v2.23.3
+      env:
+        CIBW_BUILD: ${{ matrix.build }}-*
 
+    - uses: actions/upload-artifact@v4
+      with:
+        name: cibw-wheels-${{ matrix.os }}-${{ matrix.build }}-${{ strategy.job-index }}
+        path: ./wheelhouse/*.whl
 
   upload_to_pypi:
     name: Upload to PyPI
     runs-on: ubuntu-latest
-    if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags'))
-    needs: [build]
+    if: (github.event_name == 'release' && startsWith(github.ref, 'refs/tags')) || (github.event_name == 'workflow_dispatch')
+    needs: [build_wheels]
     environment:
       name: pypi
       url: https://pypi.org/p/tfx-bsl/
     permissions:
       id-token: write
-      attestations: write
     steps:
-      - name: Retrieve wheels
-        uses: actions/download-artifact@v4.1.8
+      - name: Retrieve wheels and sdist
+        uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-          path: wheels
-      - name: Generate artifact attestations for wheels
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: "wheels/*"
+          path: wheels/
+
       - name: List the build artifacts
         run: |
           ls -lAs wheels/
       - name: Upload to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1.9
+        uses: pypa/gh-action-pypi-publish@release/v1.12
         with:
           packages_dir: wheels/
+          repository_url: https://pypi.org/legacy/
+          # already checked, and the pkginfo/twine versions on this runner causes check to fail
+          verify-metadata: true
+          verbose: true

@@ -19,8 +19,9 @@ requires = [
   # Required for using org_tensorflow bazel repository.
   # We deliberately use old numpy version for compatibility with TF 1.15.
   # (b/206845101)
-  "numpy~=1.22.0",
+  "numpy",
 ]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 88
@@ -130,3 +131,21 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+
+[tool.cibuildwheel]
+build-frontend="build"
+environment = {USE_BAZEL_VERSION = "6.5.0"}
+skip = ["*musllinux*", "pp*"]
+
+test-extras = ["test"]
+before-test="rm {project}/bazel-*"
+test-command="pytest {project}"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux2014"
+archs=["x86_64"]
+before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
+
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
