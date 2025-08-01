@@ -28,9 +28,10 @@ RUN apt-get update -qq && \
 RUN apt-get -qq install -y bash curl tar make rename  git \
     build-essential wget python zip unzip default-jre default-jdk \
     python3-distutils python3-pip \
-    python3.9-distutils python3.10-distutils python3.11-distutils \
-    python3.9 python3.10 python3.11 python3.9-venv python3.10-venv python3.11-venv \
-    python3.9-dev python3.10-dev python3.11-dev
+    python3.9-distutils python3.10-distutils python3.11-distutils python3.12-distutils \
+    python3.9 python3.10 python3.11 python3.12 \
+    python3.9-venv python3.10-venv python3.11-venv python3.12-venv \
+    python3.9-dev python3.10-dev python3.11-dev python3.12-dev
 
 # Unfortunately ZetaSQL has issues with clang (default bazel compiler), so
 # we install GCC. Also install make for rules_foreign_cc bazel rules.
@@ -49,6 +50,7 @@ ENV VIRTUAL_ENV=/opt/python
 RUN python3.9 -m venv ${VIRTUAL_ENV}/cp39-cp39
 RUN python3.10 -m venv ${VIRTUAL_ENV}/cp310-cp310
 RUN python3.11 -m venv ${VIRTUAL_ENV}/cp311-cp311
+RUN python3.12 -m venv ${VIRTUAL_ENV}/cp311-cp312
 
 # Install bazel
 ENV BAZEL_LINKLIBS=-lstdc++:-lm
