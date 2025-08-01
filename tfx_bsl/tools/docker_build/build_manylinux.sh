@@ -27,7 +27,7 @@ WORKING_DIR=$PWD
 
 function setup_environment() {
   if [[ -z "${PYTHON_VERSION}" ]]; then
-    echo "Must set PYTHON_VERSION env to 39|310|311"; exit 1;
+    echo "Must set PYTHON_VERSION env to 39|310|311|312"; exit 1;
   fi
   # Bazel will use PYTHON_BIN_PATH to determine the right python library.
   if [[ "${PYTHON_VERSION}" == 39 ]]; then
@@ -36,8 +36,10 @@ function setup_environment() {
     PYTHON_DIR=${VIRTUAL_ENV}/cp310-cp310
   elif [[ "${PYTHON_VERSION}" == 311 ]]; then
     PYTHON_DIR=${VIRTUAL_ENV}/cp311-cp311
+  elif [[ "${PYTHON_VERSION}" == 312 ]]; then
+    PYTHON_DIR=${VIRTUAL_ENV}/cp312-cp312
   else
-    echo "Must set PYTHON_VERSION env to 39|310|311"; exit 1;
+    echo "Must set PYTHON_VERSION env to 39|310|311|312"; exit 1;
   fi
   source "${PYTHON_DIR}/bin/activate"
   export PYTHON_BIN_PATH="${PYTHON_DIR}/bin/python"
