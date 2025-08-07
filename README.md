@@ -44,51 +44,6 @@ such as TensorFlow Metadata (TFMD).
 However it is a dependency of many TFX components and usually as a user you
 don't need to install it directly.
 
-## Build with Docker
-
-If you want to build a TFX component from the master branch, past the latest
-release, you may also have to build the latest `tfx_bsl`, as that TFX component
-might have depended on new features introduced past the latest `tfx_bsl`
-release.
-
-Building from Docker is the recommended way to build `tfx_bsl` under Linux,
-and is continuously tested at Google.
-
-### 1. Install Docker
-
-Please first install [`docker`](https://docs.docker.com/install/) and
-[`docker-compose`](https://docs.docker.com/compose/install/) by following the
-directions.
-
-### 2. Clone the `tfx_bsl` repository
-
-```shell
-git clone https://github.com/tensorflow/tfx-bsl
-cd tfx-bsl
-```
-
-Note that these instructions will install the latest master branch of `tfx-bsl`.
-If you want to install a specific branch (such as a release branch), pass
-`-b <branchname>` to the `git clone` command.
-
-### 3. Build the pip package
-
-Then, run the following at the project root:
-
-```bash
-sudo docker-compose build manylinux2010
-sudo docker-compose run -e PYTHON_VERSION=${PYTHON_VERSION} manylinux2010
-```
-where `PYTHON_VERSION` is one of `{39}`.
-
-A wheel will be produced under `dist/`.
-
-### 4. Install the pip package
-
-```shell
-pip install dist/*.whl
-```
-
 ## Build from source
 
 ### 1. Prerequisites
@@ -103,6 +58,10 @@ directions](https://www.scipy.org/scipylib/download.html).
 If Bazel is not installed on your system, install it now by following [these
 directions](https://bazel.build/versions/master/docs/install.html).
 
+#### Install cibuildwheel
+
+If you do not already have cibuildwheel installed on your system, you an install it using
+[these directions](https://cibuildwheel.pypa.io/en/stable/setup/#getting-started).
 
 ### 2. Clone the `tfx_bsl` repository
 
@@ -120,7 +79,7 @@ pass `-b <branchname>` to the `git clone` command.
 `tfx_bsl` wheel is Python version dependent -- to build the pip package that
 works for a specific Python version, use that Python binary to run:
 ```shell
-python setup.py bdist_wheel
+cibuildwheel
 ```
 
 You can find the generated `.whl` file in the `dist` subdirectory.
