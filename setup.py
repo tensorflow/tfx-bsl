@@ -211,6 +211,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     package_data={"": ["*.lib", "*.pyd", "*.so"]},
+    data_files=[("docs_reqs", ["requirements-docs.txt"])],
     zip_safe=False,
     distclass=_BinaryDistribution,
     description=(
