@@ -51,7 +51,7 @@ don't need to install it directly.
 #### Install NumPy
 
 If NumPy is not installed on your system, install it now by following [these
-directions](https://www.scipy.org/scipylib/download.html).
+directions](https://numpy.org/install/).
 
 #### Install Bazel
 
