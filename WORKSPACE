@@ -2,6 +2,17 @@ workspace(name = "tfx_bsl")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Patch zlib for macOS compatibility (must come before org_tensorflow_no_deps loads zlib)
+http_archive(
+    name = "zlib",
+    build_file = "@com_google_protobuf//:third_party/zlib.BUILD",
+    sha256 = "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+    strip_prefix = "zlib-1.3.1",
+    urls = [
+        "https://github.com/madler/zlib/archive/v1.3.1.tar.gz",
+    ],
+)
+
 http_archive(
     name = "google_bazel_common",
     sha256 = "82a49fb27c01ad184db948747733159022f9464fc2e62da996fa700594d9ea42",
