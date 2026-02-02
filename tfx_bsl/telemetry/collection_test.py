@@ -29,14 +29,14 @@ class CollectionTest(absltest.TestCase):
         )
         expected_num_bytes = inputs.nbytes
 
-        with beam.Pipeline(**test_helpers.make_test_beam_pipeline_kwargs()) as p:
-            _ = (
-                p
-                | beam.Create([inputs])
-                | collection.TrackRecordBatchBytes("TestNamespace", "num_bytes_count")
-            )
-
+        p = beam.Pipeline(**test_helpers.make_test_beam_pipeline_kwargs())
+        _ = (
+            p
+            | beam.Create([inputs])
+            | collection.TrackRecordBatchBytes("TestNamespace", "num_bytes_count")
+        )
         pipeline_result = p.run()
+        pipeline_result.wait_until_finish()
         result_metrics = pipeline_result.metrics()
         actual_counter = result_metrics.query(
             beam.metrics.metric.MetricsFilter().with_name("num_bytes_count")
@@ -74,16 +74,16 @@ class CollectionTest(absltest.TestCase):
             "ragged_tensor": num_ragged_tensors,
         }
 
-        with beam.Pipeline(**test_helpers.make_test_beam_pipeline_kwargs()) as p:
-            _ = (
-                p
-                | beam.Create([tensor_representations])
-                | collection.TrackTensorRepresentations(
-                    counter_namespace="TestNamespace"
-                )
+        p = beam.Pipeline(**test_helpers.make_test_beam_pipeline_kwargs())
+        _ = (
+            p
+            | beam.Create([tensor_representations])
+            | collection.TrackTensorRepresentations(
+                counter_namespace="TestNamespace"
             )
-
+        )
         pipeline_result = p.run()
+        pipeline_result.wait_until_finish()
         result_metrics = pipeline_result.metrics()
         for kind, expected_count in expected_counters.items():
             actual_counter = result_metrics.query(
