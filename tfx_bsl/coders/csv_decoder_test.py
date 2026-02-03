@@ -811,9 +811,7 @@ class CSVDecoderTest(parameterized.TestCase):
                 | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=","))
                 | beam.Keys()
                 | beam.CombineGlobally(
-                    csv_decoder.ColumnTypeInferrer(
-                        column_names, skip_blank_lines=False
-                    )
+                    csv_decoder.ColumnTypeInferrer(column_names, skip_blank_lines=False)
                 )
             )
             beam_test_util.assert_that(result, lambda _: None)
