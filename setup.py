@@ -168,6 +168,7 @@ setup(
     # Make sure to sync the versions of common dependencies (absl-py, numpy,
     # and protobuf) with TF.
     install_requires=[
+        "dill>=0.4.1",
         'absl-py>=0.9,<2.0.0',
         'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
         'apache-beam[gcp]>=2.47,<3;python_version<"3.11"',
@@ -176,11 +177,12 @@ setup(
         'pandas>=1.0,<2',
         'protobuf>=4.25.2,<6.0.0;python_version>="3.11"',
         'protobuf>=4.21.6,<6.0.0;python_version<"3.11"',
-        'pyarrow>=10,<11',
-        'tensorflow>=2.17,<2.18',
+        'pyarrow>=10,<11;python_version<"3.11"',
+        'pyarrow>=14,<22;python_version>="3.11"',
+        "tensorflow>=2.16,<2.18",
         'tensorflow-metadata'
         + select_constraint(
-            default='>=1.17.1,<1.18.0',
+            default='>=1.17.0,<1.18.0',
             nightly='>=1.18.0.dev',
             git_master='@git+https://github.com/tensorflow/metadata@master',
         ),
