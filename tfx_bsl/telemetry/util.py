@@ -17,13 +17,12 @@ from typing import Sequence
 
 
 def MakeTfxNamespace(descriptors: Sequence[str]) -> str:
-  """Makes a TFX beam metric namespace from a list of descriptors."""
-  return AppendToNamespace("tfx", descriptors)
+    """Makes a TFX beam metric namespace from a list of descriptors."""
+    return AppendToNamespace("tfx", descriptors)
 
 
-def AppendToNamespace(namespace: str,
-                      descriptors_to_append: Sequence[str]) -> str:
-  """Appends a list of descriptors to a beam metric namespace."""
-  if descriptors_to_append:
-    return namespace + "." + ".".join(descriptors_to_append)
-  return namespace
+def AppendToNamespace(namespace: str, descriptors_to_append: Sequence[str]) -> str:
+    """Appends a list of descriptors to a beam metric namespace."""
+    if descriptors_to_append:
+        return namespace + "." + ".".join(descriptors_to_append)
+    return namespace

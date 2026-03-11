@@ -58,6 +58,7 @@ cc_library(
             # Excluding files which we don't depend on, but needs
             # additional dependencies like boost, snappy etc.
             "cpp/src/arrow/util/bpacking_avx2.*",
+            "cpp/src/arrow/**/*avx2.*",
             "cpp/src/arrow/util/bpacking_avx512.*",
             "cpp/src/arrow/util/bpacking_neon*",
             "cpp/src/arrow/util/bpacking_simd*",

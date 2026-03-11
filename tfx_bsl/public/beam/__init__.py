@@ -14,3 +14,7 @@
 """Module level imports for tfx_bsl.beam."""
 
 from tfx_bsl.public.beam.run_inference import RunInference
+
+__all__ = [
+    "RunInference",
+]

@@ -22,7 +22,19 @@
 #     should be removed by copybara and/or pystrip, except for the import line
 #     which will be dealt by note 1.
 
-from apache_beam.typehints import Any, Dict, Generator, Iterable, Iterator, List, Optional, Set, Tuple, TypeVariable, Union  # pylint: disable=unused-import,g-multiple-import
+from apache_beam.typehints import (  # pylint: disable=unused-import,g-multiple-import
+    Any,
+    Dict,
+    Generator,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVariable,
+    Union,
+)
 
 # pylint: disable=invalid-name
 Callable = None

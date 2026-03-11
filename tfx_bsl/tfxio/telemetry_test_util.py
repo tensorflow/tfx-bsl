@@ -13,8 +13,8 @@
 # limitations under the License.
 """TFXIO telemetry test utilities."""
 
-from typing import List, Text
 import unittest
+from typing import List, Text
 
 import apache_beam as beam
 
@@ -22,20 +22,26 @@ import apache_beam as beam
 def ValidateMetrics(
     test: unittest.TestCase,
     pipeline_result: beam.runners.runner.PipelineResult,
-    telemetry_descriptors: List[Text],
-    logical_format: Text, physical_format: Text):
-  all_metrics = pipeline_result.metrics()
-  maintained_metrics = all_metrics.query(
-      beam.metrics.metric.MetricsFilter().with_namespace(
-          "tfx." + ".".join(telemetry_descriptors + ["io"])))
-  test.assertIsNot(maintained_metrics, None)
-  counters = maintained_metrics[beam.metrics.metric.MetricResults.COUNTERS]
-  test.assertTrue(counters)
-  distributions = maintained_metrics[
-      beam.metrics.metric.MetricResults.DISTRIBUTIONS]
-  test.assertTrue(distributions)
-  for m in counters + distributions:
-    test.assertTrue(
-        m.key.metric.name.startswith("LogicalFormat[%s]-PhysicalFormat[%s]-" %
-                                     (logical_format, physical_format)),
-        m.key.metric.name)
+    telemetry_descriptors: List[str],
+    logical_format: str,
+    physical_format: str,
+):
+    all_metrics = pipeline_result.metrics()
+    maintained_metrics = all_metrics.query(
+        beam.metrics.metric.MetricsFilter().with_namespace(
+            "tfx." + ".".join(telemetry_descriptors + ["io"])
+        )
+    )
+    test.assertIsNot(maintained_metrics, None)
+    counters = maintained_metrics[beam.metrics.metric.MetricResults.COUNTERS]
+    test.assertTrue(counters)
+    distributions = maintained_metrics[beam.metrics.metric.MetricResults.DISTRIBUTIONS]
+    test.assertTrue(distributions)
+    for m in counters + distributions:
+        test.assertTrue(
+            m.key.metric.name.startswith(
+                "LogicalFormat[%s]-PhysicalFormat[%s]-"
+                % (logical_format, physical_format)
+            ),
+            m.key.metric.name,
+        )
