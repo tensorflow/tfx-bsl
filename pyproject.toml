@@ -142,10 +142,11 @@ before-test="rm {project}/bazel-*"
 test-command="pytest {project}"
 
 [tool.cibuildwheel.linux]
-manylinux-x86_64-image = "manylinux2014"
+manylinux-x86_64-image = "manylinux_2_28"
 archs=["x86_64"]
-before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
+before-build = "yum install -y npm && npm install -g @bazel/bazelisk && yum install -y hdf5-devel"
 
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
+before-build = "brew install hdf5"

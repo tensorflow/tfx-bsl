@@ -173,9 +173,10 @@ setup(
         "absl-py>=0.9,<2.0.0",
         'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
         'apache-beam[gcp]>=2.50,<2.51;python_version<"3.11"',
+        "dill>=0.3.1,<1.0.0",
         "google-api-python-client>=1.7.11,<2",
         "numpy",
-        "pandas>=1.0,<2",
+        "pandas",
         'protobuf>=4.25.2,<6.0.0;python_version>="3.11"',
         'protobuf>=4.21.6,<6.0.0;python_version<"3.11"',
         'pyarrow>=10,<11;python_version<"3.11"',
@@ -189,8 +190,8 @@ setup(
         ),
         "tensorflow-serving-api"
         + select_constraint(
-            default=">=2.13.0,<3",
-            nightly=">=2.13.0.dev",
+            default=">=2.17.1,<3",
+            nightly=">=2.17.1.dev",
             git_master="@git+https://github.com/tensorflow/serving@master",
         ),
     ],

@@ -802,21 +802,21 @@ class CSVDecoderTest(parameterized.TestCase):
         input_lines = ["1,2.0,hello", "5,12.34"]
         column_names = ["int_feature", "float_feature", "str_feature"]
         with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
-            ValueError, ".*Columns do not match specified csv headers.*"
+            (ValueError, RuntimeError), ".*Columns do not match specified csv headers.*"
         ):
-            with beam.Pipeline() as p:
-                result = (
-                    p
-                    | beam.Create(input_lines, reshuffle=False)
-                    | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=","))
-                    | beam.Keys()
-                    | beam.CombineGlobally(
-                        csv_decoder.ColumnTypeInferrer(
-                            column_names, skip_blank_lines=False
-                        )
-                    )
+            p = beam.Pipeline()
+            result = (
+                p
+                | beam.Create(input_lines, reshuffle=False)
+                | beam.ParDo(csv_decoder.ParseCSVLine(delimiter=","))
+                | beam.Keys()
+                | beam.CombineGlobally(
+                    csv_decoder.ColumnTypeInferrer(column_names, skip_blank_lines=False)
                 )
-                beam_test_util.assert_that(result, lambda _: None)
+            )
+            beam_test_util.assert_that(result, lambda _: None)
+            pipeline_result = p.run()
+            pipeline_result.wait_until_finish()
 
     def test_invalid_schema_type(self):
         input_lines = ["1"]

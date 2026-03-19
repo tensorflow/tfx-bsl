@@ -17,6 +17,7 @@
 
 #include "absl/base/optimization.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "arrow/api.h"
 
 namespace tfx_bsl {

@@ -75,9 +75,8 @@ def tfx_bsl_pybind_extension(
         prefix = name[:p + 1]
     so_file = "%s%s.so" % (prefix, sname)
     pyd_file = "%s%s.pyd" % (prefix, sname)
+    # For Python 3, the module init symbol is PyInit_<module_name>
     exported_symbols = [
-        "init%s" % sname,
-        "init_%s" % sname,
         "PyInit_%s" % sname,
     ]
 

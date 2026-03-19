@@ -23,6 +23,7 @@ on:
       - master
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build_wheels:
@@ -72,7 +73,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1.12
         with:
           packages_dir: wheels/
-          repository_url: https://pypi.org/legacy/
+          repository_url: https://upload.pypi.org/legacy/
           # already checked, and the pkginfo/twine versions on this runner causes check to fail
           verify-metadata: true
           verbose: true

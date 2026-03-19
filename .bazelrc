@@ -11,3 +11,11 @@ build --host_cxxopt=-std=c++17
 build --incompatible_require_linker_input_cc_api=false
 build:macos --apple_platform_type=macos
 build:macos_arm64 --cpu=darwin_arm64
+
+# Avoid Apple ld LTO library mismatch by disabling ThinLTO on macOS
+build:macos --features=-thin_lto
+build:macos_arm64 --features=-thin_lto
+
+# Enable HAVE_UNISTD_H for zlib on macOS to prevent fdopen macro conflict
+build:macos --define=HAVE_UNISTD_H=1
+build:macos_arm64 --define=HAVE_UNISTD_H=1
