@@ -176,7 +176,7 @@ setup(
         "dill>=0.3.1,<1.0.0",
         "google-api-python-client>=1.7.11,<2",
         "numpy",
-        "pandas>=1.0,<2",
+        "pandas",
         'protobuf>=4.25.2,<6.0.0;python_version>="3.11"',
         'protobuf>=4.21.6,<6.0.0;python_version<"3.11"',
         'pyarrow>=10,<11;python_version<"3.11"',
