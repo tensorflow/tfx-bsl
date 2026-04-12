@@ -201,7 +201,7 @@ setup(
         'pandas>=1.0,<2;python_version<"3.12"',
         'protobuf>=4.25.2,<7.0.0;python_version>="3.11"',
         'protobuf>=4.21.6,<7.0.0;python_version<"3.11"',
-        "pyarrow>14,<22",
+        "pyarrow>14,<16",
         "tensorflow>=2.21,<2.22",
         "tensorflow-metadata"
         + select_constraint(
