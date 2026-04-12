@@ -1,12 +1,21 @@
-<!-- mdlint off(HEADERS_TOO_MANY_H1) -->
-
 # Current Version (not yet released; still in development)
 
 ## Major Features and Improvements
 
+*   Support for TensorFlow 2.21.0.
+
 ## Bug Fixes and Other Changes
 
+*   Depends on `tensorflow>=2.21,<2.22`.
+*   Depends on `protobuf>=4.25.2,<7.0.0`.
+*   Removed `numpy<2` restriction and required `pandas>=2.0` to support NumPy 2.x.
+*   Bumped the minimum bazel version required to build `tfx_bsl` to 7.7.0.
+*   Resolved macOS CI hang/crash by upgrading to NumPy 2.0 and Pandas 2.x.
+*   Refactored `example_coder_test.py` to use lazy evaluation for `RecordBatch` objects.
+*   Added `-undefined dynamic_lookup` to macOS linkopts to resolve linker errors.
+
 ## Breaking Changes
+
 
 ## Deprecations
 
