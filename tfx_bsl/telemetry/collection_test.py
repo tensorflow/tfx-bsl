@@ -78,9 +78,7 @@ class CollectionTest(absltest.TestCase):
         _ = (
             p
             | beam.Create([tensor_representations])
-            | collection.TrackTensorRepresentations(
-                counter_namespace="TestNamespace"
-            )
+            | collection.TrackTensorRepresentations(counter_namespace="TestNamespace")
         )
         pipeline_result = p.run()
         pipeline_result.wait_until_finish()
