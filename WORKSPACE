@@ -114,7 +114,7 @@ http_archive(
     build_file = "//third_party:arrow.BUILD",
     patches = ["//third_party:arrow.patch"],
     patch_cmds = [
-        "sed -i '1875s/buf_ = other.buf_;/\\/\\/ buf_ = other.buf_;/' cpp/thirdparty/flatbuffers/include/flatbuffers/flatbuffers.h",
+        "python3 -c \"import sys; src = open('cpp/thirdparty/flatbuffers/include/flatbuffers/flatbuffers.h').read(); open('cpp/thirdparty/flatbuffers/include/flatbuffers/flatbuffers.h', 'w').write(src.replace('buf_ = other.buf_;', '// buf_ = other.buf_;'))\"",
     ],
     sha256 = "55fc466d0043c4cce0756bc18e1e62b3233be74c9afe8dc0d18420b9a5fd9714",
     strip_prefix = "arrow-%s" % ARROW_COMMIT,
