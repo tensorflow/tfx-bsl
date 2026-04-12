@@ -11,3 +11,6 @@ build --host_cxxopt=-std=c++17
 build --incompatible_require_linker_input_cc_api=false
 build:macos --apple_platform_type=macos
 build:macos_arm64 --cpu=darwin_arm64
+
+# Disable Bzlmod to resolve Protobuf visibility issues
+common --noenable_bzlmod

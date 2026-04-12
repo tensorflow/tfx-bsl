@@ -2,6 +2,16 @@ workspace(name = "tfx_bsl")
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+local_repository(
+    name = "rules_java",
+    path = "third_party/rules_java",
+)
+
+local_repository(
+    name = "compatibility_proxy",
+    path = "third_party/dummy_compatibility_proxy",
+)
+
 http_archive(
     name = "google_bazel_common",
     sha256 = "82a49fb27c01ad184db948747733159022f9464fc2e62da996fa700594d9ea42",
@@ -12,6 +22,27 @@ http_archive(
 ################################################################################
 # Generic Bazel Support                                                        #
 ################################################################################
+
+http_archive(
+    name = "rules_cc",
+    sha256 = "b8b918a85f9144c01f6cfe0f45e4f2838c7413961a8ff23bc0c6cdf8bb07a3b6",
+    strip_prefix = "rules_cc-0.1.5",
+    url = "https://github.com/bazelbuild/rules_cc/releases/download/0.1.5/rules_cc-0.1.5.tar.gz",
+)
+
+http_archive(
+    name = "rules_python",
+    sha256 = "098ba13578e796c00c853a2161f382647f32eb9a77099e1c88bc5299333d0d6e",
+    strip_prefix = "rules_python-1.9.0",
+    url = "https://github.com/bazel-contrib/rules_python/releases/download/1.9.0/rules_python-1.9.0.tar.gz",
+)
+load("@rules_python//python:repositories.bzl", "py_repositories")
+py_repositories()
+
+local_repository(
+    name = "xla",
+    path = "third_party/dummy_xla",
+)
 
 http_archive(
     name = "rules_proto",
@@ -60,15 +91,11 @@ http_archive(
     ],
 )
 
-_PROTOBUF_COMMIT = "4.25.6"  # 4.25.6
-
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "ff6e9c3db65f985461d200c96c771328b6186ee0b10bc7cb2bbc87cf02ebd864",
-    strip_prefix = "protobuf-%s" % _PROTOBUF_COMMIT,
-    urls = [
-        "https://github.com/protocolbuffers/protobuf/archive/v4.25.6.zip",
-    ],
+    sha256 = "6e09bbc950ba60c3a7b30280210cd285af8d7d8ed5e0a6ed101c72aff22e8d88",
+    strip_prefix = "protobuf-6.31.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/refs/tags/v6.31.1.zip"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -86,18 +113,26 @@ http_archive(
     name = "arrow",
     build_file = "//third_party:arrow.BUILD",
     patches = ["//third_party:arrow.patch"],
+    patch_cmds = [
+        "sed -i '1875s/buf_ = other.buf_;/\\/\\/ buf_ = other.buf_;/' cpp/thirdparty/flatbuffers/include/flatbuffers/flatbuffers.h",
+    ],
     sha256 = "55fc466d0043c4cce0756bc18e1e62b3233be74c9afe8dc0d18420b9a5fd9714",
     strip_prefix = "arrow-%s" % ARROW_COMMIT,
     urls = ["https://github.com/apache/arrow/archive/%s.zip" % ARROW_COMMIT],
 )
 
-COM_GOOGLE_ABSL_COMMIT = "4447c7562e3bc702ade25105912dce503f0c4010"  # lts_2023_08_0
-
 http_archive(
     name = "com_google_absl",
-    sha256 = "df8b3e0da03567badd9440377810c39a38ab3346fa89df077bb52e68e4d61e74",
-    strip_prefix = "abseil-cpp-%s" % COM_GOOGLE_ABSL_COMMIT,
-    url = "https://github.com/abseil/abseil-cpp/archive/%s.tar.gz" % COM_GOOGLE_ABSL_COMMIT,
+    sha256 = "f50e5ac311a81382da7fa75b97310e4b9006474f9560ac46f54a9967f07d4ae3",
+    strip_prefix = "abseil-cpp-20240722.0",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz"],
+)
+
+http_archive(
+    name = "com_google_googletest",
+    sha256 = "8ad598c73ad796e0d8280b082cebd82a630d73e73cd3c70057938a6501bba5d7",
+    strip_prefix = "googletest-1.14.0",
+    urls = ["https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz"],
 )
 
 TFMD_COMMIT = "404805761e614561cceedc429e67c357c62be26d"  # 1.17.1
@@ -111,17 +146,30 @@ http_archive(
 
 # TODO(b/177694034): Follow the new format for tensorflow import after TF 2.5.
 #here
-TENSORFLOW_COMMIT = "3c92ac03cab816044f7b18a86eb86aa01a294d95"  # 2.17.1
+TENSORFLOW_VERSION = "2.21.0"
 
 http_archive(
     name = "org_tensorflow_no_deps",
-    patches = [
-        "//third_party:tensorflow_expose_example_proto.patch",
+    patch_cmds = [
+        "echo 'proto_library(' > tensorflow/core/example/BUILD",
+        "echo '    name = \"example_proto_genproto\",' >> tensorflow/core/example/BUILD",
+        "echo '    srcs = [' >> tensorflow/core/example/BUILD",
+        "echo '        \"example.proto\",' >> tensorflow/core/example/BUILD",
+        "echo '        \"feature.proto\",' >> tensorflow/core/example/BUILD",
+        "echo '    ],' >> tensorflow/core/example/BUILD",
+        "echo '    visibility = [\"//visibility:public\"],' >> tensorflow/core/example/BUILD",
+        "echo ')' >> tensorflow/core/example/BUILD",
+        "echo '' >> tensorflow/core/example/BUILD",
+        "echo 'cc_proto_library(' >> tensorflow/core/example/BUILD",
+        "echo '    name = \"example_proto\",' >> tensorflow/core/example/BUILD",
+        "echo '    visibility = [\"//visibility:public\"],' >> tensorflow/core/example/BUILD",
+        "echo '    deps = [\":example_proto_genproto\"],' >> tensorflow/core/example/BUILD",
+        "echo ')' >> tensorflow/core/example/BUILD",
     ],
-    sha256 = "317dd95c4830a408b14f3e802698eb68d70d81c7c7cfcd3d28b0ba023fe84a68",
-    strip_prefix = "tensorflow-%s" % TENSORFLOW_COMMIT,
+    sha256 = "ef3568bb4865d6c1b2564fb5689c19b6b9a5311572cd1f2ff9198636a8520921",
+    strip_prefix = "tensorflow-%s" % TENSORFLOW_VERSION,
     urls = [
-        "https://github.com/tensorflow/tensorflow/archive/%s.tar.gz" % TENSORFLOW_COMMIT,
+        "https://github.com/tensorflow/tensorflow/archive/v%s.tar.gz" % TENSORFLOW_VERSION,
     ],
 )
 

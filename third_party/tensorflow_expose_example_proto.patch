@@ -4,10 +4,6 @@ index 4527044f383..2d61de25200 100644
 +++ tensorflow/core/example/BUILD
 @@ -1,187 +1,14 @@
 -load(
--    "@io_bazel_rules_closure//closure:defs.bzl",
--    "closure_proto_library",
--)
--load(
 -    "//tensorflow:tensorflow.bzl",
 -    "tf_cc_test",
 -    "tf_copts",
@@ -28,9 +24,6 @@ index 4527044f383..2d61de25200 100644
 -    ],
 -    licenses = ["notice"],
 -)
--
--# TODO(bmzhao): Refactor this target to use granular dependencies
--# after stage 4 of the TF build refactor is complete:
 -# https://github.com/tensorflow/community/pull/179
 -cc_library(
 -    name = "example_parser_configuration",
@@ -76,8 +69,6 @@ index 4527044f383..2d61de25200 100644
 -    ],
 -)
 -
--# TODO(bmzhao): Refactor this target to use granular dependencies
--# after stage 4 of the TF build refactor is complete:
 -# https://github.com/tensorflow/community/pull/179
 -tf_cc_test(
 -    name = "example_parser_configuration_test",
@@ -110,22 +101,17 @@ index 4527044f383..2d61de25200 100644
 -
 -tf_proto_library(
 -    name = "example_protos",
-+proto_library(
-+    name = "example_proto_genproto",
-     srcs = [
-         "example.proto",
-         "feature.proto",
-     ],
--    cc_api_version = 2,
+-    srcs = [
+-        "example.proto",
+-        "feature.proto",
+-    ],
 -    make_default_target_header_only = True,
 -    tags = ["alt_dep=//third_party/tensorflow/core:protos_all"],
-+    visibility = ["//visibility:public"],
- )
- 
+-)
+-
 -tf_proto_library(
 -    name = "example_parser_configuration_proto",
 -    srcs = ["example_parser_configuration.proto"],
--    cc_api_version = 2,
 -    make_default_target_header_only = True,
 -    protodeps = [
 -        "//tensorflow/core/framework:tensor_shape_proto",
@@ -136,7 +122,6 @@ index 4527044f383..2d61de25200 100644
 -
 -tf_proto_library(
 -    name = "protos_all",
--    cc_api_version = 2,
 -    make_default_target_header_only = True,
 -    protodeps = [
 -        ":example_protos",
@@ -164,11 +149,6 @@ index 4527044f383..2d61de25200 100644
 -    deps = [":example_protos"],
 -)
 -
--closure_proto_library(
--    name = "example_protos_closure",
--    deps = [":example_protos"],
--)
--
 -filegroup(
 -    name = "mobile_srcs_no_runtime",
 -    srcs = [
@@ -177,8 +157,6 @@ index 4527044f383..2d61de25200 100644
 -    ],
 -)
 -
--# TODO(bmzhao): These files are exported since they are directly referenced
--# from targets in tensorflow/core/BUILD. Remove these after phase 4 of the
 -# TF refactor: https://github.com/tensorflow/community/pull/179
 -exports_files(
 -    srcs = [
@@ -192,8 +170,18 @@ index 4527044f383..2d61de25200 100644
 -    visibility = [
 -        "//tensorflow/core:__pkg__",
 -    ],
+-)
++proto_library(
++    name = "example_proto_genproto",
++    srcs = [
++        "example.proto",
++        "feature.proto",
++    ],
++    visibility = ["//visibility:public"],
++)
++
 +cc_proto_library(
 +    name = "example_proto",
 +    visibility = ["//visibility:public"],
 +    deps = [":example_proto_genproto"],
- )
++)

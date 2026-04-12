@@ -283,7 +283,7 @@ TEST(KmvSketchTest, MergeDifferentNumBuckets) {
   absl::Status status = kmv1.Merge(kmv2);
   ASSERT_FALSE(status.ok());
   ASSERT_EQ(("Both sketches must have the same number of buckets: 128 v.s. 64"),
-            status.error_message());
+            status.message());
 }
 
 TEST(KmvSketchTest, SerializationPreservesInputType) {
