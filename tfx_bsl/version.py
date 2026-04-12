@@ -14,4 +14,4 @@
 """Contains the version string of tfx_bsl."""
 
 # Note that setup.py uses this version.
-__version__ = "1.21.1"
+__version__ = "1.18.0.dev"
