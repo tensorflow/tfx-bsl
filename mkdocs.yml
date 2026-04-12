@@ -43,6 +43,8 @@ plugins:
   - autorefs
   - mkdocstrings:
       default_handler: python
+      inventories:
+        - https://docs.python.org/3/objects.inv
       handlers:
         python:
           options:
@@ -72,8 +74,6 @@ plugins:
               - "!_test$"
             extensions:
               - griffe_inherited_docstrings
-            import:
-              - https://docs.python.org/3/objects.inv
 
 extra_css:
   - stylesheets/extra.css
