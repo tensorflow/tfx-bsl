@@ -2,8 +2,6 @@
 
 ## Major Features and Improvements
 
-*   Support for TensorFlow 2.21.0.
-
 ## Bug Fixes and Other Changes
 
 *   Depends on `tensorflow>=2.21,<2.22`.
