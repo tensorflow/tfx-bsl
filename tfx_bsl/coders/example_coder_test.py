@@ -65,7 +65,7 @@ _DECODE_CASES = [
         testcase_name="without_schema_simple",
         schema_text_proto=None,
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays(
+        expected=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array([None, None, [1.0], None], type=pa.large_list(pa.float32())),
                 pa.array([None, None, None, None], type=pa.null()),
@@ -97,7 +97,7 @@ _DECODE_CASES = [
           type: INT
         }""",
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays(
+        expected=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[b"a", b"b"], None, None, []],
@@ -124,7 +124,7 @@ _DECODE_CASES = [
         }
         """,
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays(
+        expected=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[b"a", b"b"], None, None, []],
@@ -146,7 +146,7 @@ _DECODE_CASES = [
         }
         """,
         examples_text_proto=_TEST_EXAMPLES,
-        expected=pa.RecordBatch.from_arrays(
+        expected=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [None, None, None, None], type=pa.large_list(pa.large_binary())
@@ -168,7 +168,7 @@ _DECODE_CASES = [
         features { feature { key: "a" value { } } }
         """
         ],
-        expected=pa.RecordBatch.from_arrays(
+        expected=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array([None], type=pa.large_list(pa.large_binary())),
             ],
@@ -193,7 +193,7 @@ _DECODE_CASES = [
         features { feature { key: "a" value { } } }
         """
         ],
-        expected=pa.RecordBatch.from_arrays(
+        expected=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array([None], type=pa.large_list(pa.large_binary())),
             ],
@@ -259,16 +259,17 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
 
         result = coder.DecodeBatch(serialized_examples)
         self.assertIsInstance(result, pa.RecordBatch)
+        expected_val = expected()
         self.assertTrue(
-            result.equals(expected),
+            result.equals(expected_val),
             (
                 f"\nactual: {result.to_pydict()}\nactual schema:"
-                f" {result.schema}\nexpected:{expected.to_pydict()}\nexpected"
-                f" schema: {expected.schema}\nencoded: {serialized_examples}"
+                f" {result.schema}\nexpected:{expected_val.to_pydict()}\nexpected"
+                f" schema: {expected_val.schema}\nencoded: {serialized_examples}"
             ),
         )
         if serialized_schema:
-            self.assertTrue(expected.schema.equals(coder.ArrowSchema()))
+            self.assertTrue(expected_val.schema.equals(coder.ArrowSchema()))
 
         # Verify that coder and DecodeBatch can be properly pickled and unpickled.
         # This is necessary for using them in beam.Map.
@@ -277,10 +278,10 @@ class ExamplesToRecordBatchDecoderTest(parameterized.TestCase):
         result = decode(serialized_examples)
         self.assertIsInstance(result, pa.RecordBatch)
         self.assertTrue(
-            result.equals(expected), f"actual: {result}\n expected:{expected}"
+            result.equals(expected_val), f"actual: {result}\n expected:{expected_val}"
         )
         if serialized_schema:
-            self.assertTrue(expected.schema.equals(coder.ArrowSchema()))
+            self.assertTrue(expected_val.schema.equals(coder.ArrowSchema()))
 
     @parameterized.named_parameters(*_INVALID_INPUT_CASES)
     def test_invalid_input(
@@ -356,7 +357,7 @@ _ENCODE_TEST_EXAMPLES = [
 
 _ENCODE_CASES = [
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[b"a", b"b"], None, None, []],
@@ -370,7 +371,7 @@ _ENCODE_CASES = [
         examples_text_proto=_ENCODE_TEST_EXAMPLES,
     ),
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array([None, None, [b"a", b"b"]], type=pa.large_list(pa.binary())),
                 pa.array([None, None, [1.0, 2.0]], type=pa.large_list(pa.float32())),
@@ -384,19 +385,19 @@ _ENCODE_CASES = [
 
 _INVALID_ENCODE_TYPE_CASES = [
     dict(
-        record_batch=pa.RecordBatch.from_arrays([pa.array([1, 2, 3])], ["a"]),
+        record_batch=lambda: pa.RecordBatch.from_arrays([pa.array([1, 2, 3])], ["a"]),
         error=RuntimeError,
         error_msg_regex="Expected ListArray or LargeListArray",
     ),
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [pa.array([[True], [False]], type=pa.large_list(pa.bool_()))], ["a"]
         ),
         error=RuntimeError,
         error_msg_regex="Bad field type",
     ),
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[b"a", b"b"], None, None, []],
@@ -422,9 +423,10 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
             for pbtxt in examples_text_proto
         ]
         coder = example_coder.RecordBatchToExamplesEncoder()
+        rb = record_batch()
         actual_examples = [
             tf.train.Example.FromString(encoded)
-            for encoded in coder.encode(record_batch)
+            for encoded in coder.encode(rb)
         ]
 
         self.assertEqual(actual_examples, expected_examples)
@@ -478,7 +480,7 @@ _ENCODE_NESTED_TEST_EXAMPLES = [
     """,
 ]
 
-_ENCODE_NESTED_RECORD_BATCH = pa.RecordBatch.from_arrays(
+_ENCODE_NESTED_RECORD_BATCH = lambda: pa.RecordBatch.from_arrays(
     [
         pa.array(
             [[b"a", b"b"], None, None, []],
@@ -623,7 +625,7 @@ _ENCODE_NESTED_CASES = [
 _INVALID_ENCODE_NESTED_TYPE_CASES = [
     # Two ragged features have same value feature name.
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[b"a", b"b"], None, None, []],
@@ -666,7 +668,7 @@ _INVALID_ENCODE_NESTED_TYPE_CASES = [
     ),
     # Ragged feature is expected to be 2d, but got 1d.
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[b"a", b"b"], None, None, []],
@@ -701,7 +703,7 @@ _INVALID_ENCODE_NESTED_TYPE_CASES = [
     ),
     # Batch has a nested list without corresponding RaggedTensor in the schema.
     dict(
-        record_batch=pa.RecordBatch.from_arrays(
+        record_batch=lambda: pa.RecordBatch.from_arrays(
             [
                 pa.array(
                     [[[b"a"], [b"b"]], None, None, [[]]],
@@ -732,7 +734,8 @@ class RecordBatchToExamplesEncoderTest(parameterized.TestCase, tf.test.TestCase)
         coder = example_coder.RecordBatchToExamplesEncoder(schema)
         # Verify that coder can be properly pickled and unpickled.
         coder = pickle.loads(pickle.dumps(coder))
-        encoded = coder.encode(record_batch)
+        rb = record_batch()
+        encoded = coder.encode(rb)
         self.assertLen(encoded, len(expected_examples))
         for idx, (expected, actual) in enumerate(zip(expected_examples, encoded)):
             self.assertProtoEquals(
@@ -747,8 +750,9 @@ class RecordBatchToExamplesEncoderTest(parameterized.TestCase, tf.test.TestCase)
     def test_invalid_input(self, record_batch, error, error_msg_regex, schema=None):
         schema = schema or schema_pb2.Schema()
         coder = example_coder.RecordBatchToExamplesEncoder(schema)
+        rb = record_batch()
         with self.assertRaisesRegex(error, error_msg_regex):
-            coder.encode(record_batch)
+            coder.encode(rb)
 
     def test_encode_is_consistent_with_parse_example(self):
         coder = example_coder.RecordBatchToExamplesEncoder(_ENCODE_NESTED_SCHEMA)
