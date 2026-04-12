@@ -139,7 +139,7 @@ skip = ["*musllinux*", "pp*"]
 
 test-extras = ["test"]
 before-test="rm {project}/bazel-*"
-test-command="pytest {project}/tfx_bsl/sketches"
+test-command="pytest {project}/tfx_bsl/coders"
 
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
