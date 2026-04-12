@@ -194,6 +194,7 @@ setup(
     install_requires=[
         "absl-py>=0.9,<2.0.0",
         "apache-beam[gcp]>=2.53,<3",
+        "dill",
         "google-api-python-client>=1.7.11,<2",
         "numpy<2",
         'pandas>=2.0;python_version>="3.12"',
