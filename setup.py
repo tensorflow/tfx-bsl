@@ -115,7 +115,7 @@ class _BazelBuildCommand(setuptools.Command):
                 shutil.copytree(s, d)
             else:
                 shutil.copy2(s, d)
-                
+
         subprocess.check_call(
             [self._bazel_cmd, "run", "-c", "opt"]
             + self._additional_build_options
