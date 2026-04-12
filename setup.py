@@ -97,10 +97,26 @@ class _BazelBuildCommand(setuptools.Command):
     def run(self):
         import numpy
         numpy_include = numpy.get_include()
+        
+        # Copy numpy include files to a local directory inside execution root
+        local_numpy_include = os.path.join(os.path.dirname(os.path.realpath(__file__)), "third_party", "numpy_include")
+        if os.path.exists(local_numpy_include):
+            shutil.rmtree(local_numpy_include)
+        os.makedirs(local_numpy_include)
+        
+        # Copy tree
+        for item in os.listdir(numpy_include):
+            s = os.path.join(numpy_include, item)
+            d = os.path.join(local_numpy_include, item)
+            if os.path.isdir(s):
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+                
         subprocess.check_call(
             [self._bazel_cmd, "run", "-c", "opt"]
             + self._additional_build_options
-            + [f"--copt=-I{numpy_include}"]
+            + [f"--copt=-Ithird_party/numpy_include"]
             + ["//tfx_bsl:move_generated_files"],
             # Bazel should be invoked in a directory containing bazel WORKSPACE
             # file, which is the root directory.
