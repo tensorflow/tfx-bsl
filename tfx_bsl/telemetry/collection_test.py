@@ -36,7 +36,7 @@ class CollectionTest(absltest.TestCase):
                 | collection.TrackRecordBatchBytes("TestNamespace", "num_bytes_count")
             )
 
-        pipeline_result = p.run()
+        pipeline_result = p.result
         result_metrics = pipeline_result.metrics()
         actual_counter = result_metrics.query(
             beam.metrics.metric.MetricsFilter().with_name("num_bytes_count")
@@ -83,7 +83,7 @@ class CollectionTest(absltest.TestCase):
                 )
             )
 
-        pipeline_result = p.run()
+        pipeline_result = p.result
         result_metrics = pipeline_result.metrics()
         for kind, expected_count in expected_counters.items():
             actual_counter = result_metrics.query(

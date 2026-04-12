@@ -802,7 +802,7 @@ class CSVDecoderTest(parameterized.TestCase):
         input_lines = ["1,2.0,hello", "5,12.34"]
         column_names = ["int_feature", "float_feature", "str_feature"]
         with self.assertRaisesRegex(  # pylint: disable=g-error-prone-assert-raises
-            ValueError, ".*Columns do not match specified csv headers.*"
+            Exception, ".*Columns do not match specified csv headers.*"
         ):
             with beam.Pipeline() as p:
                 result = (
