@@ -134,7 +134,7 @@ ignore = [
 
 [tool.cibuildwheel]
 build-frontend="build"
-environment = {USE_BAZEL_VERSION = "6.5.0"}
+environment = {USE_BAZEL_VERSION = "7.7.0"}
 skip = ["*musllinux*", "pp*"]
 
 test-extras = ["test"]
