@@ -434,7 +434,7 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
     @parameterized.parameters(*_INVALID_ENCODE_TYPE_CASES)
     def test_invalid_input(self, record_batch, error, error_msg_regex):
         with self.assertRaisesRegex(error, error_msg_regex):
-            example_coder.RecordBatchToExamplesEncoder().encode(record_batch)
+            example_coder.RecordBatchToExamplesEncoder().encode(record_batch())
 
 
 _ENCODE_NESTED_TEST_EXAMPLES = [
@@ -756,7 +756,7 @@ class RecordBatchToExamplesEncoderTest(parameterized.TestCase, tf.test.TestCase)
 
     def test_encode_is_consistent_with_parse_example(self):
         coder = example_coder.RecordBatchToExamplesEncoder(_ENCODE_NESTED_SCHEMA)
-        encoded = tf.constant(coder.encode(_ENCODE_NESTED_RECORD_BATCH))
+        encoded = tf.constant(coder.encode(_ENCODE_NESTED_RECORD_BATCH()))
         tensor_representations = (
             tensor_representation_util.GetTensorRepresentationsFromSchema(
                 _ENCODE_NESTED_SCHEMA
