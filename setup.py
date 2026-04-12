@@ -95,9 +95,12 @@ class _BazelBuildCommand(setuptools.Command):
                 self._additional_build_options = ["--macos_minimum_os=10.14"]
 
     def run(self):
+        import numpy
+        numpy_include = numpy.get_include()
         subprocess.check_call(
             [self._bazel_cmd, "run", "-c", "opt"]
             + self._additional_build_options
+            + [f"--copt=-I{numpy_include}"]
             + ["//tfx_bsl:move_generated_files"],
             # Bazel should be invoked in a directory containing bazel WORKSPACE
             # file, which is the root directory.

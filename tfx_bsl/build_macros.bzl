@@ -122,7 +122,10 @@ def _py_proto_library_impl(ctx):
     # Return PyInfo provider so this can be used as a py_library dependency
     # Merge proto-generated files with passthrough Python dependencies
     return [
-        DefaultInfo(files = depset(py_outputs)),
+        DefaultInfo(
+            files = depset(py_outputs),
+            runfiles = ctx.runfiles(files = py_outputs),
+        ),
         PyInfo(
             transitive_sources = depset(transitive = all_transitive_sources),
             imports = depset(transitive = all_imports),
