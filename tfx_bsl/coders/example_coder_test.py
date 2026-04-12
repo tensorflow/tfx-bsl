@@ -425,8 +425,7 @@ class RecordBatchToExamplesTest(parameterized.TestCase):
         coder = example_coder.RecordBatchToExamplesEncoder()
         rb = record_batch()
         actual_examples = [
-            tf.train.Example.FromString(encoded)
-            for encoded in coder.encode(rb)
+            tf.train.Example.FromString(encoded) for encoded in coder.encode(rb)
         ]
 
         self.assertEqual(actual_examples, expected_examples)
