@@ -199,8 +199,7 @@ setup(
         "google-api-python-client>=1.7.11,<2",
         "numpy",
         "pandas>=2.0",
-        'protobuf>=4.25.2,<7.0.0;python_version>="3.11"',
-        'protobuf>=4.21.6,<7.0.0;python_version<"3.11"',
+        "protobuf>=6.0.0,<7.0.0",
         "pyarrow>14",
         "tensorflow>=2.21,<2.22",
         "tensorflow-metadata"
