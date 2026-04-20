@@ -4,7 +4,7 @@
 
 ## Bug Fixes and Other Changes
 
-*   Added support for Python 3.12 and dropped support for Python 3.9.
+*   Added support for Python 3.12 and Python 3.13, and dropped support for Python 3.9.
 *   Depends on `tensorflow>=2.21,<2.22`.
 
 *   Depends on `protobuf>=4.25.2,<7.0.0`.
