@@ -15,9 +15,38 @@
 #include "tfx_bsl/cc/statistics/statistics_sql_submodule.h"
 #include "pybind11/pybind11.h"
 
-namespace tfx_bsl {
-void DefineStatisticsSqlSubmodule(pybind11::module main_module) {
-  // Dummy implementation to unblock builds on Linux.
-  // This satisfies the linker for TFMA tests but provides no real SQL functionality.
+namespace {
+namespace py = pybind11;
+
+void DefineEvaluatePredicate(py::module m) {
+  m.def(
+      "EvaluateUnaryStatsPredicate",
+      [](const std::string& feature_stats_serialized,
+         const std::string& query) {
+        throw std::runtime_error(
+            "SQL functionality is not supported on Linux in this fork.");
+        return false;
+      },
+      py::doc("Evaluates a SQL predicate over a single FeatureNameStatistics "
+              "proto bound to 'feature'."),
+      py::call_guard<py::gil_scoped_release>());
+  m.def(
+      "EvaluateBinaryStatsPredicate",
+      [](const std::string& base_feature_stats_serialized,
+         const std::string& test_feature_stats_serialized,
+         const std::string& query) {
+        throw std::runtime_error(
+            "SQL functionality is not supported on Linux in this fork.");
+        return false;
+      },
+      py::doc("Evaluates a SQL predicate over a pair of FeatureNameStatistics "
+              "protos bound to 'feature_base' and 'feature_test'."),
+      py::call_guard<py::gil_scoped_release>());
 }
-}  // namespace tfx_bsl
+}  // namespace
+
+void DefineStatisticsSqlSubmodule(py::module main_module) {
+  auto m = main_module.def_submodule("statistics_sql");
+  m.doc() = "Pybind11 bindings for (TFDV) statistics sql utilities.";
+  DefineEvaluatePredicate(m);
+}
