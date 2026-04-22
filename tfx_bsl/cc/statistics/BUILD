@@ -25,8 +25,16 @@ cc_library(
 
 cc_library(
     name = "statistics_submodule",
-    srcs = ["statistics_submodule.cc"],
-    hdrs = ["statistics_submodule.h"],
+    srcs = [
+        "statistics_submodule.cc",
+    ] + select({
+        "@bazel_tools//src/conditions:windows": ["statistics_sql_submodule_windows.cc"],
+        "//conditions:default": ["statistics_sql_submodule_linux.cc"],
+    }),
+    hdrs = [
+        "statistics_submodule.h",
+        "statistics_sql_submodule.h",
+    ],
     copts = [
         "-fexceptions",
     ],
