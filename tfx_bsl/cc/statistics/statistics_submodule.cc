@@ -22,7 +22,6 @@
 #include "pybind11/attr.h"
 #include "pybind11/pytypes.h"
 #include "tensorflow_metadata/proto/v0/statistics.pb.h"
-#include "tfx_bsl/cc/statistics/statistics_sql_submodule.h"
 
 namespace tfx_bsl {
 namespace {
@@ -81,7 +80,6 @@ void DefineStatisticsSubmodule(py::module main_module) {
   auto m = main_module.def_submodule("statistics");
   m.doc() = "Pybind11 bindings for (TFDV) statistics utilities.";
   DefineDatasetListAccumulatorClass(m);
-  DefineStatisticsSqlSubmodule(m);
 }
 
 }  // namespace tfx_bsl
