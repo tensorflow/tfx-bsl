@@ -15,6 +15,10 @@
 name: Build tfx-bsl Nightly
 
 on:
+  push:
+    branches:
+      - master
+      - testing
   schedule:
     # Trigger every night at midnight
     - cron: '0 0 * * *'
