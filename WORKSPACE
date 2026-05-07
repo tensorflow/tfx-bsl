@@ -135,11 +135,11 @@ http_archive(
     urls = ["https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz"],
 )
 
-TFMD_COMMIT = "404805761e614561cceedc429e67c357c62be26d"  # 1.17.1
+TFMD_COMMIT = "d3194a388344cb7a10d42b2a7c01bf384f3d1741"  # aligned with TF 2.21.0 dependencies
 
 http_archive(
     name = "com_github_tensorflow_metadata",
-    sha256 = "1b72e0e5085812cd9b19e004a381b544542f9545a081f0f738c5ed6b8bb886a2",
+    sha256 = "73195ecfc4801e987ae00f891965cbca0ef5849fe1cf6ae792447781a33d6520",
     strip_prefix = "metadata-%s" % TFMD_COMMIT,
     urls = ["https://github.com/tensorflow/metadata/archive/%s.zip" % TFMD_COMMIT],
 )
