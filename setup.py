@@ -204,7 +204,7 @@ setup(
         "tensorflow>=2.21,<2.22",
         "tensorflow-metadata"
         + select_constraint(
-            default="@git+https://github.com/tensorflow/metadata.git@d3194a388344cb7a10d42b2a7c01bf384f3d1741",
+            default=">=1.17.1,<1.18.0",
             nightly=">=1.18.0.dev",
             git_master="@git+https://github.com/tensorflow/metadata@master",
         ),
