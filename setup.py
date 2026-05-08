@@ -210,9 +210,9 @@ setup(
         ),
         "tensorflow-serving-api"
         + select_constraint(
-            default=">=2.13.0,<3",
-            nightly=">=2.13.0.dev",
-            git_master="@git+https://github.com/tensorflow/serving@master",
+            default=">=2.19,<2.20",
+            nightly=">=2.20.0.dev",
+            git_master=">=2.19,<2.20",
         ),
     ],
     extras_require={
