@@ -37,6 +37,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Disable Bzlmod
+      run: |
+        echo "common --noenable_bzlmod" > ~/.bazelrc
+        echo "build --noenable_bzlmod" >> ~/.bazelrc
+
     - name: Build wheels
       uses: pypa/cibuildwheel@v2.23.3
       env:
