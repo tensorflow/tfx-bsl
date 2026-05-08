@@ -41,8 +41,8 @@ jobs:
       uses: pypa/cibuildwheel@v2.23.3
       env:
         CIBW_BUILD: ${{ matrix.build }}-*
-        TFX_DEPENDENCY_SELECTOR: NIGHTLY
-        CIBW_ENVIRONMENT: TFX_DEPENDENCY_SELECTOR="NIGHTLY"
+        TFX_DEPENDENCY_SELECTOR: GIT_MASTER
+        CIBW_ENVIRONMENT: TFX_DEPENDENCY_SELECTOR="GIT_MASTER"
 
     - uses: actions/upload-artifact@v4
       with:
