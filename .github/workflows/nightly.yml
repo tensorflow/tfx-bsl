@@ -47,7 +47,7 @@ jobs:
       env:
         CIBW_BUILD: ${{ matrix.build }}-*
         TFX_DEPENDENCY_SELECTOR: GIT_MASTER
-        CIBW_ENVIRONMENT: TFX_DEPENDENCY_SELECTOR="GIT_MASTER"
+        CIBW_ENVIRONMENT: TFX_DEPENDENCY_SELECTOR="GIT_MASTER" BAZEL_ARGS="--noenable_bzlmod"
 
     - uses: actions/upload-artifact@v4
       with:
