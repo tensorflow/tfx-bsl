@@ -95,9 +95,31 @@ class _BazelBuildCommand(setuptools.Command):
                 self._additional_build_options = ["--macos_minimum_os=10.14"]
 
     def run(self):
+        import numpy
+
+        numpy_include = numpy.get_include()
+
+        # Copy numpy include files to a local directory inside execution root
+        local_numpy_include = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "third_party", "numpy_include"
+        )
+        if os.path.exists(local_numpy_include):
+            shutil.rmtree(local_numpy_include)
+        os.makedirs(local_numpy_include)
+
+        # Copy tree
+        for item in os.listdir(numpy_include):
+            s = os.path.join(numpy_include, item)
+            d = os.path.join(local_numpy_include, item)
+            if os.path.isdir(s):
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+
         subprocess.check_call(
             [self._bazel_cmd, "run", "-c", "opt"]
             + self._additional_build_options
+            + ["--copt=-Ithird_party/numpy_include"]
             + ["//tfx_bsl:move_generated_files"],
             # Bazel should be invoked in a directory containing bazel WORKSPACE
             # file, which is the root directory.
@@ -155,9 +177,10 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Programming Language :: Python :: 3 :: Only",
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -171,16 +194,14 @@ setup(
     # and protobuf) with TF.
     install_requires=[
         "absl-py>=0.9,<2.0.0",
-        'apache-beam[gcp]>=2.53,<3;python_version>="3.11"',
-        'apache-beam[gcp]>=2.50,<2.51;python_version<"3.11"',
+        "apache-beam[gcp]>=2.53,<3",
+        "dill",
         "google-api-python-client>=1.7.11,<2",
         "numpy",
-        "pandas>=1.0,<2",
-        'protobuf>=4.25.2,<6.0.0;python_version>="3.11"',
-        'protobuf>=4.21.6,<6.0.0;python_version<"3.11"',
-        'pyarrow>=10,<11;python_version<"3.11"',
-        'pyarrow>=14,<22;python_version>="3.11"',
-        "tensorflow>=2.17,<2.18",
+        "pandas>=2.0",
+        "protobuf>=6.0.0,<7.0.0",
+        "pyarrow>14",
+        "tensorflow>=2.21,<2.22",
         "tensorflow-metadata"
         + select_constraint(
             default=">=1.17.1,<1.18.0",
@@ -189,9 +210,9 @@ setup(
         ),
         "tensorflow-serving-api"
         + select_constraint(
-            default=">=2.13.0,<3",
-            nightly=">=2.13.0.dev",
-            git_master="@git+https://github.com/tensorflow/serving@master",
+            default=">=2.19,<2.20",
+            nightly=">=2.20.0.dev",
+            git_master=">=2.19,<2.20",
         ),
     ],
     extras_require={
@@ -207,7 +228,7 @@ setup(
         "dev": ["pre-commit"],
         "test": ["pytest"],
     },
-    python_requires=">=3.9,<4",
+    python_requires=">=3.10,<4",
     packages=find_packages(),
     include_package_data=True,
     package_data={"": ["*.lib", "*.pyd", "*.so"]},

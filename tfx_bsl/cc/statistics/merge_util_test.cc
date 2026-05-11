@@ -14,19 +14,26 @@
 #include "tfx_bsl/cc/statistics/merge_util.h"
 
 #include <memory>
+#include <vector>
 
 #include "google/protobuf/text_format.h"
-#include "testing/base/public/gmock.h"
+#include "google/protobuf/util/message_differencer.h"
+#include "gmock/gmock.h"
 #include <gtest/gtest.h>
 #include "absl/status/statusor.h"
-#include "tfx_bsl/cc/util/status_util.h"
 #include "absl/status/status.h"
+#include "tfx_bsl/cc/util/status_util.h"
 #include "tensorflow_metadata/proto/v0/path.pb.h"
 #include "tensorflow_metadata/proto/v0/statistics.pb.h"
-#include "vector"
 
 namespace {
-using proto2::TextFormat;
+using google::protobuf::TextFormat;
+
+bool ProtosEqual(const tensorflow::metadata::v0::DatasetFeatureStatisticsList& a, const tensorflow::metadata::v0::DatasetFeatureStatisticsList& b) {
+  google::protobuf::util::MessageDifferencer differencer;
+  differencer.set_repeated_field_comparison(google::protobuf::util::MessageDifferencer::AS_SET);
+  return differencer.Compare(a, b);
+}
 using tensorflow::metadata::v0::DatasetFeatureStatistics;
 using tensorflow::metadata::v0::DatasetFeatureStatisticsList;
 using tfx_bsl::statistics::AccumulatorOptions;
@@ -70,10 +77,9 @@ TEST(MergeUtilTest, MergesTwoSlices) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, MergesSingleShardedSlice) {
@@ -96,10 +102,9 @@ TEST(MergeUtilTest, MergesSingleShardedSlice) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, InconsistentNumExamplesIsAnError) {
@@ -164,10 +169,9 @@ TEST(MergeUtilTest, MergesDistinctFeaturesByName) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, MergesDistinctFeaturesByPath) {
@@ -218,10 +222,9 @@ TEST(MergeUtilTest, MergesDistinctFeaturesByPath) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, MergesSameFeaturesByPath) {
@@ -269,10 +272,9 @@ TEST(MergeUtilTest, MergesSameFeaturesByPath) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, InconsistentFeatureTypesIsAnError) {
@@ -379,10 +381,9 @@ TEST(MergeUtilTest, MergesDistinctCrossFeatures) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, MergesWithDerivedSource) {
@@ -438,10 +439,9 @@ TEST(MergeUtilTest, MergesWithDerivedSource) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, ConflictingDerivedSourceIsError) {
@@ -526,10 +526,9 @@ TEST(MergeUtilTest, MergesSameCrossFeatures) {
                                   "} ",
                                   &expected));
   auto output_or = Merge({slice1, slice2});
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList output = **output_or;
-  EXPECT_THAT(output, testing::proto::IgnoringRepeatedFieldOrdering(
-                          testing::EqualsProto(expected)));
+  EXPECT_TRUE(ProtosEqual(output, expected));
 }
 
 TEST(MergeUtilTest, InconsistentCrossStatsIsAnError) {
@@ -573,17 +572,17 @@ TEST(MergeUtilTest, VersionNonzeroError) {
 
 TEST(MergeUtilTest, EmptyPlaceholderTrue) {
   auto output_or = Merge({}, AccumulatorOptions(0, true));
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList expected;
   ASSERT_TRUE(TextFormat::ParseFromString("datasets: {} ", &expected));
-  EXPECT_THAT(**output_or, testing::EqualsProto(expected));
+  EXPECT_TRUE(ProtosEqual(**output_or, expected));
 }
 
 TEST(MergeUtilTest, EmptyPlaceholderFalse) {
   auto output_or = Merge({}, AccumulatorOptions(0, false));
-  ASSERT_OK(output_or.status());
+  ASSERT_TRUE(output_or.ok());
   DatasetFeatureStatisticsList expected;
-  EXPECT_THAT(**output_or, testing::EqualsProto(expected));
+  EXPECT_TRUE(ProtosEqual(**output_or, expected));
 }
 
 }  // namespace

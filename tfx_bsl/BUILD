@@ -12,9 +12,7 @@ exports_files(
 bzl_library(
         name = "build_macros",
         srcs = ["build_macros.bzl"],
-        deps = ["//tools/build_defs/proto/cpp:cc_proto_library.bzl",
-                "//tools/build_defs/proto/cpp:proto_names_to_cc_proto_names.bzl",
-        ],
+        deps = [],
         visibility = ["//visibility:public"],
 )
 

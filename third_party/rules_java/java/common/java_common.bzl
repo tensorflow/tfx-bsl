@@ -1,0 +1,1 @@
+java_common = struct()

@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "testing/base/public/gmock.h"
+#include "gmock/gmock.h"
 #include <gtest/gtest.h>
 #include "absl/status/status.h"
 #include "absl/strings/numbers.h"
@@ -47,7 +47,7 @@ MisraGriesSketch SerializeRoundTrip(const MisraGriesSketch& sketch) {
   // persisted.
   std::string serialized_sketch = sketch.Serialize();
   std::unique_ptr<MisraGriesSketch> deserialized;
-  CHECK(MisraGriesSketch::Deserialize(serialized_sketch, &deserialized).ok());
+  EXPECT_TRUE(MisraGriesSketch::Deserialize(serialized_sketch, &deserialized).ok());
   // Return a copy.
   return *deserialized;
 }
@@ -258,7 +258,7 @@ TEST(MisraGriesSketchTest, AddSimpleBinaryWithIntWeights) {
 
   absl::Status status = mg.AddValues(*array, *weight_array);
   ASSERT_FALSE(status.ok());
-  ASSERT_EQ("Weight array must be float type.", status.error_message());
+  ASSERT_EQ("Weight array must be float type.", status.message());
 }
 
 TEST(MisraGriesSketchTest, MergeSimple) {
@@ -426,7 +426,7 @@ TEST(MisraGriesSketchTest, Estimate) {
   true_counts.push_back({"b", 2});
   true_counts.push_back({"c", 1});
   for (int i = 0; i < 3; ++i) {
-    EXPECT_EQ(result_values->GetView(i), true_counts[i].first);
+    EXPECT_EQ(std::string(result_values->GetView(i)), std::string(true_counts[i].first));
     EXPECT_EQ(result_counts->Value(i), true_counts[i].second);
   }
 }
@@ -455,7 +455,7 @@ TEST(MisraGriesSketchTest, EstimateFloat) {
   true_counts.push_back({"0.7", 1});
   true_counts.push_back({"1", 1});
   for (int i = 0; i < 3; ++i) {
-    EXPECT_EQ(result_values->GetView(i), true_counts[i].first);
+    EXPECT_EQ(std::string(result_values->GetView(i)), std::string(true_counts[i].first));
     EXPECT_EQ(result_counts->Value(i), true_counts[i].second);
   }
 }

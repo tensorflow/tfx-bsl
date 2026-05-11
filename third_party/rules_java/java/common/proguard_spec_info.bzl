@@ -1,0 +1,1 @@
+ProguardSpecInfo = provider()

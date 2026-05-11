@@ -17,7 +17,6 @@ requires = [
   "setuptools",
   "wheel",
   # Required for using org_tensorflow bazel repository.
-  # We deliberately use old numpy version for compatibility with TF 1.15.
   # (b/206845101)
   "numpy",
 ]
@@ -134,15 +133,15 @@ ignore = [
 
 [tool.cibuildwheel]
 build-frontend="build"
-environment = {USE_BAZEL_VERSION = "6.5.0"}
+environment = {USE_BAZEL_VERSION = "7.7.0"}
 skip = ["*musllinux*", "pp*"]
 
 test-extras = ["test"]
 before-test="rm {project}/bazel-*"
-test-command="pytest {project}"
+test-command="pytest {project}/tfx_bsl/arrow {project}/tfx_bsl/sketches {project}/tfx_bsl/coders"
 
 [tool.cibuildwheel.linux]
-manylinux-x86_64-image = "manylinux2014"
+manylinux-x86_64-image = "manylinux_2_28"
 archs=["x86_64"]
 before-build = "yum install -y npm && npm install -g @bazel/bazelisk"
 
