@@ -130,4 +130,3 @@ dmypy.json
 
 # Local Bazel configuration overrides
 .bazelrc.user
-
