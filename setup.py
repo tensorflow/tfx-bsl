@@ -116,11 +116,28 @@ class _BazelBuildCommand(setuptools.Command):
             else:
                 shutil.copy2(s, d)
 
+        pythonpath = os.environ.get("PYTHONPATH", "")
+        # Include sys.path entries to support PEP 517 isolated build environments
+        sys_path_entries = os.pathsep.join([p for p in sys.path if p])
+        if pythonpath:
+            pythonpath = os.pathsep.join([pythonpath, sys_path_entries])
+        else:
+            pythonpath = sys_path_entries
+
+        bazel_args = [
+            self._bazel_cmd,
+            "run",
+            "-c",
+            "opt",
+            f"--repo_env=PYTHON_BIN_PATH={sys.executable}",
+            f"--repo_env=PYTHONPATH={pythonpath}",
+        ]
+        bazel_args.extend(self._additional_build_options)
+        bazel_args.append("--copt=-Ithird_party/numpy_include")
+        bazel_args.append("//tfx_bsl:move_generated_files")
+
         subprocess.check_call(
-            [self._bazel_cmd, "run", "-c", "opt"]
-            + self._additional_build_options
-            + ["--copt=-Ithird_party/numpy_include"]
-            + ["//tfx_bsl:move_generated_files"],
+            bazel_args,
             # Bazel should be invoked in a directory containing bazel WORKSPACE
             # file, which is the root directory.
             cwd=os.path.dirname(os.path.realpath(__file__)),
