@@ -3,8 +3,8 @@
 # See tfx_bsl/cc/pybind11/arrow_casters.h
 build --copt=-DTFX_BSL_USE_ARROW_C_ABI
 build --cxxopt=-std=c++17
-build --copt=-Wa,--gsframe=no
-build --cxxopt=-Wa,--gsframe=no
+build:linux --copt=-Wa,--gsframe=no
+build:linux --cxxopt=-Wa,--gsframe=no
 build --host_cxxopt=-std=c++17
 
 # icu@: In create_linking_context: in call to create_linking_context(),
@@ -16,3 +16,4 @@ build:macos_arm64 --cpu=darwin_arm64
 
 # Disable Bzlmod to resolve Protobuf visibility issues
 common --noenable_bzlmod
+common --enable_platform_specific_config
