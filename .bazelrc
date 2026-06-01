@@ -3,9 +3,14 @@
 # See tfx_bsl/cc/pybind11/arrow_casters.h
 build --copt=-DTFX_BSL_USE_ARROW_C_ABI
 build --cxxopt=-std=c++17
-build:linux --copt=-Wa,--gsframe=no
-build:linux --cxxopt=-Wa,--gsframe=no
 build --host_cxxopt=-std=c++17
+
+# Developers on modern Linux toolchains (GCC 13/14/15 & binutils 2.40+)
+# who experience SFrame relocation errors in pybind11 should create a local
+# .bazelrc.user file in the workspace root and add:
+#   build --copt=-Wa,--gsframe=no
+#   build --cxxopt=-Wa,--gsframe=no
+try-import %workspace%/.bazelrc.user
 
 # icu@: In create_linking_context: in call to create_linking_context(),
 # parameter 'user_link_flags' is deprecated and will be removed soon.

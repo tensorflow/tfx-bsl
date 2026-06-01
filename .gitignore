@@ -127,3 +127,7 @@ dmypy.json
 
 # pb2.py files
 *_pb2.py
+
+# Local Bazel configuration overrides
+.bazelrc.user
+
