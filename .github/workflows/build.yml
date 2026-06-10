@@ -72,8 +72,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1.12
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
-          packages_dir: wheels/
-          repository_url: https://pypi.org/legacy/
+          packages-dir: wheels/
           # already checked, and the pkginfo/twine versions on this runner causes check to fail
           verify-metadata: true
           verbose: true
