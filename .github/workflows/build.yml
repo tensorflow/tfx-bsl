@@ -65,7 +65,6 @@ jobs:
       url: https://pypi.org/p/tfx-bsl/
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Retrieve wheels and sdist
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
