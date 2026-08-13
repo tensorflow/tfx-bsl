@@ -47,7 +47,7 @@ jobs:
         echo "build --noenable_bzlmod" >> ~/.bazelrc
 
     - name: Build wheels
-      uses: pypa/cibuildwheel@1b198eb0fd40daf384929579c8a9eafdcc4a41cc # v2.23.3
+      uses: pypa/cibuildwheel@faf86a6ed7efa889faf6996aa23820831055001a # v2.23.3
       env:
         CIBW_BUILD: ${{ matrix.build }}-*
         TFX_DEPENDENCY_SELECTOR: GIT_MASTER
