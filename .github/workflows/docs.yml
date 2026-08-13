@@ -5,13 +5,17 @@ on:
     branches:
       - 'master'
 
+# zizmor: ignore[excessive-permissions]
 permissions:
+  # Required to deploy documentation to GitHub Pages (gh-pages branch)
   contents: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # zizmor: ignore[excessive-permissions]
     permissions:
+      # Required to deploy documentation to GitHub Pages (gh-pages branch)
       contents: write
     steps:
       - name: Checkout repo
