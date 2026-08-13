@@ -15,9 +15,6 @@
 name: Build tfx-bsl Nightly
 
 on:
-  pull_request:
-    branches:
-      - master
   schedule:
     # Trigger every night at midnight
     - cron: '0 0 * * *'
