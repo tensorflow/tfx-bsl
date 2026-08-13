@@ -15,6 +15,7 @@ jobs:
     # zizmor: ignore[excessive-permissions]
     permissions:
       # Required to deploy documentation to GitHub Pages (gh-pages branch)
+      # zizmor: ignore[excessive-permissions]
       contents: write
     steps:
       - name: Checkout repo
@@ -30,17 +31,6 @@ jobs:
           cache-dependency-path: |
             setup.py
             requirements-docs.txt
-
-      - name: Save time for cache for mkdocs
-        run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
-
-      - name: Caching
-        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
-        with:
-          key: mkdocs-material-${{ env.cache_id }}
-          path: .cache
-          restore-keys: |
-            mkdocs-material-
 
       - name: Install Dependencies
         run: pip install -r requirements-docs.txt
