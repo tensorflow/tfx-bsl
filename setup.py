@@ -90,9 +90,16 @@ class _BazelBuildCommand(setuptools.Command):
                 self._additional_build_options = [
                     "--macos_minimum_os=11.0",
                     "--config=macos_arm64",
+                    "--repo_env=BAZEL_USE_CPP_ONLY_TOOLCHAIN=1",
                 ]
             else:
-                self._additional_build_options = ["--macos_minimum_os=10.14"]
+                self._additional_build_options = [
+                    "--macos_minimum_os=10.14",
+                    "--repo_env=BAZEL_USE_CPP_ONLY_TOOLCHAIN=1",
+                ]
+            os.environ.pop("APPLE_SDK_VERSION_OVERRIDE", None)
+            os.environ.pop("XCODE_VERSION_OVERRIDE", None)
+            os.environ["BAZEL_USE_CPP_ONLY_TOOLCHAIN"] = "1"
 
     def run(self):
         import numpy
