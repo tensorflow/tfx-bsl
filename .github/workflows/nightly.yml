@@ -15,18 +15,20 @@
 name: Build tfx-bsl Nightly
 
 on:
-  pull_request:
-    branches:
-      - master
   schedule:
     # Trigger every night at midnight
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build_wheels:
     name: Build Wheels (Nightly)
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +37,9 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        persist-credentials: false
 
     - name: Disable Bzlmod
       run: |
@@ -43,13 +47,13 @@ jobs:
         echo "build --noenable_bzlmod" >> ~/.bazelrc
 
     - name: Build wheels
-      uses: pypa/cibuildwheel@v2.23.3
+      uses: pypa/cibuildwheel@faf86a6ed7efa889faf6996aa23820831055001a # v2.23.3
       env:
         CIBW_BUILD: ${{ matrix.build }}-*
         TFX_DEPENDENCY_SELECTOR: GIT_MASTER
-        CIBW_ENVIRONMENT: TFX_DEPENDENCY_SELECTOR="GIT_MASTER" USE_BAZEL_VERSION="7.7.0" BAZEL_ARGS="--noenable_bzlmod"
+        CIBW_ENVIRONMENT: TFX_DEPENDENCY_SELECTOR="GIT_MASTER" USE_BAZEL_VERSION="7.7.0" BAZEL_ARGS="--noenable_bzlmod" BAZEL_USE_CPP_ONLY_TOOLCHAIN="1"
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
       with:
         name: cibw-wheels-nightly-${{ matrix.os }}-${{ matrix.build }}-${{ strategy.job-index }}
         path: ./wheelhouse/*.whl
